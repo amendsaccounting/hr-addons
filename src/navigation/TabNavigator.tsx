@@ -2,9 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import DashboardScreen from '../screens/tabs/DashboardScreen';
 import AttendanceScreen from '../screens/tabs/AttendanceScreen';
-import RegisterScreen from '../screens/auth/RegisterScreen';
-
-export type TabName = 'Dashboard' | 'Attendance' | 'Register';
+export type TabName = 'Dashboard' | 'Attendance';
 
 export default function TabNavigator({ initialTab = 'Dashboard' as TabName }: { initialTab?: TabName }) {
   const [activeTab, setActiveTab] = useState<TabName>(initialTab);
@@ -17,7 +15,7 @@ export default function TabNavigator({ initialTab = 'Dashboard' as TabName }: { 
         ) : activeTab === 'Attendance' ? (
           <AttendanceScreen />
         ) : (
-          <RegisterScreen />
+          <AttendanceScreen />
         )}
       </View>
       <BottomTabBar activeTab={activeTab} onChange={setActiveTab} />
@@ -36,7 +34,6 @@ function BottomTabBar({
     <View style={styles.tabBar}>
       <TabButton label="Home" active={activeTab === 'Dashboard'} onPress={() => onChange('Dashboard')} />
       <TabButton label="Attend" active={activeTab === 'Attendance'} onPress={() => onChange('Attendance')} />
-      <TabButton label="Register" active={activeTab === 'Register'} onPress={() => onChange('Register')} />
     </View>
   );
 }
@@ -73,4 +70,3 @@ const styles = StyleSheet.create({
   tabLabel: { fontSize: 14, color: '#666' },
   tabLabelActive: { color: '#0b6dff', fontWeight: '600' },
 });
-

@@ -1,4 +1,4 @@
-import { ERP_API_KEY, ERP_API_SECRET, ERP_BASE_URL, ERP_DEVICE_ID, ERP_URL_RESOURCE, ERP_EMPLOYEE_ID } from '../config';
+import { ERP_API_KEY, ERP_API_SECRET, ERP_BASE_URL, ERP_DEVICE_ID, ERP_URL_RESOURCE, ERP_EMPLOYEE_ID, ERP_URL_METHOD } from '../config';
 
 export type LogType = 'IN' | 'OUT';
 
@@ -110,4 +110,39 @@ export async function fetchEmployeeCheckins(params: {
   const data = await res.json();
   // ERPNext returns { data: [...] }
   return (data?.data ?? []) as EmployeeCheckin[];
+}
+
+// Password login for ERPNext (verifies user credentials).
+// Uses /api/method/login with form-encoded body (usr, pwd).
+export async function loginWithPassword(username: string, password: string) {
+  const methodBase = (ERP_URL_METHOD && ERP_URL_METHOD.trim().length > 0)
+    ? ERP_URL_METHOD
+    : (ERP_BASE_URL ? `${ERP_BASE_URL.replace(/\/$/, '')}/api/method` : '');
+  if (!methodBase) throw new Error('ERP_URL_METHOD or ERP_BASE_URL must be set for login');
+
+  const url = `${methodBase.replace(/\/$/, '')}/login`;
+  const form = new URLSearchParams();
+  form.append('usr', username);
+  form.append('pwd', password);
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: form.toString(),
+  });
+  if (!res.ok) {
+    let msg = `HTTP ${res.status}`;
+    try {
+      const j = await res.json();
+      if (j && (j.message || j.exc || j.exception)) msg = j.message || j.exc || j.exception;
+    } catch {}
+    throw new Error(msg);
+  }
+  try {
+    return await res.json();
+  } catch {
+    return { ok: true } as any;
+  }
 }
