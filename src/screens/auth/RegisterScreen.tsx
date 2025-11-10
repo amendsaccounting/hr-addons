@@ -1,7 +1,11 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, ScrollView, Platform, StyleSheet, Alert } from 'react-native';
 
-export default function RegisterScreen() {
+type Props = {
+  onLogin?: () => void;
+};
+
+export default function RegisterScreen({ onLogin }: Props) {
   const [form, setForm] = useState({
     firstName: '',
     lastName: '',
@@ -80,6 +84,13 @@ export default function RegisterScreen() {
             <TouchableOpacity style={styles.registerButton} onPress={submit}>
               <Text style={styles.registerButtonText}>Register</Text>
             </TouchableOpacity>
+
+            <View style={{ alignItems: 'center', marginTop: 14 }}>
+              <Text style={{ color: '#666' }}>
+                Already have an account?{' '}
+                <Text style={{ color: '#007AFF', fontWeight: '600' }} onPress={onLogin}>Login</Text>
+              </Text>
+            </View>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>

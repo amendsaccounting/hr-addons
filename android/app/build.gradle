@@ -118,5 +118,10 @@ dependencies {
     }
 }
 
-// Ensure vector icon fonts are bundled with the Android app
-apply from: "../../node_modules/react-native-vector-icons/fonts.gradle"
+// Ensure vector icon fonts are bundled with the Android app (only if present)
+def fontsGradle = file("../../node_modules/react-native-vector-icons/fonts.gradle")
+if (fontsGradle.exists()) {
+    apply from: fontsGradle
+} else {
+    logger.lifecycle("[react-native-vector-icons] fonts.gradle not found; skipping font copy.")
+}
