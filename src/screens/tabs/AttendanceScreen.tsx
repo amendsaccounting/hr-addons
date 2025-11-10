@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, useColorScheme, ScrollView, Pressable, Alert, StatusBar } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { View, Text, StyleSheet, useColorScheme, ScrollView, Pressable, Alert } from 'react-native';
+import AppHeader from '../../components/AppHeader';
+ 
 import { postEmployeeCheckin, fetchEmployeeCheckins } from '../../services/erpnext';
 import { MOCK_RECENT_HISTORY, MOCK_RECENT_HISTORY_DAYS } from '../../config';
 
@@ -8,7 +9,6 @@ type WeekStats = { totalMinutes: number; days: number; late: number };
 type DayHistory = { date: Date; minutes: number; firstIn?: Date | null; lastOut?: Date | null };
 
 export default function AttendanceScreen() {
-  const insets = useSafeAreaInsets();
   const isDark = useColorScheme() === 'dark';
 
   const [now, setNow] = useState(new Date());
@@ -86,13 +86,8 @@ export default function AttendanceScreen() {
   };
 
   return (
-    <View style={[styles.screen, { paddingTop: Math.max(insets.top, 12) }]}>
-      <StatusBar barStyle="light-content" backgroundColor="#0b0b1b" />
-      <View style={{ height: insets.top, backgroundColor: '#0b0b1b', position: 'absolute', top: 0, left: 0, right: 0 }} />
-      <View style={styles.headerCard}>
-        <Text style={styles.headerTitle}>Attendance</Text>
-        <Text style={styles.headerSubtitle}>Track your work hours</Text>
-      </View>
+    <View style={styles.screen}>
+      <AppHeader title="Attendance" subtitle="Track your work hours" bgColor="#0b0b1b" statusBarStyle="light-content" />
 
       <ScrollView contentContainerStyle={{ paddingBottom: 24 }}>
         <View style={styles.card}>
@@ -178,9 +173,7 @@ function generateMockRecentHistory(refDate: Date, days: number): DayHistory[] { 
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },
-  headerCard: { backgroundColor: '#0b0b1b', paddingHorizontal: 16, paddingTop: 14, paddingBottom: 14, borderBottomLeftRadius: 14, borderBottomRightRadius: 14, marginBottom: 12 },
-  headerTitle: { color: '#fff', fontSize: 18, fontWeight: '700' },
-  headerSubtitle: { color: '#cbd5e1', fontSize: 12, marginTop: 2 },
+  
   card: { backgroundColor: '#fff', borderRadius: 14, marginHorizontal: 12, padding: 16, borderWidth: StyleSheet.hairlineWidth, borderColor: '#e5e7eb' },
   clockIconCircle: { alignSelf: 'center', width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f3f4f6', marginTop: 4, marginBottom: 12 },
   clockIcon: { fontSize: 24 },

@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, StatusBar, Animated, Dimensions } from 'react-n
 
 const { height } = Dimensions.get('window');
 
-export default function SplashScreen({ onFinish }: { onFinish?: (nextTab: 'Dashboard' | 'Register') => void }) {
+export default function SplashScreen({ onFinish }: { onFinish?: (nextTab: 'Dashboard' | 'Login') => void }) {
   // Optional native deps (fallback if missing)
   let LinearGradientComp: any = null;
   let IoniconsComp: any = null;
@@ -22,7 +22,7 @@ export default function SplashScreen({ onFinish }: { onFinish?: (nextTab: 'Dashb
     ]).start();
 
     Animated.timing(progressAnim, { toValue: 1, duration: 2000, useNativeDriver: false }).start(async () => {
-      let next: 'Dashboard' | 'Register' = 'Register';
+      let next: 'Dashboard' | 'Login' = 'Login';
       try {
         const emp = AsyncStorageMod ? await AsyncStorageMod.getItem('employeeData') : null;
         if (emp) next = 'Dashboard';

@@ -1,9 +1,9 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, StatusBar, Pressable, Alert, Modal, TextInput, FlatList } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { View, Text, StyleSheet, ScrollView, Pressable, Alert, Modal, TextInput, FlatList } from 'react-native';
+ 
+import AppHeader from '../../components/AppHeader';
 
 export default function LeaveScreen() {
-  const insets = useSafeAreaInsets();
 
   const balances = [
     { key: 'annual', name: 'Annual Leave', used: 6, total: 30 },
@@ -38,13 +38,8 @@ export default function LeaveScreen() {
   };
 
   return (
-    <View style={[styles.screen, { paddingTop: Math.max(insets.top, 12) }]}>
-      <StatusBar barStyle="light-content" backgroundColor="#0b0b1b" />
-      <View style={{ height: insets.top, backgroundColor: '#0b0b1b', position: 'absolute', top: 0, left: 0, right: 0 }} />
-      <View style={styles.headerCard}>
-        <Text style={styles.headerTitle}>Leave</Text>
-        <Text style={styles.headerSubtitle}>Manage your leave requests</Text>
-      </View>
+    <View style={styles.screen}>
+      <AppHeader title="Leave Management" subtitle="Manage your leave requests" bgColor="#0b0b1b" statusBarStyle="light-content" />
       <ScrollView contentContainerStyle={{ padding: 16 }}>
         <Text style={styles.sectionTitle}>Leave Balance</Text>
         {balances.map((b) => {
@@ -174,9 +169,7 @@ export default function LeaveScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#fff' },
-  headerCard: { backgroundColor: '#0b0b1b', paddingHorizontal: 16, paddingTop: 14, paddingBottom: 14, borderBottomLeftRadius: 14, borderBottomRightRadius: 14, marginBottom: 12 },
-  headerTitle: { color: '#fff', fontSize: 18, fontWeight: '700' },
-  headerSubtitle: { color: '#cbd5e1', fontSize: 12, marginTop: 2 },
+  
   placeholder: { fontSize: 16, color: '#374151' },
   sectionTitle: { fontSize: 16, fontWeight: '700', color: '#111827', marginBottom: 10 },
   balanceItemCard: { backgroundColor: '#fff', borderRadius: 12, borderWidth: 1.5, borderColor: '#cbd5e1', padding: 16, marginBottom: 12 },
