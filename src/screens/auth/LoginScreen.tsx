@@ -44,7 +44,7 @@ export default function LoginScreen({ onSignedIn, onRegister }: Props) {
       )}
 
       <View style={{ flex: 1 }}>
-        <View style={{ paddingTop: insets.top + 28, alignItems: 'center' }}>
+        <View style={[styles.header, { paddingTop: insets.top + 28 }]}>
           <View style={styles.logoBox}><Text style={{ fontSize: 24 }}>🏢</Text></View>
           <Text style={styles.appName}>ERPNext HR</Text>
           <Text style={styles.tagline}>Sign in to your account</Text>
@@ -96,7 +96,8 @@ const styles = StyleSheet.create({
   logoBox: { width: 56, height: 56, borderRadius: 12, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
   appName: { color: '#E5E7EB', fontWeight: '700', marginTop: 10 },
   tagline: { color: '#cbd5e1', marginTop: 4 },
-  whiteSection: { position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: '#fff', paddingHorizontal: 16, paddingTop: 16, borderTopLeftRadius: 16, borderTopRightRadius: 16 },
+  header: { alignItems: 'center', position: 'relative', zIndex: 2, elevation: 6 },
+  whiteSection: { position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: '#fff', paddingHorizontal: 16, paddingTop: 16, borderTopLeftRadius: 16, borderTopRightRadius: 16, zIndex: 1, elevation: 0 },
   label: { color: '#111827', fontWeight: '600', marginBottom: 6 },
   inputRow: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, backgroundColor: '#f9fafb', height: 44 },
   leftIcon: { marginLeft: 12, marginRight: 6, color: '#6b7280' },
@@ -116,8 +117,6 @@ const styles = StyleSheet.create({
   secondaryText: { color: '#111827', fontWeight: '600' },
   link: { color: '#0b6dff', fontWeight: '700' },
 });
-
-
 
 
 
