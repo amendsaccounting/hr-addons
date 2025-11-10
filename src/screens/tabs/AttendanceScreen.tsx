@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, useColorScheme, ScrollView, Pressable, Alert } from 'react-native';
+import { View, Text, StyleSheet, useColorScheme, ScrollView, Pressable, Alert, StatusBar } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { postEmployeeCheckin, fetchEmployeeCheckins } from '../../services/erpnext';
 import { MOCK_RECENT_HISTORY, MOCK_RECENT_HISTORY_DAYS } from '../../config';
@@ -87,6 +87,8 @@ export default function AttendanceScreen() {
 
   return (
     <View style={[styles.screen, { paddingTop: Math.max(insets.top, 12) }]}>
+      <StatusBar barStyle="light-content" backgroundColor="#0b0b1b" />
+      <View style={{ height: insets.top, backgroundColor: '#0b0b1b', position: 'absolute', top: 0, left: 0, right: 0 }} />
       <View style={styles.headerCard}>
         <Text style={styles.headerTitle}>Attendance</Text>
         <Text style={styles.headerSubtitle}>Track your work hours</Text>
@@ -206,4 +208,3 @@ const styles = StyleSheet.create({
   historyTime: { color: '#6b7280', fontSize: 11 },
   historyDuration: { color: '#059669', fontWeight: '600', fontSize: 13 },
 });
-

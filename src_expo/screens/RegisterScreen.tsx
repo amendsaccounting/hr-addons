@@ -11,7 +11,6 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import CountryPicker from 'react-native-country-picker-modal';
 import { validateRegisterForm,RegisterFormData } from '../utils/validation';
 import { ERP_APIKEY, ERP_SECRET, ERP_URL_RESOURCE, COMPANY_NAME } from '@env';
 import {getUserByEmail,updateUser, createUser, createEmployee} from '../services/erpApi'
@@ -43,8 +42,7 @@ const RegisterScreen = () => {
   const [showJoiningDatePicker, setShowJoiningDatePicker] = useState(false);
   const [date, setDate] = useState(new Date());
   const [joiningDate, setJoiningDate] = useState(new Date());
-  const [showCountryPicker, setShowCountryPicker] = useState(false);
-  const [countryCode, setCountryCode] = useState('AE');
+  // Country picker removed; show static dial code for now
 
   const handleInputChange = (field, value) => {
     setFormData({ ...formData, [field]: value });
@@ -71,10 +69,7 @@ const RegisterScreen = () => {
     }
   }
 
-  const onSelectCountry = (country) => {
-    setCountryCode(country.cca2);
-    handleInputChange('countryCode', `+${country.callingCode[0]}`);
-  };
+  // Country selection disabled; using default +971
 
 const convertToYYYYMMDD = (ddmmyyyy: string): string => {
   if (!ddmmyyyy) return '';
@@ -323,24 +318,10 @@ const handleLogin=()=>{
      <View style={styles.inputContainer}>
               <Text style={styles.label}>Phone Number</Text>
               <View style={[styles.phoneInputContainer, errors.phoneNumber && styles.inputError]}>
-                <TouchableOpacity
-                  style={styles.countryCodeButton}
-                  onPress={() => setShowCountryPicker(true)}
-                >
-                  <CountryPicker
-                    countryCode={countryCode}
-                    withFilter
-                    withFlag
-                    withCallingCode
-                    withEmoji
-                    onSelect={onSelectCountry}
-                    visible={showCountryPicker}
-                    onClose={() => setShowCountryPicker(false)}
-                    containerButtonStyle={styles.countryPickerButton}
-                  />
+                <View style={styles.countryCodeButton}>
                   <Text style={styles.countryCodeText}>{formData.countryCode}</Text>
                   <Ionicons name="chevron-down" size={16} color="#666" />
-                </TouchableOpacity>
+                </View>
                 <TextInput
                   style={styles.phoneInput}
                   placeholder="Enter your phone number"

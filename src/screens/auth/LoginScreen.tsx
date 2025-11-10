@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TextInput, Pressable, KeyboardAvoidingView, Platform, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, TextInput, Pressable, KeyboardAvoidingView, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { isValidEmail as validateEmail } from '../../utils/validation';
 
 type Props = {
   onSignedIn?: () => void;
@@ -10,7 +9,6 @@ type Props = {
 
 export default function LoginScreen({ onSignedIn, onRegister }: Props) {
   const insets = useSafeAreaInsets();
-  const gradientHeight = Math.max(320, Math.round(Dimensions.get('window').height * 0.55));
   let LinearGradientComp: any = null;
   let IoniconsComp: any = null;
   let AsyncStorageMod: any = null;
@@ -21,7 +19,6 @@ export default function LoginScreen({ onSignedIn, onRegister }: Props) {
   const [email, setEmail] = useState('');
   const [remember, setRemember] = useState(false);
   const [loading, setLoading] = useState(false);
-  const isValidEmail = validateEmail(email);
 
   const continueWithEmail = async () => {
     if (loading) return;
@@ -39,12 +36,9 @@ export default function LoginScreen({ onSignedIn, onRegister }: Props) {
   return (
     <View style={styles.container}>
       {LinearGradientComp ? (
-        <LinearGradientComp
-          colors={["#0f1224", "#151a33", "#0f1224"]}
-          style={{ position: 'absolute', top: 0, left: 0, right: 0, height: gradientHeight }}
-        />
+        <LinearGradientComp colors={["#0f1224", "#151a33", "#0f1224"]} style={StyleSheet.absoluteFillObject} />
       ) : (
-        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: gradientHeight, backgroundColor: '#0f1224' }} />
+        <View style={[StyleSheet.absoluteFillObject, { backgroundColor: '#0f1224' }]} />
       )}
 
       <KeyboardAvoidingView
@@ -67,7 +61,7 @@ export default function LoginScreen({ onSignedIn, onRegister }: Props) {
             </View>
           </View>
 
-          <View style={[styles.bottomContainer, { paddingBottom: insets.bottom, paddingHorizontal: 0 }]}>
+          <View style={[styles.bottomContainer, { paddingBottom: 16 + insets.bottom, paddingHorizontal: 0 }]}>
             <View style={styles.card}>
               <Text style={styles.label}>Email</Text>
               <View style={styles.inputRow}>
@@ -95,16 +89,7 @@ export default function LoginScreen({ onSignedIn, onRegister }: Props) {
                 </Pressable>
               </View>
 
-              <Pressable
-                disabled={!isValidEmail || loading}
-                onPress={continueWithEmail}
-                style={({ pressed }) => [
-                  styles.primaryBtn,
-                  (!isValidEmail || loading) ? styles.primaryBtnDisabled : styles.primaryBtnEnabled,
-                  pressed && isValidEmail && !loading && { opacity: 0.9 },
-                ]}
-                accessibilityState={{ disabled: !isValidEmail || loading }}
-              >
+              <Pressable onPress={continueWithEmail} style={({ pressed }) => [styles.primaryBtn, pressed && { opacity: 0.9 }]}>
                 <Text style={styles.primaryBtnText}>{loading ? 'Please wait…' : 'Continue'}</Text>
               </Pressable>
 
@@ -134,13 +119,13 @@ export default function LoginScreen({ onSignedIn, onRegister }: Props) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
+  container: { flex: 1, backgroundColor: '#0f1224' },
   headerWrap: { alignItems: 'center', marginBottom: 10 },
   iconCircle: { width: 52, height: 52, borderRadius: 12, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
   company: { color: '#E5E7EB', marginTop: 8, fontWeight: '700' },
   subtitle: { color: '#cbd5e1', marginTop: 4 },
-  card: { backgroundColor: '#fff', borderTopLeftRadius: 10, borderTopRightRadius: 10, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, padding: 16 },
-  bottomContainer: { paddingTop: 8, backgroundColor: '#fff', borderTopLeftRadius: 10, borderTopRightRadius: 10, overflow: 'hidden' },
+  card: { backgroundColor: '#fff', borderRadius: 12, padding: 16 },
+  bottomContainer: { paddingTop: 8 },
   label: { color: '#111827', fontWeight: '600', marginBottom: 6 },
   inputRow: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, backgroundColor: '#f9fafb', height: 44 },
   leftIcon: { marginLeft: 12, marginRight: 6, color: '#6b7280' },
@@ -151,9 +136,7 @@ const styles = StyleSheet.create({
   checkboxChecked: { backgroundColor: '#111827', borderColor: '#111827' },
   cbLabel: { color: '#374151' },
   link: { color: '#0b6dff', fontWeight: '600' },
-  primaryBtn: { marginTop: 12, borderRadius: 10, height: 48, alignItems: 'center', justifyContent: 'center' },
-  primaryBtnEnabled: { backgroundColor: '#0b0b1b' },
-  primaryBtnDisabled: { backgroundColor: '#cbd5e1' },
+  primaryBtn: { marginTop: 12, backgroundColor: '#0b0b1b', borderRadius: 10, height: 48, alignItems: 'center', justifyContent: 'center' },
   primaryBtnText: { color: '#fff', fontWeight: '700' },
   dividerRow: { flexDirection: 'row', alignItems: 'center', marginVertical: 14 },
   line: { flex: 1, height: 1, backgroundColor: '#e5e7eb' },
@@ -161,3 +144,4 @@ const styles = StyleSheet.create({
   secondaryBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, height: 44, backgroundColor: '#f9fafb' },
   secondaryText: { color: '#111827', fontWeight: '600' },
 });
+

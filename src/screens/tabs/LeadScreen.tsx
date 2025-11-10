@@ -1,16 +1,28 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, StatusBar } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function LeadScreen() {
+  const insets = useSafeAreaInsets();
   return (
-    <View style={styles.screen}>
-      <Text style={styles.text}>Leads</Text>
+    <View style={[styles.screen, { paddingTop: Math.max(insets.top, 12) }]}>
+      <StatusBar barStyle="light-content" backgroundColor="#0b0b1b" />
+      <View style={{ height: insets.top, backgroundColor: '#0b0b1b', position: 'absolute', top: 0, left: 0, right: 0 }} />
+      <View style={styles.headerCard}>
+        <Text style={styles.headerTitle}>Leads</Text>
+        <Text style={styles.headerSubtitle}>Track your sales leads</Text>
+      </View>
+      <ScrollView contentContainerStyle={{ padding: 16 }}>
+        <Text style={styles.placeholder}>Lead screen content goes here.</Text>
+      </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  text: { fontSize: 18, color: '#333' },
+  screen: { flex: 1, backgroundColor: '#fff' },
+  headerCard: { backgroundColor: '#0b0b1b', paddingHorizontal: 16, paddingTop: 14, paddingBottom: 14, borderBottomLeftRadius: 14, borderBottomRightRadius: 14, marginBottom: 12 },
+  headerTitle: { color: '#fff', fontSize: 18, fontWeight: '700' },
+  headerSubtitle: { color: '#cbd5e1', fontSize: 12, marginTop: 2 },
+  placeholder: { fontSize: 16, color: '#374151' },
 });
-

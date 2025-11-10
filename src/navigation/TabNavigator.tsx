@@ -104,6 +104,12 @@ function ProfileDrawer({ visible, anim, onClose }: { visible: boolean; anim: Ani
         <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: '#000', opacity: backdropOpacity }]} />
       </Pressable>
       <Animated.View style={[styles.drawerPanel, styles.drawerLeft, { width: panelWidth, transform: [{ translateX }] }] }>
+        <View style={styles.drawerHeader}>
+          <Text style={styles.drawerTitle}>Profile</Text>
+          <Pressable onPress={onClose} accessibilityRole="button" accessibilityLabel="Close profile">
+            <Ionicons name="close" size={22} color="#333" />
+          </Pressable>
+        </View>
         <View style={{ flex: 1 }}>
           <ProfileScreen />
         </View>

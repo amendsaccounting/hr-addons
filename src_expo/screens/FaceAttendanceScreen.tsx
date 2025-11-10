@@ -11,7 +11,6 @@ import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
 import axios from 'axios';
 import { ERP_APIKEY, ERP_SECRET, ERP_URL_RESOURCE, COMPANY_NAME } from '@env';
-import CountryPicker from 'react-native-country-picker-modal';
 
 const registerSchema = yup.object({
   firstName: yup.string().required('First name is required'),
@@ -57,10 +56,7 @@ defaultValues: {
 
   const firstName = watch('firstName');
 
-  const onSelectCountry = (country) => {
-    setCountryCode(country.cca2);
-    setCallingCode(country.callingCode[0]);
-  };
+  // Country selection disabled; using default callingCode
 
 const onSubmit = async (data) => {
   try {
@@ -276,15 +272,9 @@ const onSubmit = async (data) => {
                     name="phoneNumber"
                     render={({ field: { onChange, onBlur, value } }) => (
                       <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                        <CountryPicker
-                          countryCode={countryCode}
-                          withFilter
-                          withFlag
-                          withCallingCode
-                          withAlphaFilter
-                          onSelect={onSelectCountry}
-                          containerButtonStyle={{ marginRight: 12 }}
-                        />
+                        <View style={{ marginRight: 12, paddingHorizontal: 8, paddingVertical: 6, borderRadius: 6, backgroundColor: '#111827' }}>
+                          <Text style={{ color: '#fff', fontWeight: '600' }}>+{callingCode}</Text>
+                        </View>
                         <View style={{ flex: 1 }}>
                           <CustomInput
                             placeholder="Enter your phone number"
