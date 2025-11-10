@@ -44,7 +44,7 @@ export default function LoginScreen({ onSignedIn, onRegister }: Props) {
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.select({ ios: insets.top, android: 24 })}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top : 0}
       >
         <View style={{ flex: 1, justifyContent: 'space-between' }}>
           <View style={{ paddingHorizontal: 16, paddingTop: 28 }}>
@@ -76,8 +76,7 @@ export default function LoginScreen({ onSignedIn, onRegister }: Props) {
                   keyboardType="email-address"
                   textContentType={Platform.OS === 'ios' ? 'emailAddress' : 'emailAddress'}
                   autoCorrect={false}
-                  style={styles.input}
-                />
+                  style={styles.input} />
               </View>
 
               <View style={styles.rowBetween}>
@@ -144,4 +143,14 @@ const styles = StyleSheet.create({
   secondaryBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, height: 44, backgroundColor: '#f9fafb' },
   secondaryText: { color: '#111827', fontWeight: '600' },
 });
+
+
+
+
+
+
+
+
+
+
 
