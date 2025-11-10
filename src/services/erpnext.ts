@@ -112,8 +112,6 @@ export async function fetchEmployeeCheckins(params: {
   return (data?.data ?? []) as EmployeeCheckin[];
 }
 
-// Password login for ERPNext (verifies user credentials).
-// Uses /api/method/login with form-encoded body (usr, pwd).
 export async function loginWithPassword(username: string, password: string) {
   const methodBase = (ERP_URL_METHOD && ERP_URL_METHOD.trim().length > 0)
     ? ERP_URL_METHOD
@@ -145,4 +143,66 @@ export async function loginWithPassword(username: string, password: string) {
   } catch {
     return { ok: true } as any;
   }
+}
+
+// ---------------- Employee resource helpers ----------------
+export type Employee = {
+  name: string;
+  employee_name?: string;
+  user_id?: string;
+  status?: string;
+  company?: string;
+  personal_email?: string;
+  cell_number?: string;
+};
+
+/**
+ * Fetch a single Employee by linked user email (user_id).
+ * Returns null if no matching employee is found.
+ */
+export async function fetchEmployeeByUserId(userEmail: string): Promise<Employee | null> {
+  requireConfig();
+  const resourceBase = ERP_URL_RESOURCE && ERP_URL_RESOURCE.trim().length > 0
+    ? ERP_URL_RESOURCE
+    : `${ERP_BASE_URL.replace(/\/$/, '')}/api/resource`;
+
+  const fields = encodeURIComponent(JSON.stringify([
+    'name', 'employee_name', 'user_id', 'status', 'company', 'personal_email', 'cell_number'
+  ]));
+  const filters = encodeURIComponent(JSON.stringify([["user_id", "=", userEmail]]));
+  const url = `${resourceBase.replace(/\/$/, '')}/Employee?fields=${fields}&filters=${filters}&limit_page_length=1`;
+
+  const res = await fetch(url, { headers: { Authorization: authHeader() } });
+  if (!res.ok) {
+    let msg = `HTTP ${res.status}`;
+    try { const j = await res.json(); msg = j?.message || msg; } catch {}
+    throw new Error(`ERPNext fetch employee failed: ${msg}`);
+  }
+  const data = await res.json();
+  const list = (data?.data ?? []) as Employee[];
+  return list.length > 0 ? list[0] : null;
+}
+
+/**
+ * Fetch a single Employee by personal email.
+ */
+export async function fetchEmployeeByEmail(email: string): Promise<Employee | null> {
+  requireConfig();
+  const resourceBase = ERP_URL_RESOURCE && ERP_URL_RESOURCE.trim().length > 0
+    ? ERP_URL_RESOURCE
+    : `${ERP_BASE_URL.replace(/\/$/, '')}/api/resource`;
+  const fields = encodeURIComponent(JSON.stringify([
+    'name', 'employee_name', 'user_id', 'status', 'company', 'personal_email', 'cell_number'
+  ]));
+  const filters = encodeURIComponent(JSON.stringify([["personal_email", "=", email]]));
+  const url = `${resourceBase.replace(/\/$/, '')}/Employee?fields=${fields}&filters=${filters}&limit_page_length=1`;
+  const res = await fetch(url, { headers: { Authorization: authHeader() } });
+  if (!res.ok) {
+    let msg = `HTTP ${res.status}`;
+    try { const j = await res.json(); msg = j?.message || msg; } catch {}
+    throw new Error(`ERPNext fetch employee failed: ${msg}`);
+  }
+  const data = await res.json();
+  const list = (data?.data ?? []) as Employee[];
+  return list.length > 0 ? list[0] : null;
 }
