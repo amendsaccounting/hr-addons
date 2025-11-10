@@ -7,6 +7,7 @@ import AttendanceScreen from '../screens/tabs/AttendanceScreen';
 import LeaveScreen from '../screens/tabs/LeaveScreen';
 import LeadScreen from '../screens/tabs/LeadScreen';
 import ExpenseScreen from '../screens/tabs/ExpenseScreen';
+import ProfileScreen from '../screens/tabs/ProfileScreen';
 
 const Tab = createBottomTabNavigator();
 
@@ -20,15 +21,16 @@ export default function TabNavigator() {
             screenOptions={({ route }) => ({
                 headerShown: false,
                 tabBarHideOnKeyboard: true,
+                tabBarShowLabel: true,
                 tabBarIcon: ({ color, size, focused }) => {
                     let iconName;
 
                     switch (route.name) {
                         case 'Home':
-                            iconName = focused ? 'home' : 'home-outline';
+                            iconName = focused ? 'home-sharp' : 'home-outline';
                             break;
                         case 'Attendance':
-                            iconName = focused ? 'time' : 'time-outline';
+                            iconName = focused ? 'stopwatch' : 'stopwatch-outline';
                             break;
                         case 'Leave':
                             iconName = focused ? 'calendar' : 'calendar-outline';
@@ -37,7 +39,7 @@ export default function TabNavigator() {
                             iconName = focused ? 'people' : 'people-outline';
                             break;
                         case 'Expense':
-                            iconName = focused ? 'cash' : 'cash-outline';
+                            iconName = focused ? 'wallet' : 'wallet-outline';
                             break;
                         case 'Profile':
                             iconName = focused ? 'person-circle' : 'person-circle-outline';
@@ -46,7 +48,7 @@ export default function TabNavigator() {
                             iconName = 'ellipse-outline';
                     }
 
-                    return <TabIcon name={iconName} size={size} color={color} />;
+                    return <TabIcon name={iconName} size={focused ? 24 : 22} color={color} />;
                 },
                 tabBarActiveTintColor: 'black',
                 tabBarInactiveTintColor: 'gray',
@@ -67,6 +69,7 @@ export default function TabNavigator() {
             <Tab.Screen name="Leave" component={LeaveScreen} />
             <Tab.Screen name="Leads" component={LeadScreen} />
             <Tab.Screen name="Expense" component={ExpenseScreen} />
+            <Tab.Screen name="Profile" component={ProfileScreen} />
         </Tab.Navigator>
     );
 }

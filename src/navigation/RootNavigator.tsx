@@ -35,7 +35,7 @@ export default function RootNavigator() {
 
   if (stage === 'register') {
     return (
-      <RegisterScreen />
+      <RegisterScreen onLogin={() => setStage('login')} />
     );
   }
 
