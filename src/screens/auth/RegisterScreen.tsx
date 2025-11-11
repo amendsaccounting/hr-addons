@@ -4,6 +4,7 @@ import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view
 import DatePicker from 'react-native-date-picker';
 import CountryPicker, { Country, CountryCode, Flag } from 'react-native-country-picker-modal';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { validateEmail, validateRequired, validateDateDDMMYYYY, validateDateOrder, validatePhoneNumber } from '../../utils/validators';
 
 type Props = {
   onLogin?: () => void;
@@ -25,7 +26,12 @@ export default function RegisterScreen({ onLogin }: Props) {
     phoneNumber: '',
   });
 
-  const setField = (k: keyof typeof form, v: string) => setForm({ ...form, [k]: v });
+  const [errors, setErrors] = useState<{ [K in keyof typeof form]?: string | null }>({});
+
+  const setField = (k: keyof typeof form, v: string) => {
+    setForm((prev) => ({ ...prev, [k]: v }));
+    if (errors[k]) setErrors((e) => ({ ...e, [k]: null }));
+  };
 
   const [dobDate, setDobDate] = useState<Date | null>(null);
   const [dojDate, setDojDate] = useState<Date | null>(null);
@@ -54,10 +60,21 @@ export default function RegisterScreen({ onLogin }: Props) {
   // No keyboard listeners needed with KeyboardAwareScrollView
 
   const submit = () => {
-    if (!form.firstName || !form.lastName || !form.email) {
-      Alert.alert('Missing info', 'Please fill name and email');
-      return;
-    }
+    const nextErrors: typeof errors = {};
+    nextErrors.firstName = validateRequired('First name', form.firstName);
+    nextErrors.lastName = validateRequired('Last name', form.lastName);
+    nextErrors.gender = validateRequired('Gender', form.gender);
+    nextErrors.email = validateEmail(form.email);
+    nextErrors.dob = validateDateDDMMYYYY('Date of Birth', form.dob, { notFuture: true });
+    nextErrors.dateOfJoining = validateDateDDMMYYYY('Date of Joining', form.dateOfJoining, { notFuture: true }) ||
+      validateDateOrder('Date of Birth', form.dob, 'Date of Joining', form.dateOfJoining);
+    nextErrors.phoneNumber = validatePhoneNumber(form.phoneNumber);
+
+    // Remove nulls
+    const hasErr = Object.values(nextErrors).some((v) => v);
+    setErrors(nextErrors);
+    if (hasErr) return;
+
     Alert.alert('Register', 'Submitted (UI only)');
   };
 
@@ -83,11 +100,13 @@ export default function RegisterScreen({ onLogin }: Props) {
             <View style={styles.inputContainer}>
               <Text style={styles.label}>First Name</Text>
               <TextInput value={form.firstName} onChangeText={(t) => setField('firstName', t)} placeholder="John" style={styles.input} />
+              {!!errors.firstName && <Text style={styles.errorText}>{errors.firstName}</Text>}
             </View>
 
             <View style={styles.inputContainer}>
               <Text style={styles.label}>Last Name</Text>
               <TextInput value={form.lastName} onChangeText={(t) => setField('lastName', t)} placeholder="Doe" style={styles.input} />
+              {!!errors.lastName && <Text style={styles.errorText}>{errors.lastName}</Text>}
             </View>
 
             <View style={styles.inputContainer}>
@@ -99,6 +118,7 @@ export default function RegisterScreen({ onLogin }: Props) {
                   </TouchableOpacity>
                 ))}
               </View>
+              {!!errors.gender && <Text style={styles.errorText}>{errors.gender}</Text>}
             </View>
 
             <View style={styles.inputContainer}>
@@ -108,6 +128,7 @@ export default function RegisterScreen({ onLogin }: Props) {
                   {form.dob || 'Select date'}
                 </Text>
               </TouchableOpacity>
+              {!!errors.dob && <Text style={styles.errorText}>{errors.dob}</Text>}
             </View>
 
             <View style={styles.inputContainer}>
@@ -117,6 +138,7 @@ export default function RegisterScreen({ onLogin }: Props) {
                   {form.dateOfJoining || 'Select date'}
                 </Text>
               </TouchableOpacity>
+              {!!errors.dateOfJoining && <Text style={styles.errorText}>{errors.dateOfJoining}</Text>}
             </View>
 
             <View style={styles.inputContainer}>
@@ -134,6 +156,7 @@ export default function RegisterScreen({ onLogin }: Props) {
                 onSubmitEditing={() => phoneRef.current?.focus()}
                 blurOnSubmit={false}
               />
+              {!!errors.email && <Text style={styles.errorText}>{errors.email}</Text>}
             </View>
 
             <View style={styles.inputContainer}>
@@ -156,6 +179,7 @@ export default function RegisterScreen({ onLogin }: Props) {
                   keyboardType="phone-pad"
                   returnKeyType="done"
                 />
+                {!!errors.phoneNumber && <Text style={[styles.errorText, { position: 'absolute', left: 0, right: 0, bottom: -20 }]}>{errors.phoneNumber}</Text>}
               </View>
             </View>
 
@@ -227,6 +251,7 @@ const styles = StyleSheet.create({
   formContainer: { width: '100%' },
   inputContainer: { marginBottom: 16 },
   label: { fontSize: 14, fontWeight: '600', color: '#333', marginBottom: 8 },
+  errorText: { color: '#ef4444', marginTop: 6 },
   input: { height: 48, borderWidth: 1, borderColor: '#ddd', borderRadius: 10, paddingHorizontal: 12, fontSize: 16, backgroundColor: '#f9f9f9', color: '#333', ...(Platform.OS === 'android' ? { textAlignVertical: 'center' } as any : {}) },
   pickerInput: { justifyContent: 'center' },
   pickerText: { fontSize: 16, ...(Platform.OS === 'android' ? { includeFontPadding: false } as any : {}) },
@@ -244,3 +269,4 @@ const styles = StyleSheet.create({
 });
 
 // Country picker handled by react-native-country-picker-modal
+
