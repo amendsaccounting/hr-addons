@@ -79,3 +79,47 @@ export async function updateUser(email: string, updatedFields: Record<string, an
     return null;
   }
 }
+
+// Create a new User
+export async function createUser(userData: Record<string, any>): Promise<any | null> {
+  if (!BASE_URL || !API_KEY || !API_SECRET) {
+    throw new Error('ERP credentials or URL are not configured. Check .env and rebuild the app.');
+  }
+  const url = `${BASE_URL}/User`;
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(userData),
+    });
+    const json = await res.json().catch(() => null);
+    if (res.ok) return (json as any)?.data ?? json ?? true;
+    console.warn('ERP createUser error', json);
+    return null;
+  } catch (err) {
+    console.warn('ERP createUser exception', err);
+    return null;
+  }
+}
+
+// Create a new Employee
+export async function createEmployee(employeeData: Record<string, any>): Promise<any | null> {
+  if (!BASE_URL || !API_KEY || !API_SECRET) {
+    throw new Error('ERP credentials or URL are not configured. Check .env and rebuild the app.');
+  }
+  const url = `${BASE_URL}/Employee`;
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(employeeData),
+    });
+    const json = await res.json().catch(() => null);
+    if (res.ok) return (json as any)?.data ?? json ?? true;
+    console.warn('ERP createEmployee error', json);
+    return null;
+  } catch (err) {
+    console.warn('ERP createEmployee exception', err);
+    return null;
+  }
+}

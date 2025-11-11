@@ -4,8 +4,9 @@ import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view
 import DatePicker from 'react-native-date-picker';
 import CountryPicker, { Country, CountryCode, Flag } from 'react-native-country-picker-modal';
 import Ionicons from 'react-native-vector-icons/Ionicons';
-import { validateRequired } from '../../utils/validators';
-import { getUserByEmail, updateUser } from '../../services/erpApi';
+import { validateRequired, parseDateDDMMYYYY } from '../../utils/validators';
+import { getUserByEmail, updateUser, createUser, createEmployee } from '../../services/erpApi';
+import Config from 'react-native-config';
 
 type Props = {
   onLogin?: () => void;
@@ -94,7 +95,47 @@ const submit = async () => {
         Alert.alert('Update Failed', 'Could not update the phone number for this account.');
       }
     } else {
-      Alert.alert('Email Available', 'No account found with this email in ERPNext.');
+      const toISO = (ddmmyyyy: string) => {
+        const d = parseDateDDMMYYYY(ddmmyyyy);
+        if (!d) return '';
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const dd = String(d.getDate()).padStart(2, '0');
+        return `${d.getFullYear()}-${mm}-${dd}`;
+      };
+      const digits = String(form.phoneNumber || '').replace(/\D/g, '');
+      const fullPhone = `${form.countryCode}${digits}`;
+
+      const userPayload = {
+        email: form.email,
+        first_name: form.firstName,
+        last_name: form.lastName,
+        gender: form.gender,
+        date_of_birth: toISO(form.dob),
+        phone: fullPhone,
+      } as any;
+      const createdUser = await createUser(userPayload);
+      if (!createdUser) {
+        Alert.alert('Create Failed', 'Could not create ERPNext user.');
+        return;
+      }
+
+      const employeePayload = {
+        first_name: form.firstName,
+        last_name: form.lastName,
+        gender: form.gender,
+        date_of_birth: toISO(form.dob),
+        date_of_joining: toISO(form.dateOfJoining),
+        company: (Config as any).COMPANY_NAME || '',
+        user_id: form.email,
+        personal_email: form.email,
+        cell_number: fullPhone,
+      } as any;
+      const createdEmployee = await createEmployee(employeePayload);
+      if (createdEmployee) {
+        Alert.alert('Success', 'User and employee created successfully!');
+      } else {
+        Alert.alert('Partial Success', 'User created, but employee record failed.');
+      }
     }
   } catch (e: any) {
     const msg = e?.message || 'Could not verify email with ERPNext.';
