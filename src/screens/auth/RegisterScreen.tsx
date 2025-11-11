@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, ScrollView, Platform, StyleSheet, Alert } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Platform, StyleSheet, Alert } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import DatePicker from 'react-native-date-picker';
 import CountryPicker, { Country, CountryCode, Flag } from 'react-native-country-picker-modal';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -10,6 +11,9 @@ type Props = {
 
 
 export default function RegisterScreen({ onLogin }: Props) {
+  const scrollRef = React.useRef<KeyboardAwareScrollView | null>(null);
+  const emailRef = React.useRef<TextInput | null>(null);
+  const phoneRef = React.useRef<TextInput | null>(null);
   const [form, setForm] = useState({
     firstName: '',
     lastName: '',
@@ -29,6 +33,7 @@ export default function RegisterScreen({ onLogin }: Props) {
   const [showDOJ, setShowDOJ] = useState(false);
   const [showCountryPicker, setShowCountryPicker] = useState(false);
   const [countryIso, setCountryIso] = useState<CountryCode>('AE');
+  // KeyboardAwareScrollView handles keyboard insets; no manual kb state needed
 
   const formatDate = (d: Date | null) => {
     if (!d) return '';
@@ -41,6 +46,12 @@ export default function RegisterScreen({ onLogin }: Props) {
   const openPicker = (which: 'dob' | 'doj') => {
     if (which === 'dob') setShowDOB(true); else setShowDOJ(true);
   };
+
+  const scrollToInput = (ref: React.RefObject<any>) => {
+    // KeyboardAwareScrollView auto-handles focus; keep as no-op hook
+  };
+
+  // No keyboard listeners needed with KeyboardAwareScrollView
 
   const submit = () => {
     if (!form.firstName || !form.lastName || !form.email) {
@@ -57,8 +68,16 @@ export default function RegisterScreen({ onLogin }: Props) {
         <Text style={styles.appName}>Create Account</Text>
       </View>
 
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={styles.scrollContainer} keyboardShouldPersistTaps="handled">
+      <KeyboardAwareScrollView
+        innerRef={(r) => (scrollRef.current = r)}
+        contentContainerStyle={styles.scrollContainer}
+        enableOnAndroid
+        extraScrollHeight={100}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        enableAutomaticScroll
+        style={{ flex: 1 }}
+      >
           <View style={styles.formContainer}>
             <View style={styles.inputContainer}>
               <Text style={styles.label}>First Name</Text>
@@ -101,7 +120,19 @@ export default function RegisterScreen({ onLogin }: Props) {
 
             <View style={styles.inputContainer}>
               <Text style={styles.label}>Email</Text>
-              <TextInput value={form.email} onChangeText={(t) => setField('email', t)} placeholder="name@company.com" autoCapitalize="none" keyboardType="email-address" style={styles.input} />
+              <TextInput
+                ref={emailRef}
+                value={form.email}
+                onChangeText={(t) => setField('email', t)}
+                onFocus={() => scrollToInput(emailRef)}
+                placeholder="name@company.com"
+                autoCapitalize="none"
+                keyboardType="email-address"
+                style={styles.input}
+                returnKeyType="next"
+                onSubmitEditing={() => phoneRef.current?.focus()}
+                blurOnSubmit={false}
+              />
             </View>
 
             <View style={styles.inputContainer}>
@@ -115,11 +146,14 @@ export default function RegisterScreen({ onLogin }: Props) {
                   </View>
                 </TouchableOpacity>
                 <TextInput
+                  ref={phoneRef}
                   value={form.phoneNumber}
                   onChangeText={(t) => setField('phoneNumber', t)}
+                  onFocus={() => scrollToInput(phoneRef)}
                   style={[styles.input, { flex: 1, marginBottom: 0, borderTopLeftRadius: 0, borderBottomLeftRadius: 0 }]}
                   placeholder="501234567"
                   keyboardType="phone-pad"
+                  returnKeyType="done"
                 />
               </View>
             </View>
@@ -135,7 +169,7 @@ export default function RegisterScreen({ onLogin }: Props) {
               </Text>
             </View>
           </View>
-        </ScrollView>
+        </KeyboardAwareScrollView>
 
         {/* Date pickers using react-native-date-picker (modal) */}
         <DatePicker
@@ -175,7 +209,7 @@ export default function RegisterScreen({ onLogin }: Props) {
             setShowCountryPicker(false);
           }}
         />
-      </KeyboardAvoidingView>
+      
     </View>
   );
 }
