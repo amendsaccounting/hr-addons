@@ -4,8 +4,6 @@ import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view
 import DatePicker from 'react-native-date-picker';
 import CountryPicker, { Country, CountryCode, Flag } from 'react-native-country-picker-modal';
 import Ionicons from 'react-native-vector-icons/Ionicons';
-import { validateRequired } from '../../utils/validators';
-import { getUserByEmail } from '../../services/erpApi';
 
 type Props = {
   onLogin?: () => void;
@@ -40,7 +38,6 @@ export default function RegisterScreen({ onLogin }: Props) {
   const [showDOJ, setShowDOJ] = useState(false);
   const [showCountryPicker, setShowCountryPicker] = useState(false);
   const [countryIso, setCountryIso] = useState<CountryCode>('AE');
-  const [submitting, setSubmitting] = useState(false);
 
   const formatDate = (d: Date | null) => {
     if (!d) return '';
@@ -55,47 +52,11 @@ export default function RegisterScreen({ onLogin }: Props) {
   };
 
   const scrollToInput = (ref: React.RefObject<any>) => {
-    try {
-      if (scrollRef.current && ref.current) {
-        (scrollRef.current as any).scrollToFocusedInput?.(ref.current);
-      }
-    } catch {}
   };
 
 
 const submit = async () => {
-  const newErrors: { [K in keyof typeof form]?: string | null } = {
-    firstName: validateRequired('First name', form.firstName),
-    lastName: validateRequired('Last name', form.lastName),
-    gender: validateRequired('Gender', form.gender),
-    dob: validateRequired('Date of birth', form.dob),
-    dateOfJoining: validateRequired('Date of joining', form.dateOfJoining),
-    email: validateRequired('Email', form.email),
-    countryCode: validateRequired('Country code', form.countryCode),
-    phoneNumber: validateRequired('Phone number', form.phoneNumber),
-  };
 
-  setErrors(newErrors);
-
-  const hasErrors = Object.values(newErrors).some(Boolean);
-  if (hasErrors) return;
-
-  if (submitting) return;
-  setSubmitting(true);
-  try {
-    const existing = await getUserByEmail(form.email);
-    console.log("existing=====>",existing);
-    if (existing) {
-      Alert.alert('Email Exists', 'An account with this email already exists in ERPNext.');
-    } else {
-      Alert.alert('Email Available', 'No account found with this email in ERPNext.');
-    }
-  } catch (e: any) {
-    const msg = e?.message || 'Could not verify email with ERPNext.';
-    Alert.alert('Error', msg);
-  } finally {
-    setSubmitting(false);
-  }
 };
 
   return (
@@ -283,4 +244,5 @@ const styles = StyleSheet.create({
 });
 
 // Country picker handled by react-native-country-picker-modal
+
 

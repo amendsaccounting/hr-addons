@@ -1,0 +1,23 @@
+import Config from 'react-native-config';
+
+const headers: Record<string, string> = {
+  'Content-Type': 'application/json',
+  'Authorization': `token ${Config.ERP_APIKEY}:${Config.ERP_SECRET}`,
+};
+
+// Check if a user exists by email in ERPNext
+export async function getUserByEmail(email: string): Promise<any | null> {
+  try {
+    const url = `${Config.ERP_URL_RESOURCE}/User?filters=[["email","=","${email}"]]`;
+    const res = await fetch(url, { headers });
+    const json = await res.json();
+    const list = json?.data;
+    return Array.isArray(list) && list.length > 0 ? list[0] : null;
+  } catch (err) {
+    console.error('ERP getUserByEmail error:', err);
+    return null;
+  }
+}
+
+
+

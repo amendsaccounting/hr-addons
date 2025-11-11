@@ -1,9 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, useColorScheme, ScrollView, Pressable, Alert } from 'react-native';
 import AppHeader from '../../components/AppHeader';
- 
-import { postEmployeeCheckin, fetchEmployeeCheckins } from '../../services/erpnext';
-import { MOCK_RECENT_HISTORY, MOCK_RECENT_HISTORY_DAYS } from '../../config';
+
 
 type WeekStats = { totalMinutes: number; days: number; late: number };
 type DayHistory = { date: Date; minutes: number; firstIn?: Date | null; lastOut?: Date | null };
