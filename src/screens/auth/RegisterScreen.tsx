@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, ScrollView, Platform, StyleSheet, Alert } from 'react-native';
 import DatePicker from 'react-native-date-picker';
 import CountryPicker, { Country, CountryCode, Flag } from 'react-native-country-picker-modal';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 
 type Props = {
   onLogin?: () => void;
@@ -52,7 +53,7 @@ export default function RegisterScreen({ onLogin }: Props) {
   return (
     <View style={styles.container}>
       <View style={styles.headerSection}>
-        <View style={styles.iconWrapper}><Text style={{ fontSize: 24 }}>👤</Text></View>
+        <Ionicons name="business-outline" size={56} color="#fff" style={styles.hrIcon} />
         <Text style={styles.appName}>Create Account</Text>
       </View>
 
@@ -106,10 +107,10 @@ export default function RegisterScreen({ onLogin }: Props) {
             <View style={styles.inputContainer}>
               <Text style={styles.label}>Phone</Text>
               <View style={styles.phoneInputContainer}>
-                <TouchableOpacity onPress={() => setShowCountryPicker(true)} style={[styles.input, { width: 140, marginBottom: 0, borderTopRightRadius: 0, borderBottomRightRadius: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingRight: 10 }]}>
+                <TouchableOpacity onPress={() => setShowCountryPicker(true)} style={[styles.input, { width: 100, marginBottom: 0, borderTopRightRadius: 0, borderBottomRightRadius: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingRight: 6 }]}>
                   <Text style={styles.codeText}>{form.countryCode}</Text>
                   <View style={styles.codeRight}>
-                    <Flag countryCode={countryIso} flagSize={18} withEmoji={false} />
+                    <Flag countryCode={countryIso} flagSize={16} withEmoji={false} />
                     <Text style={styles.arrow}>▾</Text>
                   </View>
                 </TouchableOpacity>
@@ -182,7 +183,8 @@ export default function RegisterScreen({ onLogin }: Props) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
   headerSection: { backgroundColor: '#000', paddingTop: 48, paddingBottom: 24, alignItems: 'center', justifyContent: 'center' },
-  iconWrapper: { width: 70, height: 70, borderRadius: 35, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
+  iconWrapper: { width: 70, height: 70, borderRadius: 35, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', marginBottom: 12, display: 'none' as any },
+  hrIcon: { marginBottom: 12 },
   appName: { fontSize: 22, fontWeight: 'bold', color: '#fff' },
   scrollContainer: { flexGrow: 1, paddingHorizontal: 20, paddingTop: 20, paddingBottom: 30 },
   formContainer: { width: '100%' },
@@ -197,10 +199,10 @@ const styles = StyleSheet.create({
   phoneInputContainer: { flexDirection: 'row' },
   genderContainer: { flexDirection: 'row', justifyContent: 'space-between' },
   genderButton: { flex: 1, height: 48, borderWidth: 1, borderColor: '#ddd', borderRadius: 10, justifyContent: 'center', alignItems: 'center', marginHorizontal: 4, backgroundColor: '#f9f9f9' },
-  genderButtonSelected: { backgroundColor: '#007AFF', borderColor: '#007AFF' },
+  genderButtonSelected: { backgroundColor: '#0b0b1b', borderColor: '#0b0b1b' },
   genderText: { fontSize: 16, color: '#666', fontWeight: '500' },
-  genderTextSelected: { color: '#fff', fontWeight: '600' },
-  registerButton: { height: 52, backgroundColor: '#007AFF', borderRadius: 10, justifyContent: 'center', alignItems: 'center', marginTop: 24, shadowColor: '#007AFF', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 4.65, elevation: 8 },
+  genderTextSelected: { color: '#fff', fontWeight: '700' },
+  registerButton: { height: 52, backgroundColor: '#0b0b1b', borderRadius: 10, justifyContent: 'center', alignItems: 'center', marginTop: 24, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.35, shadowRadius: 5, elevation: 8 },
   registerButtonText: { color: '#fff', fontSize: 17, fontWeight: 'bold' },
 });
 
