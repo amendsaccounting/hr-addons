@@ -125,7 +125,7 @@ const submit = async () => {
         gender: form.gender,
         date_of_birth: toISO(form.dob),
         date_of_joining: toISO(form.dateOfJoining),
-        company: (Config as any).COMPANY_NAME || '',
+        company: 'Addon-S L.L.C',
         user_id: form.email,
         personal_email: form.email,
         cell_number: fullPhone,
