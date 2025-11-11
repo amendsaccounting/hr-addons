@@ -68,6 +68,7 @@ export default function RegisterScreen({ onLogin }: Props) {
         <Text style={styles.appName}>Create Account</Text>
       </View>
 
+      <View style={styles.contentWrapper}>
       <KeyboardAwareScrollView
         innerRef={(r) => (scrollRef.current = r)}
         contentContainerStyle={styles.scrollContainer}
@@ -170,6 +171,7 @@ export default function RegisterScreen({ onLogin }: Props) {
             </View>
           </View>
         </KeyboardAwareScrollView>
+      </View>
 
         {/* Date pickers using react-native-date-picker (modal) */}
         <DatePicker
@@ -215,10 +217,11 @@ export default function RegisterScreen({ onLogin }: Props) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
+  container: { flex: 1, backgroundColor: '#000' },
   headerSection: { backgroundColor: '#000', paddingTop: 48, paddingBottom: 24, alignItems: 'center', justifyContent: 'center' },
   iconWrapper: { width: 70, height: 70, borderRadius: 35, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', marginBottom: 12, display: 'none' as any },
   hrIcon: { marginBottom: 12 },
+  contentWrapper: { flex: 1, backgroundColor: '#fff', borderTopLeftRadius: 16, borderTopRightRadius: 16, overflow: 'hidden' },
   appName: { fontSize: 22, fontWeight: 'bold', color: '#fff' },
   scrollContainer: { flexGrow: 1, paddingHorizontal: 20, paddingTop: 20, paddingBottom: 30 },
   formContainer: { width: '100%' },
