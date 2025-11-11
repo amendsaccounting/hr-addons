@@ -93,8 +93,8 @@ export default function RegisterScreen({ onLogin }: Props) {
 
             <View style={styles.inputContainer}>
               <Text style={styles.label}>Date of Birth</Text>
-              <TouchableOpacity onPress={() => openPicker('dob')} style={styles.input}>
-                <Text style={{ color: form.dob ? '#111827' : '#9ca3af', fontSize: 16 }}>
+              <TouchableOpacity onPress={() => openPicker('dob')} style={[styles.input, styles.pickerInput]}>
+                <Text style={[styles.pickerText, { color: form.dob ? '#111827' : '#9ca3af' }]}>
                   {form.dob || 'Select date'}
                 </Text>
               </TouchableOpacity>
@@ -102,8 +102,8 @@ export default function RegisterScreen({ onLogin }: Props) {
 
             <View style={styles.inputContainer}>
               <Text style={styles.label}>Date of Joining</Text>
-              <TouchableOpacity onPress={() => openPicker('doj')} style={styles.input}>
-                <Text style={{ color: form.dateOfJoining ? '#111827' : '#9ca3af', fontSize: 16 }}>
+              <TouchableOpacity onPress={() => openPicker('doj')} style={[styles.input, styles.pickerInput]}>
+                <Text style={[styles.pickerText, { color: form.dateOfJoining ? '#111827' : '#9ca3af' }]}>
                   {form.dateOfJoining || 'Select date'}
                 </Text>
               </TouchableOpacity>
@@ -185,7 +185,9 @@ const styles = StyleSheet.create({
   formContainer: { width: '100%' },
   inputContainer: { marginBottom: 16 },
   label: { fontSize: 14, fontWeight: '600', color: '#333', marginBottom: 8 },
-  input: { height: 48, borderWidth: 1, borderColor: '#ddd', borderRadius: 10, paddingHorizontal: 12, fontSize: 16, backgroundColor: '#f9f9f9', color: '#333' },
+  input: { height: 48, borderWidth: 1, borderColor: '#ddd', borderRadius: 10, paddingHorizontal: 12, fontSize: 16, backgroundColor: '#f9f9f9', color: '#333', ...(Platform.OS === 'android' ? { textAlignVertical: 'center' } as any : {}) },
+  pickerInput: { justifyContent: 'center' },
+  pickerText: { fontSize: 16, ...(Platform.OS === 'android' ? { includeFontPadding: false } as any : {}) },
   phoneInputContainer: { flexDirection: 'row' },
   genderContainer: { flexDirection: 'row', justifyContent: 'space-between' },
   genderButton: { flex: 1, height: 48, borderWidth: 1, borderColor: '#ddd', borderRadius: 10, justifyContent: 'center', alignItems: 'center', marginHorizontal: 4, backgroundColor: '#f9f9f9' },
