@@ -1,24 +1,12 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, ScrollView, Platform, StyleSheet, Alert, Modal } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, ScrollView, Platform, StyleSheet, Alert } from 'react-native';
 import DatePicker from 'react-native-date-picker';
+import CountryPicker, { Country, CountryCode, Flag } from 'react-native-country-picker-modal';
 
 type Props = {
   onLogin?: () => void;
 };
 
-// Minimal country list for picker (no external deps)
-const COUNTRIES = [
-  { name: 'United Arab Emirates', dial: '+971' },
-  { name: 'India', dial: '+91' },
-  { name: 'United States', dial: '+1' },
-  { name: 'United Kingdom', dial: '+44' },
-  { name: 'Saudi Arabia', dial: '+966' },
-  { name: 'Pakistan', dial: '+92' },
-  { name: 'Bangladesh', dial: '+880' },
-  { name: 'Philippines', dial: '+63' },
-  { name: 'Egypt', dial: '+20' },
-  { name: 'South Africa', dial: '+27' },
-];
 
 export default function RegisterScreen({ onLogin }: Props) {
   const [form, setForm] = useState({
@@ -39,6 +27,7 @@ export default function RegisterScreen({ onLogin }: Props) {
   const [showDOB, setShowDOB] = useState(false);
   const [showDOJ, setShowDOJ] = useState(false);
   const [showCountryPicker, setShowCountryPicker] = useState(false);
+  const [countryIso, setCountryIso] = useState<CountryCode>('AE');
 
   const formatDate = (d: Date | null) => {
     if (!d) return '';
@@ -117,9 +106,12 @@ export default function RegisterScreen({ onLogin }: Props) {
             <View style={styles.inputContainer}>
               <Text style={styles.label}>Phone</Text>
               <View style={styles.phoneInputContainer}>
-                <TouchableOpacity onPress={() => setShowCountryPicker(true)} style={[styles.input, { width: 120, marginBottom: 0, borderTopRightRadius: 0, borderBottomRightRadius: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
-                  <Text style={{ fontSize: 16, color: '#333' }}>{form.countryCode}</Text>
-                  <Text style={{ color: '#666' }}>▾</Text>
+                <TouchableOpacity onPress={() => setShowCountryPicker(true)} style={[styles.input, { width: 140, marginBottom: 0, borderTopRightRadius: 0, borderBottomRightRadius: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingRight: 10 }]}>
+                  <Text style={styles.codeText}>{form.countryCode}</Text>
+                  <View style={styles.codeRight}>
+                    <Flag countryCode={countryIso} flagSize={18} withEmoji={false} />
+                    <Text style={styles.arrow}>▾</Text>
+                  </View>
                 </TouchableOpacity>
                 <TextInput
                   value={form.phoneNumber}
@@ -165,11 +157,22 @@ export default function RegisterScreen({ onLogin }: Props) {
           onCancel={() => setShowDOJ(false)}
         />
 
-        {/* Country picker modal */}
-        <CountryPickerModal
+        {/* Country picker modal (native) */}
+        <CountryPicker
+          countryCode={countryIso}
+          withFilter
+          withFlag
+          withCallingCode
+          withFlagButton={false}
+          withModal={true}
           visible={showCountryPicker}
           onClose={() => setShowCountryPicker(false)}
-          onSelect={(dial) => { setField('countryCode', dial); setShowCountryPicker(false); }}
+          onSelect={(c: Country) => {
+            setCountryIso(c.cca2 as CountryCode);
+            const dial = c.callingCode && c.callingCode.length > 0 ? `+${c.callingCode[0]}` : form.countryCode;
+            setField('countryCode', dial);
+            setShowCountryPicker(false);
+          }}
         />
       </KeyboardAvoidingView>
     </View>
@@ -188,6 +191,9 @@ const styles = StyleSheet.create({
   input: { height: 48, borderWidth: 1, borderColor: '#ddd', borderRadius: 10, paddingHorizontal: 12, fontSize: 16, backgroundColor: '#f9f9f9', color: '#333', ...(Platform.OS === 'android' ? { textAlignVertical: 'center' } as any : {}) },
   pickerInput: { justifyContent: 'center' },
   pickerText: { fontSize: 16, ...(Platform.OS === 'android' ? { includeFontPadding: false } as any : {}) },
+  codeText: { fontSize: 16, color: '#333', ...(Platform.OS === 'android' ? { includeFontPadding: false, textAlignVertical: 'center', lineHeight: 20 } as any : {}) },
+  codeRight: { flexDirection: 'row', alignItems: 'center' },
+  arrow: { color: '#666', marginLeft: 6, ...(Platform.OS === 'android' ? { includeFontPadding: false, lineHeight: 18 } as any : {}) },
   phoneInputContainer: { flexDirection: 'row' },
   genderContainer: { flexDirection: 'row', justifyContent: 'space-between' },
   genderButton: { flex: 1, height: 48, borderWidth: 1, borderColor: '#ddd', borderRadius: 10, justifyContent: 'center', alignItems: 'center', marginHorizontal: 4, backgroundColor: '#f9f9f9' },
@@ -198,28 +204,4 @@ const styles = StyleSheet.create({
   registerButtonText: { color: '#fff', fontSize: 17, fontWeight: 'bold' },
 });
 
-// Removed InlinePickers in favor of react-native-date-picker modal
-
-function CountryPickerModal(props: { visible: boolean; onClose: () => void; onSelect: (dial: string) => void; }) {
-  const { visible, onClose, onSelect } = props;
-  return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={{ flex:1, backgroundColor:'rgba(0,0,0,0.3)', justifyContent:'center', alignItems:'center' }}>
-        <View style={{ width:'85%', maxHeight: '70%', backgroundColor:'#fff', borderRadius: 12, padding: 12 }}>
-          <View style={{ flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom: 8 }}>
-            <Text style={{ fontSize: 16, fontWeight:'600' }}>Select Country</Text>
-            <TouchableOpacity onPress={onClose}><Text style={{ color:'#007AFF', fontWeight:'600' }}>Close</Text></TouchableOpacity>
-          </View>
-          <ScrollView>
-            {COUNTRIES.map((c) => (
-              <TouchableOpacity key={c.name} onPress={() => onSelect(c.dial)} style={{ paddingVertical: 12, flexDirection:'row', justifyContent:'space-between', borderBottomWidth: 1, borderBottomColor: '#eee' }}>
-                <Text style={{ fontSize: 15, color:'#111827' }}>{c.name}</Text>
-                <Text style={{ fontSize: 15, color:'#111827', fontWeight:'600' }}>{c.dial}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
-      </View>
-    </Modal>
-  );
-}
+// Country picker handled by react-native-country-picker-modal
