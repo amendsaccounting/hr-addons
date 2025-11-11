@@ -5,7 +5,7 @@ import DatePicker from 'react-native-date-picker';
 import CountryPicker, { Country, CountryCode, Flag } from 'react-native-country-picker-modal';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { validateRequired } from '../../utils/validators';
-import { getUserByEmail } from '../../services/erpApi';
+import { getUserByEmail, updateUser } from '../../services/erpApi';
 
 type Props = {
   onLogin?: () => void;
@@ -84,9 +84,15 @@ const submit = async () => {
   setSubmitting(true);
   try {
     const existing = await getUserByEmail(form.email);
-    console.log("existing=====>",existing);
     if (existing) {
-      Alert.alert('Email Exists', 'An account with this email already exists in ERPNext.');
+      const digits = String(form.phoneNumber || '').replace(/\D/g, '');
+      const fullPhone = `${form.countryCode}${digits}`;
+      const updated = await updateUser(form.email, { phone: fullPhone });
+      if (updated) {
+        Alert.alert('Updated', 'Existing account updated with your phone number.');
+      } else {
+        Alert.alert('Update Failed', 'Could not update the phone number for this account.');
+      }
     } else {
       Alert.alert('Email Available', 'No account found with this email in ERPNext.');
     }

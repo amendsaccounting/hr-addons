@@ -47,12 +47,35 @@ export async function getUserByEmail(email: string): Promise<any | null> {
     const list = j?.data;
     return Array.isArray(list) && list.length > 0 ? list[0] : null;
   };
-
-  // 2) Filter by name (primary key)
   try { const byName = await queryOnce('name'); if (byName) return byName; } catch (err) { console.warn('ERP byName error', err); }
-
-  // 3) Filter by email field (if present)
   try { const byEmail = await queryOnce('email'); if (byEmail) return byEmail; } catch (err) { console.warn('ERP byEmail error', err); }
 
   return null;
+}
+
+// Update an existing User by email (name)
+export async function updateUser(email: string, updatedFields: Record<string, any>): Promise<any | null> {
+  const e = String(email || '').trim();
+  if (!e) return null;
+
+  const base = BASE_URL;
+  if (!base || !API_KEY || !API_SECRET) {
+    throw new Error('ERP credentials or URL are not configured. Check .env and rebuild the app.');
+  }
+
+  const url = `${base}/User/${encodeURIComponent(e)}`;
+  try {
+    const res = await fetch(url, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify(updatedFields),
+    });
+    const json = await res.json().catch(() => null);
+    if (res.ok) return (json as any)?.data ?? json ?? true;
+    console.warn('ERP updateUser error', json);
+    return null;
+  } catch (err) {
+    console.warn('ERP updateUser exception', err);
+    return null;
+  }
 }
