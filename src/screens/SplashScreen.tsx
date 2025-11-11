@@ -4,7 +4,6 @@ import { View, Text, StyleSheet, StatusBar, Animated, Dimensions } from 'react-n
 const { height } = Dimensions.get('window');
 
 export default function SplashScreen({ onFinish }: { onFinish?: (nextTab: 'Dashboard' | 'Login') => void }) {
-  // Optional native deps (fallback if missing)
   let LinearGradientComp: any = null;
   let IoniconsComp: any = null;
   let AsyncStorageMod: any = null;
