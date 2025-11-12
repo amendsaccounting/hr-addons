@@ -1,7 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Platform, TextInput, Pressable, StyleProp, ViewStyle, Keyboard } from 'react-native';
+import { View, Text, StyleSheet, Platform, TextInput, Pressable, StyleProp, ViewStyle, Keyboard, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { validateEmail } from '../../utils/validators';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getUserByEmail, getEmployeeByEmail } from '../../services/erpApi'
+
 
 type Props = {
   onSignedIn?: () => void;
@@ -10,13 +13,10 @@ type Props = {
 
 export default function LoginScreen({ onSignedIn, onRegister }: Props) {
   const insets = useSafeAreaInsets();
-
-  // Optional native deps (safe require at runtime)
   let LinearGradientComp: any = null;
   try { LinearGradientComp = require('react-native-linear-gradient').default; } catch {}
   let IoniconsComp: any = null;
   try { IoniconsComp = require('react-native-vector-icons/Ionicons').default; } catch {}
-
   const [email, setEmail] = useState('');
   const [emailError, setEmailError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -31,13 +31,42 @@ export default function LoginScreen({ onSignedIn, onRegister }: Props) {
     return () => { s.remove(); h.remove(); };
   }, []);
 
+  // const onContinue = async () => {
+  //   if (loading) return;
+  //   const err = validateEmail(email);
+  //   if (err) { setEmailError(err); return; }
+  //   setLoading(true);
+  //   try { onSignedIn && onSignedIn(); } finally { setLoading(false); }
+  // };
+
   const onContinue = async () => {
-    if (loading) return;
-    const err = validateEmail(email);
-    if (err) { setEmailError(err); return; }
-    setLoading(true);
-    try { onSignedIn && onSignedIn(); } finally { setLoading(false); }
-  };
+  if (loading) return;
+  const err = validateEmail(email);
+  if (err) { 
+    setEmailError(err); 
+    return; 
+  }
+  setLoading(true);
+  try {
+    const user = await getUserByEmail(email.trim());
+    if (!user) {
+      Alert.alert('Not Found', 'Email does not exist.');
+      return;
+    }
+    await AsyncStorage.setItem('userEmail', user.email);
+    const employee = await getEmployeeByEmail(user.email);
+    console.log("employee===>",employee);
+    if (employee) {
+      await AsyncStorage.setItem('employeeId', employee.name);
+    }
+    onSignedIn && onSignedIn();
+  } catch (error) {
+    console.log('Login error:', error);
+    Alert.alert('Error', 'Something went wrong. Please try again.');
+  } finally {
+    setLoading(false);
+  }
+};
 
   return (
     <View style={styles.container}>

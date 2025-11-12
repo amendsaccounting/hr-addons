@@ -23,7 +23,6 @@ import {
   createUser,
   createEmployee,
 } from '../../services/erpApi';
-import Config from 'react-native-config';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type Props = {

@@ -123,3 +123,30 @@ export async function createEmployee(employeeData: Record<string, any>): Promise
     return null;
   }
 }
+
+// Lookup an Employee by email.
+// Tries common fields that may store the email: user_id, personal_email, company_email
+export async function getEmployeeByEmail(email: string): Promise<any | null> {
+  const e = String(email || '').trim();
+  if (!e) return null;
+
+  const base = BASE_URL;
+  if (!base || !API_KEY || !API_SECRET) {
+    throw new Error('ERP credentials or URL are not configured. Check .env and rebuild the app.');
+  }
+
+  const queryOnce = async (field: string) => {
+    const filters = encodeURIComponent(JSON.stringify([[field, '=', e]]));
+    const url = `${base}/Employee?filters=${filters}&limit_page_length=1`;
+    const r = await fetch(url, { headers });
+    const j = await r.json().catch(() => ({} as any));
+    const list = j?.data;
+    return Array.isArray(list) && list.length > 0 ? list[0] : null;
+  };
+
+  try { const byUserId = await queryOnce('user_id'); if (byUserId) return byUserId; } catch (err) { console.warn('ERP getEmployeeByEmail user_id error', err); }
+  try { const byPersonal = await queryOnce('personal_email'); if (byPersonal) return byPersonal; } catch (err) { console.warn('ERP getEmployeeByEmail personal_email error', err); }
+  try { const byCompany = await queryOnce('company_email'); if (byCompany) return byCompany; } catch (err) { console.warn('ERP getEmployeeByEmail company_email error', err); }
+
+  return null;
+}
