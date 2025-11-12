@@ -35,7 +35,10 @@ export default function RootNavigator() {
 
   if (stage === 'register') {
     return (
-      <RegisterScreen onLogin={() => setStage('login')} />
+      <RegisterScreen
+        onLogin={() => setStage('login')}
+        onRegistered={() => { setInitialTab('Dashboard'); setStage('tabs'); }}
+      />
     );
   }
 

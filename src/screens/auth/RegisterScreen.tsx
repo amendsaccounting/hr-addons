@@ -31,7 +31,7 @@ type Props = {
   onRegistered?: () => void;
 };
 
-export default function RegisterScreen({ onLogin }: Props) {
+export default function RegisterScreen({ onLogin, onRegistered }: Props) {
   const scrollRef = React.useRef<KeyboardAwareScrollView | null>(null);
   const emailRef = React.useRef<TextInput | null>(null);
   const phoneRef = React.useRef<TextInput | null>(null);
@@ -115,10 +115,12 @@ export default function RegisterScreen({ onLogin }: Props) {
             'Updated',
             'Existing account updated with your phone number.',
           );
-          if (updated.email) {
-            await AsyncStorage.setItem('username', updated.email);
-            console.log('Username saved to AsyncStorage:', updated.email);
+          const emailToStore = updated?.email || form.email;
+          if (emailToStore) {
+            await AsyncStorage.setItem('username', emailToStore);
+            console.log('Username saved to AsyncStorage:', emailToStore);
           }
+          onRegistered && onRegistered();
         } else {
           Alert.alert(
             'Update Failed',
@@ -173,6 +175,13 @@ export default function RegisterScreen({ onLogin }: Props) {
             'User created, but employee record failed.',
           );
         }
+
+        // Save email and navigate to tabs after successful create flow (full or partial)
+        if (form.email) {
+          await AsyncStorage.setItem('username', form.email);
+          console.log('Username saved to AsyncStorage:', form.email);
+        }
+        onRegistered && onRegistered();
       }
     } catch (e: any) {
       const msg = e?.message || 'Could not verify email with ERPNext.';
