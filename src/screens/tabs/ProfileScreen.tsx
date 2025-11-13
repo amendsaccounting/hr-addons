@@ -264,7 +264,7 @@ const styles = StyleSheet.create({
   detailValueInline: { color: '#111827', fontWeight: '600', flexShrink: 1, textAlign: 'right' },
 
   // Quick links
-  quickTitle: { marginTop: 14, marginBottom: 8, color: '#374151', fontWeight: '700' },
+  quickTitle: { marginTop: 14, marginBottom: 8, color: '#374151', fontWeight: '700', paddingHorizontal: 6 },
   quickCard: {
     backgroundColor: '#fff',
     borderRadius: 12,
@@ -288,9 +288,11 @@ const styles = StyleSheet.create({
   // Logout button
   logoutBtn: {
     marginTop: 12,
+    marginHorizontal: 6,
     backgroundColor: '#dc2626',
     borderRadius: 8,
     paddingVertical: 12,
+    paddingHorizontal: 14,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
