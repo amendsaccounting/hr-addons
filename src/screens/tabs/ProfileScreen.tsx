@@ -106,7 +106,7 @@ export default function ProfileScreen() {
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
+    <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
       {/* Header Card */}
       <View style={styles.headerCard}>
         {profile.image ? (
@@ -123,11 +123,11 @@ export default function ProfileScreen() {
 
       {/* Info Card */}
       <View style={styles.infoCard}>
-        <DetailRow icon="mail-outline" label="Email" value={displayEmail} />
-        <DetailRow icon="call-outline" label="Phone" value={displayPhone} />
-        <DetailRow icon="briefcase-outline" label="Department" value={displayDept} />
-        <DetailRow icon="calendar-outline" label="Join Date" value={displayJoinDate} />
-        <DetailRow icon="location-outline" label="Location" value={displayLocation} />
+        <DetailItem icon="mail-outline" label="Email" value={displayEmail} />
+        <DetailItem icon="call-outline" label="Phone" value={displayPhone} />
+        <DetailItem icon="briefcase-outline" label="Department" value={displayDept} />
+        <DetailItem icon="calendar-outline" label="Join Date" value={displayJoinDate} />
+        <DetailItem icon="location-outline" label="Location" value={displayLocation} />
       </View>
 
       {/* Quick Links */}
@@ -162,7 +162,7 @@ export default function ProfileScreen() {
         />
       </View>
 
-      {/* Logout button */}
+      {/* Logout */}
       <Pressable style={styles.logoutBtn} onPress={signOut}>
         <Ionicons name="log-out-outline" size={18} color="#fff" />
         <Text style={styles.logoutText}>Logout</Text>
@@ -171,13 +171,13 @@ export default function ProfileScreen() {
   );
 }
 
-function DetailRow({ icon, label, value }: { icon: string; label: string; value: string }) {
+function DetailItem({ icon, label, value }: { icon: string; label: string; value: string }) {
   return (
-    <View style={styles.detailRow}>
+    <View style={styles.DetailItem}>
       <Ionicons name={icon as any} size={18} color="#6b7280" style={styles.detailIcon} />
-      <View style={{ flex: 1 }}>
-        <Text style={styles.detailLabel}>{label}</Text>
-        <Text numberOfLines={1} style={styles.detailValue}>{value || '—'}</Text>
+      <View style={styles.detailTextRow}>
+        <Text style={styles.detailLabelInline}>{label}</Text>
+        <Text numberOfLines={1} style={styles.detailValueInline}>{value || '-'}</Text>
       </View>
     </View>
   );
@@ -215,9 +215,10 @@ function formatJoinDate(raw?: string | null): string | null {
 }
 
 const styles = StyleSheet.create({
-  container: { paddingBottom: 24 },
+  container: { padding: 0, paddingBottom: 24 },
   headerCard: {
     backgroundColor: '#090a1a',
+    borderRadius: 16,
     paddingTop: 20,
     paddingBottom: 16,
     alignItems: 'center',
@@ -233,9 +234,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   headerAvatarText: { color: '#fff', fontWeight: '700', fontSize: 18 },
-  headerName: { color: '#fff', fontWeight: '700', marginTop: 10 },
-  headerRole: { color: '#cbd5e1', fontSize: 12, marginTop: 4 },
-  headerEmpId: { color: '#9ca3af', fontSize: 11, marginTop: 4 },
+  headerName: { color: '#fff', fontWeight: '700', marginTop: 10, textAlign: 'center', width: '100%' },
+  headerRole: { color: '#cbd5e1', fontSize: 12, marginTop: 4, textAlign: 'center', width: '100%' },
+  headerEmpId: { color: '#9ca3af', fontSize: 11, marginTop: 4, textAlign: 'center', width: '100%' },
 
   // Info card
   infoCard: {
@@ -246,7 +247,7 @@ const styles = StyleSheet.create({
     padding: 16,
     marginVertical: 10,
   },
-  detailRow: {
+  DetailItem: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 10,
@@ -254,8 +255,13 @@ const styles = StyleSheet.create({
     borderBottomColor: '#eee',
   },
   detailIcon: { width: 22, marginRight: 10 },
+  // Legacy stacked styles (not used in current layout)
   detailLabel: { color: '#6b7280', fontSize: 11, marginBottom: 4 },
   detailValue: { color: '#111827', fontWeight: '600' },
+  // New inline label/value layout
+  detailTextRow: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  detailLabelInline: { color: '#6b7280', fontSize: 12, marginRight: 10 },
+  detailValueInline: { color: '#111827', fontWeight: '600', flexShrink: 1, textAlign: 'right' },
 
   // Quick links
   quickTitle: { marginTop: 14, marginBottom: 8, color: '#374151', fontWeight: '700' },
