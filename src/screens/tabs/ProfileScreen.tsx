@@ -6,7 +6,8 @@ import {
   Image,
   Pressable,
   Alert,
-  ScrollView,
+  FlatList,
+  ListRenderItem,
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -105,69 +106,94 @@ export default function ProfileScreen() {
     }
   };
 
-  return (
-    <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
-      {/* Header Card */}
-      <View style={styles.headerCard}>
-        {profile.image ? (
-          <Image source={{ uri: profile.image }} style={styles.headerAvatar} />
-        ) : (
-          <View style={styles.headerAvatarPlaceholder}>
-            <Text style={styles.headerAvatarText}>{initials}</Text>
+  // Prepare FlatList rows to virtualize screen while keeping design
+  const quickLinks = [
+    { key: 'ql-personal', icon: 'person-outline', label: 'Personal Information' },
+    { key: 'ql-payslips', icon: 'pricetags-outline', label: 'Payslips' },
+    { key: 'ql-calendar', icon: 'calendar-outline', label: 'My Calendar' },
+    { key: 'ql-docs', icon: 'document-text-outline', label: 'Documents' },
+    { key: 'ql-settings', icon: 'settings-outline', label: 'Settings' },
+  ];
+
+  type Row =
+    | { type: 'header'; key: string }
+    | { type: 'info'; key: string }
+    | { type: 'quick-title'; key: string }
+    | { type: 'quick-card'; key: string }
+    | { type: 'logout'; key: string };
+
+  const rows: Row[] = [
+    { type: 'header', key: 'header' },
+    { type: 'info', key: 'info' },
+    { type: 'quick-title', key: 'quick-title' },
+    { type: 'quick-card', key: 'quick-card' },
+    { type: 'logout', key: 'logout' },
+  ];
+
+  const renderItem: ListRenderItem<Row> = ({ item }) => {
+    switch (item.type) {
+      case 'header':
+        return (
+          <View style={styles.headerCard}>
+            {profile.image ? (
+              <Image source={{ uri: profile.image }} style={styles.headerAvatar} />
+            ) : (
+              <View style={styles.headerAvatarPlaceholder}>
+                <Text style={styles.headerAvatarText}>{initials}</Text>
+              </View>
+            )}
+            <Text style={styles.headerName}>{displayName}</Text>
+            <Text style={styles.headerRole}>{displayRole}</Text>
+            <Text style={styles.headerEmpId}>{displayEmpId}</Text>
           </View>
-        )}
-        <Text style={styles.headerName}>{displayName}</Text>
-        <Text style={styles.headerRole}>{displayRole}</Text>
-        <Text style={styles.headerEmpId}>{displayEmpId}</Text>
-      </View>
+        );
+      case 'info':
+        return (
+          <View style={styles.infoCard}>
+            <DetailItem icon="mail-outline" label="Email" value={displayEmail} />
+            <DetailItem icon="call-outline" label="Phone" value={displayPhone} />
+            <DetailItem icon="briefcase-outline" label="Department" value={displayDept} />
+            <DetailItem icon="calendar-outline" label="Join Date" value={displayJoinDate} />
+            <DetailItem icon="location-outline" label="Location" value={displayLocation} />
+          </View>
+        );
+      case 'quick-title':
+        return <Text style={styles.quickTitle}>Quick Links</Text>;
+      case 'quick-card':
+        return (
+          <View style={styles.quickCard}>
+            {quickLinks.map((q, idx) => (
+              <QuickItem
+                key={q.key}
+                icon={q.icon as any}
+                label={q.label}
+                onPress={() => Alert.alert(q.label, 'Coming soon.')}
+                first={idx === 0}
+                last={idx === quickLinks.length - 1}
+              />
+            ))}
+          </View>
+        );
+      case 'logout':
+        return (
+          <Pressable style={styles.logoutBtn} onPress={signOut}>
+            <Ionicons name="log-out-outline" size={18} color="#fff" />
+            <Text style={styles.logoutText}>Logout</Text>
+          </Pressable>
+        );
+      default:
+        return null;
+    }
+  };
 
-      {/* Info Card */}
-      <View style={styles.infoCard}>
-        <DetailItem icon="mail-outline" label="Email" value={displayEmail} />
-        <DetailItem icon="call-outline" label="Phone" value={displayPhone} />
-        <DetailItem icon="briefcase-outline" label="Department" value={displayDept} />
-        <DetailItem icon="calendar-outline" label="Join Date" value={displayJoinDate} />
-        <DetailItem icon="location-outline" label="Location" value={displayLocation} />
-      </View>
-
-      {/* Quick Links */}
-      <Text style={styles.quickTitle}>Quick Links</Text>
-      <View style={styles.quickCard}>
-        <QuickItem
-          icon="person-outline"
-          label="Personal Information"
-          onPress={() => Alert.alert('Personal Information', 'Coming soon.')}
-          first
-        />
-        <QuickItem
-          icon="pricetags-outline"
-          label="Payslips"
-          onPress={() => Alert.alert('Payslips', 'Coming soon.')}
-        />
-        <QuickItem
-          icon="calendar-outline"
-          label="My Calendar"
-          onPress={() => Alert.alert('My Calendar', 'Coming soon.')}
-        />
-        <QuickItem
-          icon="document-text-outline"
-          label="Documents"
-          onPress={() => Alert.alert('Documents', 'Coming soon.')}
-        />
-        <QuickItem
-          icon="settings-outline"
-          label="Settings"
-          onPress={() => Alert.alert('Settings', 'Coming soon.')}
-          last
-        />
-      </View>
-
-      {/* Logout */}
-      <Pressable style={styles.logoutBtn} onPress={signOut}>
-        <Ionicons name="log-out-outline" size={18} color="#fff" />
-        <Text style={styles.logoutText}>Logout</Text>
-      </Pressable>
-    </ScrollView>
+  return (
+    <FlatList
+      data={rows}
+      renderItem={renderItem}
+      keyExtractor={(r) => r.key}
+      contentContainerStyle={styles.container}
+      showsVerticalScrollIndicator={false}
+    />
   );
 }
 
