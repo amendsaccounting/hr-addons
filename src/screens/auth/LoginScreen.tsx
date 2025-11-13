@@ -31,14 +31,6 @@ export default function LoginScreen({ onSignedIn, onRegister }: Props) {
     return () => { s.remove(); h.remove(); };
   }, []);
 
-  // const onContinue = async () => {
-  //   if (loading) return;
-  //   const err = validateEmail(email);
-  //   if (err) { setEmailError(err); return; }
-  //   setLoading(true);
-  //   try { onSignedIn && onSignedIn(); } finally { setLoading(false); }
-  // };
-
   const onContinue = async () => {
   if (loading) return;
   const err = validateEmail(email);
