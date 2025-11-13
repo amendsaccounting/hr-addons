@@ -13,25 +13,26 @@ export default function LeadScreen() {
 
   return (
     <View style={styles.screen}>
-      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
-        {/* Header */}
-        <View style={styles.headerCard}>
-          <View style={styles.headerRow}>
-            <Ionicons name="trending-up" size={18} color="#fff" style={{ marginRight: 8 }} />
-            <Text style={styles.headerTitle}>Sales Leads</Text>
-          </View>
-          <Text style={styles.headerSubtitle}>Track and manage sales opportunities</Text>
-
-          <View style={styles.metricRow}>
-            {metrics.map(m => (
-              <View key={m.key} style={styles.metricCard}>
-                <Text style={styles.metricLabel}>{m.label}</Text>
-                <Text style={styles.metricValue}>{m.value}</Text>
-              </View>
-            ))}
-          </View>
+      {/* Fixed Header */}
+      <View style={styles.headerCard}>
+        <View style={styles.headerRow}>
+          <Ionicons name="trending-up" size={18} color="#fff" style={{ marginRight: 8 }} />
+          <Text style={styles.headerTitle}>Sales Leads</Text>
         </View>
+        <Text style={styles.headerSubtitle}>Track and manage sales opportunities</Text>
 
+        <View style={styles.metricRow}>
+          {metrics.map(m => (
+            <View key={m.key} style={styles.metricCard}>
+              <Text style={styles.metricLabel}>{m.label}</Text>
+              <Text style={styles.metricValue}>{m.value}</Text>
+            </View>
+          ))}
+        </View>
+      </View>
+
+      {/* Scrollable content below header */}
+      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         {/* Search + Add */}
         <View style={styles.searchRow}>
           <View style={styles.searchBox}>
