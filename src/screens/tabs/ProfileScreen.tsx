@@ -218,7 +218,7 @@ const styles = StyleSheet.create({
   container: { padding: 0, paddingBottom: 24 },
   headerCard: {
     backgroundColor: '#090a1a',
-    borderRadius: 16,
+    borderRadius: 0,
     paddingTop: 20,
     paddingBottom: 16,
     alignItems: 'center',
@@ -244,7 +244,8 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#e5e7eb',
-    padding: 16,
+    padding: 10,
+    marginHorizontal:12,
     marginVertical: 10,
   },
   DetailItem: {
@@ -255,7 +256,6 @@ const styles = StyleSheet.create({
     borderBottomColor: '#eee',
   },
   detailIcon: { width: 22, marginRight: 10 },
-  // Legacy stacked styles (not used in current layout)
   detailLabel: { color: '#6b7280', fontSize: 11, marginBottom: 4 },
   detailValue: { color: '#111827', fontWeight: '600' },
   // New inline label/value layout
@@ -264,13 +264,14 @@ const styles = StyleSheet.create({
   detailValueInline: { color: '#111827', fontWeight: '600', flexShrink: 1, textAlign: 'right' },
 
   // Quick links
-  quickTitle: { marginTop: 14, marginBottom: 8, color: '#374151', fontWeight: '700', paddingHorizontal: 6 },
+  quickTitle: { marginTop: 14, marginBottom: 8, color: '#374151', fontWeight: '700', paddingHorizontal: 12 },
   quickCard: {
     backgroundColor: '#fff',
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#e5e7eb',
     overflow: 'hidden',
+    marginHorizontal: 12,
   },
   quickItem: {
     paddingHorizontal: 12,
@@ -288,7 +289,7 @@ const styles = StyleSheet.create({
   // Logout button
   logoutBtn: {
     marginTop: 12,
-    marginHorizontal: 6,
+    marginHorizontal: 15,
     backgroundColor: '#dc2626',
     borderRadius: 8,
     paddingVertical: 12,
