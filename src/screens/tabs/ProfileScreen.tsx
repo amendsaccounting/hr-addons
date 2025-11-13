@@ -142,9 +142,11 @@ export default function ProfileScreen() {
                 <Text style={styles.headerAvatarText}>{initials}</Text>
               </View>
             )}
-            <Text style={styles.headerName}>{displayName}</Text>
-            <Text style={styles.headerRole}>{displayRole}</Text>
-            <Text style={styles.headerEmpId}>{displayEmpId}</Text>
+            <View style={styles.headerTextCol}>
+              <Text style={styles.headerName}>{displayName}</Text>
+              <Text style={styles.headerRole}>{displayRole}</Text>
+              <Text style={styles.headerEmpId}>{displayEmpId}</Text>
+            </View>
           </View>
         );
       case 'info':
@@ -244,12 +246,15 @@ const styles = StyleSheet.create({
   container: { padding: 0, paddingBottom: 24 },
   headerCard: {
     backgroundColor: '#090a1a',
-    borderRadius: 0,
     paddingTop: 20,
     paddingBottom: 16,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
     alignItems: 'center',
+    minHeight: 120,
     marginBottom: 14,
   },
+  headerTextCol: { flex: 1, marginLeft: 12 },
   headerAvatar: { width: 62, height: 62, borderRadius: 31, backgroundColor: '#111827' },
   headerAvatarPlaceholder: {
     width: 62,
@@ -260,9 +265,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   headerAvatarText: { color: '#fff', fontWeight: '700', fontSize: 18 },
-  headerName: { color: '#fff', fontWeight: '700', marginTop: 10, textAlign: 'center', width: '100%' },
-  headerRole: { color: '#cbd5e1', fontSize: 12, marginTop: 4, textAlign: 'center', width: '100%' },
-  headerEmpId: { color: '#9ca3af', fontSize: 11, marginTop: 4, textAlign: 'center', width: '100%' },
+  headerName: { color: '#fff', fontWeight: '700', marginTop: 0 },
+  headerRole: { color: '#cbd5e1', fontSize: 12, marginTop: 2 },
+  headerEmpId: { color: '#9ca3af', fontSize: 11, marginTop: 2 },
 
   // Info card
   infoCard: {
