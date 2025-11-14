@@ -35,7 +35,7 @@
 		<true/>
 	</dict>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string></string>
+	<string>This app uses your location to tag attendance check-ins.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>This app needs access to your photo library to attach receipt images.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
@@ -58,3 +58,4 @@
 	<false/>
 </dict>
 </plist>
+

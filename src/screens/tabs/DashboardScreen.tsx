@@ -34,24 +34,26 @@ export default function DashboardScreen({ onOpenMenu }: Props) {
       {/* Header */}
       <View style={[styles.headerCard, { paddingTop: insets.top + 12 }]}>
         <View style={styles.headerTopRow}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Open menu"
-            onPress={onOpenMenu}
-            style={styles.headerMenu}
-          >
-            {profileImage ? (
-              <Image source={{ uri: profileImage }} style={styles.headerAvatar} />
-            ) : (
-              <Ionicons name="person-circle-outline" size={22} color="#111827" />
-            )}
-          </Pressable>
+          <View style={styles.headerLeftRow}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Open menu"
+              onPress={onOpenMenu}
+              style={styles.headerMenu}
+            >
+              {profileImage ? (
+                <Image source={{ uri: profileImage }} style={styles.headerAvatar} />
+              ) : (
+                <Ionicons name="person-circle-outline" size={22} color="#111827" />
+              )}
+            </Pressable>
+            <Text style={styles.headerTitle}>Welcome Back,</Text>
+          </View>
           <View style={styles.badge}>
             <Ionicons name="notifications-outline" size={16} color="#fff" />
             <View style={styles.badgeDot}><Text style={styles.badgeDotText}>3</Text></View>
           </View>
         </View>
-        <Text style={styles.headerTitle}>Welcome Back,</Text>
         <Text style={styles.headerName}>{username || 'John Doe'}</Text>
         <View style={styles.rowBetween}>
           <Text style={styles.empId}>Employee ID: EMP-2024-001</Text>
@@ -96,10 +98,11 @@ const styles = StyleSheet.create({
   contentContainer: { flexGrow: 1, paddingBottom: 24 },
   headerCard: { backgroundColor: '#090a1a', borderBottomLeftRadius: 16, borderBottomRightRadius: 16, paddingHorizontal: 16, paddingBottom: 16 },
   headerTitle: { color: '#cbd5e1', fontSize: 14 },
-  headerName: { color: '#fff', fontWeight: '700', fontSize: 18, marginTop: 4 },
-  headerTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
-  rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6 },
-  headerMenu: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
+  headerName: { color: '#fff', fontWeight: '700', fontSize: 18, marginTop: 2 },
+  headerLeftRow: { flexDirection: 'row', alignItems: 'center' },
+  headerTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
+  rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 2 },
+  headerMenu: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', marginRight: 8 },
   headerAvatar: { width: 28, height: 28, borderRadius: 14 },
   empId: { color: '#9ca3af', fontSize: 12 },
   badge: { width: 28, height: 28, borderRadius: 14, backgroundColor: '#111827', alignItems: 'center', justifyContent: 'center', position: 'relative' },
@@ -156,6 +159,5 @@ function ActivityRow({ iconColor, title, when }: { iconColor: string; title: str
     </View>
   );
 }
-
 
 

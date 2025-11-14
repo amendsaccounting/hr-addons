@@ -14,21 +14,29 @@ export default function SplashScreen({ onFinish }: { onFinish?: (nextTab: 'Dashb
   const scaleAnim = useRef(new Animated.Value(0.5)).current;
   const progressAnim = useRef(new Animated.Value(0)).current;
 
-  useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
-      Animated.spring(scaleAnim, { toValue: 1, tension: 20, friction: 7, useNativeDriver: true }),
-    ]).start();
+useEffect(() => {
+  Animated.parallel([
+    Animated.timing(fadeAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
+    Animated.spring(scaleAnim, { toValue: 1, tension: 20, friction: 7, useNativeDriver: true }),
+  ]).start();
 
-    Animated.timing(progressAnim, { toValue: 1, duration: 2000, useNativeDriver: false }).start(async () => {
-      let next: 'Dashboard' | 'Login' = 'Login';
-      try {
-        const emp = AsyncStorageMod ? await AsyncStorageMod.getItem('employeeData') : null;
-        if (emp) next = 'Dashboard';
-      } catch {}
-      onFinish && onFinish(next);
-    });
-  }, [fadeAnim, scaleAnim, progressAnim, onFinish]);
+  Animated.timing(progressAnim, { toValue: 1, duration: 2000, useNativeDriver: false }).start(async () => {
+    let next: 'Dashboard' | 'Login' = 'Login';
+    try {
+      if (AsyncStorageMod) {
+        const userEmail = await AsyncStorageMod.getItem('userEmail');
+        const employeeId = await AsyncStorageMod.getItem('employeeId');
+        if (userEmail && employeeId) {
+          next = 'Dashboard';
+        }
+      }
+    } catch (err) {
+      console.log('AsyncStorage read error:', err);
+    }
+    onFinish && onFinish(next);
+  });
+}, [fadeAnim, scaleAnim, progressAnim, onFinish]);
+
 
   const progressWidth = progressAnim.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] });
 

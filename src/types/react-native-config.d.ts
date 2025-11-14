@@ -7,6 +7,9 @@ declare module 'react-native-config' {
     ERP_SECRET: string;
     ERP_API_SECRET: string;
     COMPANY_NAME: string;
+    GOOGLE_MAPS_API_KEY?: string;
+    GOOGLE_API_KEY?: string;
+    OPENCAGE_API_KEY?: string;
     [key: string]: string;
   }
   const Config: EnvConfig;

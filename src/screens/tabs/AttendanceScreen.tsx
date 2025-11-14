@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, useColorScheme, ScrollView, Pressable, Alert } from 'react-native';
+import { View, Text, StyleSheet, useColorScheme, ScrollView, Pressable, Alert, Linking, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { checkInOutDoctype, requestLocationPermission, fetchEmployeeCheckins } from '../../services/attendance';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 
 type WeekStats = { totalMinutes: number; days: number; late: number };
@@ -39,51 +40,97 @@ export default function AttendanceScreen() {
   const timeText = formatTime(now);
   const dateText = formatDate(now);
 
-  const onClockIn = async () => {
-    if (submitting) return;
-    try {
-      setSubmitting(true);
-      const t = new Date();
-      await postEmployeeCheckin('IN', t, { employeeId });
-      setIsClockedIn(true);
-      setClockInAt(t);
-      const stats = await computeWeekStats(employeeId, new Date());
-      setWeekStats(stats);
-      const list = await computeRecentHistory(employeeId, new Date(), 14);
-      setRecent(list);
-    } catch (e: any) {
-      Alert.alert('Clock In Failed', e?.message || 'Unexpected error');
-    } finally {
-      setSubmitting(false);
+const onClockIn = async () => {
+  if (submitting) return;
+  setSubmitting(true);
+  try {
+    const perm = await requestLocationPermission();
+    if (!perm) {
+      Alert.alert(
+        'Enable Location',
+        'Location permission is required to clock in. Open settings to grant access.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Open Settings', onPress: () => Linking.openSettings?.() },
+        ]
+      );
+      return;
     }
-  };
+    const res = await checkInOutDoctype(employeeId, 'IN');
+    if (!res) throw new Error('Clock in failed');
+    setIsClockedIn(true);
+    setClockInAt(new Date());
+    await refreshData();
+    Alert.alert('Clock In', 'Successfully clocked in!');
+  } catch (e) {
+    const msg = String((e as any)?.message || 'Unexpected error');
+    if (msg.includes('Location is required')) {
+      Alert.alert(
+        'Enable GPS',
+        'Turn on device location (GPS) and try again. If already on, move near a window or outdoors to improve GPS.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Open Settings', onPress: () => Linking.openSettings?.() },
+        ]
+      );
+    } else {
+      Alert.alert('Clock In Failed', msg);
+    }
+  } finally {
+    setSubmitting(false);
+  }
+};
 
-  const onClockOut = async () => {
-    if (submitting) return;
-    const clockOutAt = new Date();
-    try {
-      setSubmitting(true);
-      await postEmployeeCheckin('OUT', clockOutAt, { employeeId });
-      let message = 'Checked out.';
-      if (clockInAt) {
-        const mins = Math.max(0, Math.round((clockOutAt.getTime() - clockInAt.getTime()) / 60000));
-        const h = Math.floor(mins / 60);
-        const m = mins % 60;
-        message = `Worked ${h}h ${m}m`;
-      }
-      Alert.alert('Clock Out', message);
-      setIsClockedIn(false);
-      setClockInAt(null);
-      const stats = await computeWeekStats(employeeId, new Date());
-      setWeekStats(stats);
-      const list = await computeRecentHistory(employeeId, new Date(), 14);
-      setRecent(list);
-    } catch (e: any) {
-      Alert.alert('Clock Out Failed', e?.message || 'Unexpected error');
-    } finally {
-      setSubmitting(false);
+
+const onClockOut = async () => {
+  if (submitting) return;
+  const clockOutAt = new Date();
+  try {
+    setSubmitting(true);
+    const perm = await requestLocationPermission();
+    if (!perm) {
+      Alert.alert(
+        'Enable Location',
+        'Location permission is required to clock out. Open settings to grant access.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Open Settings', onPress: () => Linking.openSettings?.() },
+        ]
+      );
+      return;
     }
-  };
+    const res = await checkInOutDoctype(employeeId, 'OUT');
+    if (!res) throw new Error('Clock out failed');
+    let message = 'Checked out.';
+    if (clockInAt) {
+      const mins = Math.max(0, Math.round((clockOutAt.getTime() - (clockInAt as Date).getTime()) / 60000));
+      const h = Math.floor(mins / 60);
+      const m = mins % 60;
+      message = `Worked ${h}h ${m}m`;
+    }
+    Alert.alert('Clock Out', message);
+    setIsClockedIn(false);
+    setClockInAt(null);
+    await refreshData();
+  } catch (e) {
+    const msg = String((e as any)?.message || 'Unexpected error');
+    if (msg.includes('Location is required')) {
+      Alert.alert(
+        'Enable GPS',
+        'Turn on device location (GPS) and try again. If already on, move near a window or outdoors to improve GPS.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Open Settings', onPress: () => Linking.openSettings?.() },
+        ]
+      );
+    } else {
+      Alert.alert('Clock Out Failed', msg);
+    }
+  } finally {
+    setSubmitting(false);
+  }
+};
+
 
   return (
     <View style={styles.screen}>
@@ -223,6 +270,14 @@ const styles = StyleSheet.create({
   emptyPill: { width: 140, height: 44, borderRadius: 22, backgroundColor: '#f3f4f6', alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
   historyEmpty: { color: '#9ca3af' },
 });
+
+
+
+
+
+
+
+
 
 
 
