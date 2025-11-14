@@ -116,7 +116,8 @@ export async function checkInOutDoctype(employeeId: string, logType: LogType): P
     throw new Error('ERP credentials or URL are not configured.');
   }
 
-  const url = `${BASE_URL}/Employee Checkin`;
+  const doctype = encodeURIComponent('Employee Checkin');
+  const url = `${BASE_URL}/${doctype}`;
   const time = toErpTimestamp(new Date());
   const location = await getLocationString();
 
@@ -164,7 +165,8 @@ export async function fetchEmployeeCheckins(args: FetchCheckinsArgs): Promise<Em
     limit_page_length: String(Math.max(1, Math.min(2000, limit))),
   });
 
-  const url = `${BASE_URL}/Employee Checkin?${params.toString()}`;
+  const doctype = encodeURIComponent('Employee Checkin');
+  const url = `${BASE_URL}/${doctype}?${params.toString()}`;
 
   try {
     const res = await fetch(url, { headers });

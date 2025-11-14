@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, useColorScheme, ScrollView, Pressable, Alert, Linking, Platform } from 'react-native';
+import { View, Text, StyleSheet, useColorScheme, ScrollView, Pressable, Alert, Linking, Platform, RefreshControl, AppState, AppStateStatus } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { checkInOutDoctype, requestLocationPermission, fetchEmployeeCheckins } from '../../services/attendance';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -15,10 +16,13 @@ export default function AttendanceScreen() {
   const [isClockedIn, setIsClockedIn] = useState(false);
   const [clockInAt, setClockInAt] = useState<Date | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const employeeId = 'HR-EMP-00020';
+  const [employeeId, setEmployeeId] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   const [weekStats, setWeekStats] = useState<WeekStats>({ totalMinutes: 0, days: 0, late: 0 });
   const [recent, setRecent] = useState<DayHistory[]>([]);
+  type IOPair = { date: Date; inTime: Date | null; outTime: Date | null; locationIn?: string | null; locationOut?: string | null };
+  const [recentPairs, setRecentPairs] = useState<IOPair[]>([]);
 
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 1000);
@@ -27,21 +31,57 @@ export default function AttendanceScreen() {
 
   const refreshData = async () => {
     try {
+      if (!employeeId) return;
       const today = new Date();
       const stats = await computeWeekStats(employeeId, today);
       setWeekStats(stats);
       const list = await computeRecentHistory(employeeId, today, 14);
       setRecent(list);
+      const pairs = await computeRecentIOPairs(employeeId, today, 14);
+      setRecentPairs(pairs);
     } catch {}
   };
 
   useEffect(() => { refreshData(); }, [employeeId]);
+
+  // Load logged-in employee ID from AsyncStorage
+  useEffect(() => {
+    (async () => {
+      try {
+        const id = await AsyncStorage.getItem('employeeId');
+        if (id) setEmployeeId(id);
+      } catch {}
+    })();
+  }, []);
+
+  // Refresh when app comes to foreground (focus-like behavior)
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state: AppStateStatus) => {
+      if (state === 'active') {
+        refreshData();
+      }
+    });
+    return () => sub.remove();
+  }, [employeeId]);
+
+  const onPullRefresh = async () => {
+    try {
+      setRefreshing(true);
+      await refreshData();
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const timeText = formatTime(now);
   const dateText = formatDate(now);
 
 const onClockIn = async () => {
   if (submitting) return;
+  if (!employeeId) {
+    Alert.alert('Not Signed In', 'Employee not found. Please login again.');
+    return;
+  }
   setSubmitting(true);
   try {
     const perm = await requestLocationPermission();
@@ -84,6 +124,10 @@ const onClockIn = async () => {
 
 const onClockOut = async () => {
   if (submitting) return;
+  if (!employeeId) {
+    Alert.alert('Not Signed In', 'Employee not found. Please login again.');
+    return;
+  }
   const clockOutAt = new Date();
   try {
     setSubmitting(true);
@@ -139,7 +183,10 @@ const onClockOut = async () => {
         <Text style={styles.headerSubtitle}>Track your work hours</Text>
       </View>
 
-      <ScrollView contentContainerStyle={{ paddingBottom: 24 }}>
+      <ScrollView
+        contentContainerStyle={{ paddingBottom: 24 }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onPullRefresh} />}
+      >
         <View style={styles.card}>
           <View style={styles.clockIconCircle}><Text style={styles.clockIcon}>🕒</Text></View>
           <Text style={styles.clockTime}>{timeText}</Text>
@@ -150,7 +197,7 @@ const onClockOut = async () => {
           </View>
           <View style={[styles.locationRow, { marginTop: -8, marginBottom: 16 }]}>
             <Text style={styles.locationDot}>🧾</Text>
-            <Text style={styles.locationText}>Employee: {employeeId}</Text>
+            <Text style={styles.locationText}>Employee: {employeeId || '-'}</Text>
           </View>
           <Pressable onPress={isClockedIn ? onClockOut : onClockIn} style={({ pressed }) => [styles.primaryButton, isClockedIn ? styles.btnDanger : styles.btnPrimary, pressed && styles.btnPressed]}>
             <Text style={styles.primaryButtonText}>{submitting ? 'Please wait…' : isClockedIn ? 'Clock Out' : 'Clock In'}</Text>
@@ -165,32 +212,7 @@ const onClockOut = async () => {
         </View>
 
         <Text style={styles.sectionTitle}>Recent History</Text>
-        <View style={styles.historyCard}>
-          {recent.length === 0 ? (
-            <View style={styles.emptyWrap}>
-              <View style={styles.emptyPill}>
-                <Ionicons name="time-outline" size={24} color="#6b7280" />
-              </View>
-              <Text style={styles.historyEmpty}>No records</Text>
-            </View>
-          ) : (
-            recent.slice().sort((a,b)=>b.date.getTime()-a.date.getTime()).slice(0,10).map((d, idx) => (
-              <View key={idx} style={[styles.historyRow, idx !== 0 && styles.historyRowDivider]}>
-                <View style={{ flex: 1 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                    <Ionicons name="calendar-outline" size={14} color="#6b7280" style={{ marginRight: 8 }} />
-                    <Text style={styles.historyDate}>{formatDateShort(d.date)}</Text>
-                  </View>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 }}>
-                    <Text style={styles.historyTime}>In: {d.firstIn ? formatTime(d.firstIn) : '-'}</Text>
-                    <Text style={styles.historyTime}>Out: {d.lastOut ? formatTime(d.lastOut) : '-'}</Text>
-                  </View>
-                </View>
-                <Text style={styles.historyDuration}>{formatDuration(d.minutes)}</Text>
-              </View>
-            ))
-          )}
-        </View>
+
       </ScrollView>
     </View>
   );
@@ -199,9 +221,6 @@ const onClockOut = async () => {
 function twoDigits(n: number) { return n < 10 ? `0${n}` : String(n); }
 function formatTime(d: Date) { let h=d.getHours(); const m=twoDigits(d.getMinutes()); const ap=h>=12?'PM':'AM'; h=h%12; if(h===0)h=12; return `${twoDigits(h)}:${m} ${ap}`; }
 function formatDate(d: Date) { const W=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][d.getDay()]; const M=['January','February','March','April','May','June','July','August','September','October','November','December'][d.getMonth()]; return `${W}, ${M} ${d.getDate()}, ${d.getFullYear()}`; }
-function formatDateShort(d: Date) { const M=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()]; return `${M} ${d.getDate()}, ${d.getFullYear()}`; }
-function formatDuration(mins:number){const h=Math.floor(mins/60); const m=mins%60; return `${h}h ${m}m`;}
-
 function startOfWeekMonday(d: Date) { const t=new Date(d.getFullYear(), d.getMonth(), d.getDate()); const day=t.getDay(); const diff=(day===0?-6:1)-day; t.setDate(t.getDate()+diff); t.setHours(0,0,0,0); return t; }
 function endOfWeekFrom(start: Date){const e=new Date(start); e.setDate(e.getDate()+7); e.setHours(0,0,0,0); return e; }
 function startOfDay(d: Date){ const x=new Date(d); x.setHours(0,0,0,0); return x; }
@@ -228,11 +247,38 @@ async function computeRecentHistory(employeeId: string, refDate: Date, daysBack:
   let lastIn: Date | null=null; let lastInDayKey: string | null=null;
   for(const it of items){ const dk=ymdKey(it.dt); if(it.log_type==='IN'){ lastIn=it.dt; lastInDayKey=dk; const prev=firstInByDay.get(dk); if(!prev||it.dt<prev) firstInByDay.set(dk,it.dt); } else if(it.log_type==='OUT' && lastIn){ if(dk===lastInDayKey){ const mins=Math.max(0,Math.round((it.dt.getTime()-lastIn.getTime())/60000)); perDay.set(dk,(perDay.get(dk)||0)+mins);} const lo=lastOutByDay.get(dk); if(!lo||it.dt>lo) lastOutByDay.set(dk,it.dt); lastIn=null; lastInDayKey=null; } }
   const out: DayHistory[]=[]; for(let i=0;i<daysBack;i++){ const d=addDays(startOfDay(refDate),-i); const dk=ymdKey(d); const mins=perDay.get(dk)||0; const firstIn=firstInByDay.get(dk)||null; const lastOut=lastOutByDay.get(dk)||null; if(mins>0||firstIn||lastOut) out.push({ date:d, minutes:mins, firstIn, lastOut }); }
-  if(out.length===0 && MOCK_RECENT_HISTORY){ return generateMockRecentHistory(refDate, MOCK_RECENT_HISTORY_DAYS || daysBack); }
+  // If there is no data, just return empty (no mock fallback)
   return out;
 }
 
-function generateMockRecentHistory(refDate: Date, days: number): DayHistory[] { const res: DayHistory[]=[]; for(let i=0;i<days;i++){ const d=addDays(startOfDay(refDate),-i); const day=d.getDay(); if(day===0||day===6) continue; const base=8*60+0; const jitter=(i%4)*15; const minutes=base+jitter; const firstIn=new Date(d); const firstInMin=9*60+5+(i%4)*10; firstIn.setHours(Math.floor(firstInMin/60), firstInMin%60,0,0); const lastOut=new Date(firstIn); lastOut.setMinutes(lastOut.getMinutes()+minutes); res.push({ date:d, minutes, firstIn, lastOut }); } return res; }
+async function computeRecentIOPairs(employeeId: string, refDate: Date, daysBack: number){
+  const to = addDays(startOfDay(refDate),1); const from=addDays(startOfDay(refDate), -daysBack);
+  const rows = await fetchEmployeeCheckins({ employeeId, from, to, limit: 2000 });
+  const items = rows.map(r=>({ ...r, dt:new Date(r.time)})).sort((a,b)=>a.dt.getTime()-b.dt.getTime());
+  const out: { date: Date; inTime: Date | null; outTime: Date | null; locationIn?: string | null; locationOut?: string | null }[] = [];
+  let openIn: { dayKey: string; dt: Date; location?: string | null } | null = null;
+  for(const it of items){
+    const dk = ymdKey(it.dt);
+    if(String(it.log_type).toUpperCase() === 'IN'){
+      if(openIn){
+        out.push({ date: startOfDay(openIn.dt), inTime: openIn.dt, outTime: null, locationIn: openIn.location || null, locationOut: null });
+      }
+      openIn = { dayKey: dk, dt: it.dt, location: (it as any)?.location || null };
+    } else if(String(it.log_type).toUpperCase() === 'OUT'){
+      if(openIn && openIn.dayKey === dk && it.dt.getTime() > openIn.dt.getTime()){
+        out.push({ date: startOfDay(it.dt), inTime: openIn.dt, outTime: it.dt, locationIn: openIn.location || null, locationOut: (it as any)?.location || null });
+        openIn = null;
+      } else {
+        out.push({ date: startOfDay(it.dt), inTime: null, outTime: it.dt, locationIn: null, locationOut: (it as any)?.location || null });
+      }
+    }
+  }
+  if(openIn){
+    out.push({ date: startOfDay(openIn.dt), inTime: openIn.dt, outTime: null, locationIn: openIn.location || null, locationOut: null });
+    openIn = null;
+  }
+  return out;
+}
 
 const styles = StyleSheet.create({
   headerCard: { backgroundColor: '#090a1a', borderBottomLeftRadius: 16, borderBottomRightRadius: 16, paddingBottom: 16, paddingHorizontal: 16, marginBottom: 10 },
@@ -269,9 +315,10 @@ const styles = StyleSheet.create({
   emptyWrap: { alignItems: 'center', justifyContent: 'center', paddingVertical: 16 },
   emptyPill: { width: 140, height: 44, borderRadius: 22, backgroundColor: '#f3f4f6', alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
   historyEmpty: { color: '#9ca3af' },
+  latestDetails: { marginHorizontal: 12, marginTop: 4, marginBottom: 8 },
+  detailRow: { color: '#374151', fontSize: 12, marginTop: 2 },
+  detailLocation: { color: '#6b7280', fontSize: 11, marginTop: 2 },
 });
-
-
 
 
 
