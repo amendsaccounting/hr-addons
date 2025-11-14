@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, useColorScheme, ScrollView, Pressable, Alert, Linking, Platform, RefreshControl, AppState, AppStateStatus } from 'react-native';
+import { View, Text, StyleSheet, useColorScheme, ScrollView, Pressable, Alert, Linking, Platform, RefreshControl, AppState, AppStateStatus, ActivityIndicator } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { checkInOutDoctype, requestLocationPermission, fetchEmployeeCheckins, getLocationString } from '../../services/attendance';
@@ -60,6 +60,35 @@ export default function AttendanceScreen() {
     { date: startOfDay(buildDate(3, 0, 0)), inTime: buildDate(3, 9, 7), outTime: buildDate(3, 17, 55), locationIn: 'Reception', locationOut: 'Reception' },
     { date: startOfDay(buildDate(4, 0, 0)), inTime: buildDate(4, 9, 0), outTime: buildDate(4, 17, 48), locationIn: 'Main Gate', locationOut: 'Main Gate' },
   ];
+
+  // Modern history row renderer (reused by dummy and live)
+  const renderModernHistoryRow = (item: IOPair, idx: number, keyPrefix: string) => (
+    <View key={`${keyPrefix}-${item.date?.getTime?.() || idx}-${idx}`} style={[styles.historyRowModern, idx > 0 && styles.historyRowDivider]}>
+      <View style={styles.historyLeftModern}>
+        <View style={styles.datePill}>
+          <Ionicons name="calendar-outline" size={12} color="#1f2937" />
+          <Text style={styles.datePillText}>{formatRowDate(item.date)}</Text>
+        </View>
+        <View style={styles.timeRow}>
+          <Ionicons name="log-in-outline" size={16} color="#059669" />
+          <Text style={styles.ioLabel}>In</Text>
+          <Text style={styles.ioValue}>{item.inTime ? formatTime(item.inTime) : '-'}</Text>
+        </View>
+        <View style={[styles.timeRow, { marginTop: 2 }]}>
+          <Ionicons name="log-out-outline" size={16} color="#ef4444" />
+          <Text style={styles.ioLabel}>Out</Text>
+          <Text style={styles.ioValue}>{item.outTime ? formatTime(item.outTime) : '-'}</Text>
+        </View>
+      </View>
+      <View style={styles.historyRightModern}>
+        <View style={styles.durationBadge}>
+          <Ionicons name="time-outline" size={14} color="#065f46" />
+          <Text style={styles.durationText}>{formatDuration(item.inTime, item.outTime)}</Text>
+        </View>
+        <Text style={styles.locationSmall} numberOfLines={1} ellipsizeMode="tail">{item.locationOut || item.locationIn || '-'}</Text>
+      </View>
+    </View>
+  );
 
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 1000);
@@ -278,14 +307,39 @@ const onClockOut = async () => {
           <Text style={styles.clockDate}>{dateText}</Text>
           <View style={styles.locationRow}>
             <Text style={styles.locationDot}>📍</Text>
-            <Text style={styles.locationText}>{headerLocation || '-'}</Text>
+            <Text style={styles.locationText} numberOfLines={1} ellipsizeMode="tail">{headerLocation || '-'}</Text>
           </View>
           <View style={[styles.locationRow, { marginTop: -8, marginBottom: 16 }]}>
             <Text style={styles.locationDot}>🧾</Text>
             <Text style={styles.locationText}>Employee: {employeeId || '-'}</Text>
           </View>
-          <Pressable onPress={isClockedIn ? onClockOut : onClockIn} style={({ pressed }) => [styles.primaryButton, isClockedIn ? styles.btnDanger : styles.btnPrimary, pressed && styles.btnPressed]}>
-            <Text style={styles.primaryButtonText}>{submitting ? 'Please wait…' : isClockedIn ? 'Clock Out' : 'Clock In'}</Text>
+          <View style={styles.statusWrap}>
+            <View style={[styles.statusBadge, isClockedIn ? styles.badgeIn : styles.badgeOut]}>
+              <Text style={[styles.statusBadgeText, isClockedIn ? styles.badgeInText : styles.badgeOutText]}>
+                {isClockedIn ? 'Clocked In' : 'Clocked Out'}
+              </Text>
+            </View>
+          </View>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={isClockedIn ? 'Clock Out' : 'Clock In'}
+            disabled={submitting}
+            onPress={isClockedIn ? onClockOut : onClockIn}
+            style={({ pressed }) => [
+              styles.primaryButton,
+              isClockedIn ? styles.btnDanger : styles.btnPrimary,
+              submitting && styles.btnDisabled,
+              pressed && styles.btnPressed,
+            ]}
+          >
+            {submitting ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <ActivityIndicator color="#fff" size="small" />
+                <Text style={[styles.primaryButtonText, { marginLeft: 8 }]}>Please wait…</Text>
+              </View>
+            ) : (
+              <Text style={styles.primaryButtonText}>{isClockedIn ? 'Clock Out' : 'Clock In'}</Text>
+            )}
           </Pressable>
         </View>
 
@@ -300,39 +354,13 @@ const onClockOut = async () => {
         {/* Recent history list */}
         {/* Always show dummy sample first */}
         <View style={styles.historyCard}>
-          {dummyRecentPairs.map((item, idx) => (
-            <View key={`dummy-${item.date?.getTime?.() || idx}-${idx}`} style={[styles.historyRow, idx > 0 && styles.historyRowDivider]}>
-              <View style={styles.historyLeft}>
-                <Ionicons name="calendar-outline" size={16} color="#374151" style={{ marginRight: 8, marginLeft: 4 }} />
-                <View>
-                  <Text style={styles.historyDate}>{formatRowDate(item.date)}</Text>
-                  <Text style={styles.historyTime}>In: {item.inTime ? formatTime(item.inTime) : '-' }  •  Out: {item.outTime ? formatTime(item.outTime) : '-'}</Text>
-                </View>
-              </View>
-              <View style={styles.historyRight}>
-                <Text style={styles.historyDuration}>{formatDuration(item.inTime, item.outTime)}</Text>
-              </View>
-            </View>
-          ))}
+          {dummyRecentPairs.map((item, idx) => renderModernHistoryRow(item, idx, 'dummy'))}
         </View>
 
         {/* Then show real recent records if available */}
         {recentPairs && recentPairs.length > 0 && (
           <View style={styles.historyCard}>
-            {recentPairs.slice(0, 10).map((item, idx) => (
-              <View key={`${item.date?.getTime?.() || idx}-${idx}`} style={[styles.historyRow, idx > 0 && styles.historyRowDivider]}>
-                <View style={styles.historyLeft}>
-                  <Ionicons name="calendar-outline" size={16} color="#374151" style={{ marginRight: 8, marginLeft: 4 }} />
-                  <View>
-                    <Text style={styles.historyDate}>{formatRowDate(item.date)}</Text>
-                    <Text style={styles.historyTime}>In: {item.inTime ? formatTime(item.inTime) : '-' }  •  Out: {item.outTime ? formatTime(item.outTime) : '-'}</Text>
-                  </View>
-                </View>
-                <View style={styles.historyRight}>
-                  <Text style={styles.historyDuration}>{formatDuration(item.inTime, item.outTime)}</Text>
-                </View>
-              </View>
-            ))}
+            {recentPairs.slice(0, 10).map((item, idx) => renderModernHistoryRow(item, idx, 'live'))}
           </View>
         )}
       </ScrollView>
@@ -422,16 +450,23 @@ const styles = StyleSheet.create({
   primaryButton: { borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
   btnPrimary: { backgroundColor: '#0b0b1b' },
   btnDanger: { backgroundColor: '#f97316' },
+  btnDisabled: { opacity: 0.7 },
   btnPressed: { opacity: 0.85 },
   primaryButtonText: { color: '#fff', fontWeight: '600' },
+  statusWrap: { width: '100%', marginBottom: 10, alignItems: 'center' },
+  statusBadge: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999 },
+  badgeIn: { backgroundColor: '#ecfdf5' },
+  badgeOut: { backgroundColor: '#f3f4f6' },
+  badgeInText: { color: '#065f46', fontWeight: '600', fontSize: 12 },
+  badgeOutText: { color: '#374151', fontWeight: '600', fontSize: 12 },
   sectionTitle: { marginTop: 16, marginBottom: 8, marginLeft: 16, fontSize: 14, fontWeight: '700', color: '#111827' },
   statsCard: { backgroundColor: '#fff', borderRadius: 14, marginHorizontal: 12, paddingVertical: 14, borderWidth: StyleSheet.hairlineWidth, borderColor: '#e5e7eb', flexDirection: 'row', justifyContent: 'space-around' },
   statItem: { alignItems: 'center', flex: 1 },
   statValue: { fontSize: 20, fontWeight: '700', color: '#111827' },
   statLabel: { fontSize: 11, color: '#6b7280', marginTop: 2 },
-  historyCard: { backgroundColor: '#fff', borderRadius: 14, marginHorizontal: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: '#e5e7eb', paddingHorizontal: 12, paddingVertical: 6 },
+  historyCard: { backgroundColor: '#fff', borderRadius: 14, marginHorizontal: 12, borderWidth: 1.25, borderColor: '#d1d5db', paddingHorizontal: 12, paddingVertical: 6 },
   historyRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10 },
-  historyRowDivider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#e5e7eb' },
+  historyRowDivider: { borderTopWidth: 1, borderTopColor: '#d1d5db' },
   historyLeft: { flexDirection: 'row', alignItems: 'center' },
   historyRight: { flexDirection: 'column', alignItems: 'flex-end', marginRight: 12 },
   historyDate: { color: '#374151', fontSize: 13 },
@@ -443,5 +478,16 @@ const styles = StyleSheet.create({
   latestDetails: { marginHorizontal: 12, marginTop: 4, marginBottom: 8 },
   detailRow: { color: '#374151', fontSize: 12, marginTop: 2 },
   detailLocation: { color: '#6b7280', fontSize: 11, marginTop: 2 },
+  // Modern history row styles
+  historyRowModern: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 12 },
+  historyLeftModern: { flexDirection: 'column', flex: 1 },
+  historyRightModern: { alignItems: 'flex-end', justifyContent: 'center', width: 160 },
+  datePill: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 6, backgroundColor: '#f3f4f6', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, marginBottom: 6 },
+  datePillText: { color: '#1f2937', fontSize: 12, fontWeight: '600' },
+  timeRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  ioLabel: { color: '#6b7280', fontSize: 12 },
+  ioValue: { color: '#111827', fontSize: 13, fontWeight: '600' },
+  durationBadge: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-end', gap: 6, backgroundColor: '#ecfdf5', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999 },
+  durationText: { color: '#065f46', fontSize: 12, fontWeight: '700' },
+  locationSmall: { color: '#6b7280', fontSize: 11, marginTop: 6, maxWidth: 160 },
 });
-
