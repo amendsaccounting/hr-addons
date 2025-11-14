@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, useColorScheme, ScrollView, Pressable, Alert } from 'react-native';
-import AppHeader from '../../components/AppHeader';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 
 type WeekStats = { totalMinutes: number; days: number; late: number };
@@ -8,6 +8,7 @@ type DayHistory = { date: Date; minutes: number; firstIn?: Date | null; lastOut?
 
 export default function AttendanceScreen() {
   const isDark = useColorScheme() === 'dark';
+  const insets = useSafeAreaInsets();
 
   const [now, setNow] = useState(new Date());
   const [isClockedIn, setIsClockedIn] = useState(false);
@@ -85,7 +86,10 @@ export default function AttendanceScreen() {
 
   return (
     <View style={styles.screen}>
-      <AppHeader title="Attendance" subtitle="Track your work hours" bgColor="#0b0b1b" statusBarStyle="light-content" />
+      <View style={[styles.headerCard, { paddingTop: insets.top + 12 }]}>
+        <Text style={styles.headerTitle}>Attendance</Text>
+        <Text style={styles.headerSubtitle}>Track your work hours</Text>
+      </View>
 
       <ScrollView contentContainerStyle={{ paddingBottom: 24 }}>
         <View style={styles.card}>
@@ -170,6 +174,9 @@ async function computeRecentHistory(employeeId: string, refDate: Date, daysBack:
 function generateMockRecentHistory(refDate: Date, days: number): DayHistory[] { const res: DayHistory[]=[]; for(let i=0;i<days;i++){ const d=addDays(startOfDay(refDate),-i); const day=d.getDay(); if(day===0||day===6) continue; const base=8*60+0; const jitter=(i%4)*15; const minutes=base+jitter; const firstIn=new Date(d); const firstInMin=9*60+5+(i%4)*10; firstIn.setHours(Math.floor(firstInMin/60), firstInMin%60,0,0); const lastOut=new Date(firstIn); lastOut.setMinutes(lastOut.getMinutes()+minutes); res.push({ date:d, minutes, firstIn, lastOut }); } return res; }
 
 const styles = StyleSheet.create({
+  headerCard: { backgroundColor: '#090a1a', borderBottomLeftRadius: 16, borderBottomRightRadius: 16, paddingBottom: 16, paddingHorizontal: 16, marginBottom: 10 },
+  headerTitle: { color: '#fff', fontWeight: '700', fontSize: 18 },
+  headerSubtitle: { color: '#cbd5e1', marginTop: 4, fontSize: 12 },
   screen: { flex: 1 },
   
   card: { backgroundColor: '#fff', borderRadius: 14, marginHorizontal: 12, padding: 16, borderWidth: StyleSheet.hairlineWidth, borderColor: '#e5e7eb' },
@@ -199,3 +206,4 @@ const styles = StyleSheet.create({
   historyTime: { color: '#6b7280', fontSize: 11 },
   historyDuration: { color: '#059669', fontWeight: '600', fontSize: 13 },
 });
+
