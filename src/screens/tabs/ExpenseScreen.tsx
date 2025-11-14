@@ -128,16 +128,20 @@ function Metric({ label, value, accent }: { label: string; value: string; accent
 }
 
 function ExpenseItem({ status, title, amount, desc, date, submitted }: { status: 'Approved' | 'Pending' | 'Rejected'; title: string; amount: string; desc: string; date: string; submitted: string }) {
-  const color = status === 'Approved' ? '#059669' : status === 'Pending' ? '#b45309' : '#dc2626';
-  const bg = status === 'Approved' ? '#e8faf3' : status === 'Pending' ? '#fde7cf' : '#fde2e2';
+  const map = {
+    Approved: { color: '#059669', bg: '#e8faf3', icon: 'checkmark-circle' as const },
+    Pending: { color: '#b45309', bg: '#fde7cf', icon: 'time-outline' as const },
+    Rejected: { color: '#dc2626', bg: '#fde2e2', icon: 'close-circle' as const },
+  } as const;
+  const s = map[status];
   return (
     <View style={styles.historyCard}>
       <View style={styles.historyTop}>
         <View style={{ flex: 1 }}>
           <Text style={styles.historyTitle}>{title}</Text>
-          <View style={[styles.badge, { backgroundColor: bg, alignSelf: 'flex-start', marginTop: 6 }]}>
-            <Ionicons name="ellipse" size={8} color={color} />
-            <Text style={[styles.badgeText, { color, marginLeft: 6 }]}>{status}</Text>
+          <View style={[styles.statusPill, { backgroundColor: s.bg }] }>
+            <Ionicons name={s.icon} size={14} color={s.color} />
+            <Text style={[styles.statusText, { color: s.color }]}>{status}</Text>
           </View>
         </View>
         <Text style={styles.amount}>{amount}</Text>
@@ -219,4 +223,6 @@ const styles = StyleSheet.create({
   historyDesc: { color: '#6b7280', marginTop: 6 },
   historyMetaRow: { flexDirection: 'row', alignItems: 'center', marginTop: 10 },
   metaText: { color: '#6b7280', marginLeft: 6 },
+  statusPill: { flexDirection: 'row', alignItems: 'center', borderRadius: 12, paddingHorizontal: 8, paddingVertical: 4, alignSelf: 'flex-start', marginTop: 6 },
+  statusText: { fontWeight: '700', marginLeft: 6, fontSize: 12 },
 });
