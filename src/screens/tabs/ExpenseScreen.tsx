@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Animated, Easing, LayoutChangeEvent } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, Animated, Easing, LayoutChangeEvent, TextInput, Alert, Dimensions } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -9,6 +9,14 @@ export default function ExpenseScreen() {
   const [activeTab, setActiveTab] = useState<'Submit' | 'History'>('Submit');
   const segAnim = useRef(new Animated.Value(0)).current; // 0 -> Submit, 1 -> History
   const [segWidth, setSegWidth] = useState(0);
+  const [showModal, setShowModal] = useState(false);
+  const [headerHeight, setHeaderHeight] = useState(0);
+  // Modal form state
+  const [categoryOpen, setCategoryOpen] = useState(false);
+  const [category, setCategory] = useState<string>('');
+  const [amount, setAmount] = useState<string>('');
+  const [expDate, setExpDate] = useState<string>('');
+  const [desc, setDesc] = useState<string>('');
 
   const onTabChange = (tab: 'Submit' | 'History') => {
     if (tab === activeTab) return;
@@ -28,7 +36,7 @@ export default function ExpenseScreen() {
   return (
     <View style={styles.screen}>
       {/* Fixed header */}
-      <View style={[styles.headerCard, { paddingTop: insets.top + 12 }]}>
+      <View style={[styles.headerCard, { paddingTop: insets.top + 12 }]} onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}>
         <View style={styles.headerRow}>
           <Ionicons name="card-outline" size={18} color="#fff" style={{ marginRight: 8 }} />
           <Text style={styles.headerTitle}>Expense Reimbursement</Text>
@@ -83,7 +91,7 @@ export default function ExpenseScreen() {
               </View>
               <Text style={styles.cardTitle}>Submit New Expense</Text>
               <Text style={styles.cardSubtitle}>Create a reimbursement request for your business expenses</Text>
-              <Pressable style={styles.primaryBtn}>
+              <Pressable style={styles.primaryBtn} onPress={() => setShowModal(true)}>
                 <Ionicons name="add" size={16} color="#fff" />
                 <Text style={styles.primaryBtnText}>New Expense Claim</Text>
               </Pressable>
@@ -114,6 +122,109 @@ export default function ExpenseScreen() {
           </>
         )}
       </ScrollView>
+      {/* Modal */}
+      {showModal && (
+        <View style={[styles.modalOverlay, { top: headerHeight }]}>
+          <View style={[
+            styles.modalCard,
+            { paddingBottom: insets.bottom + 12, maxHeight: Math.max(320, Math.round(Dimensions.get('window').height - headerHeight - insets.bottom - 8)) }
+          ]}>
+            <ScrollView contentContainerStyle={styles.modalContent} showsVerticalScrollIndicator={true}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>New Expense Claim</Text>
+              <Pressable onPress={() => setShowModal(false)} accessibilityRole="button">
+                <Ionicons name="close" size={20} color="#111827" />
+              </Pressable>
+            </View>
+            <Text style={styles.modalSubtitle}>Submit a new expense reimbursement request</Text>
+
+            {/* Category */}
+            <Text style={styles.fieldLabel}>Category <Text style={{ color: '#ef4444' }}>*</Text></Text>
+            <Pressable style={styles.inputRow} onPress={() => setCategoryOpen((v) => !v)}>
+              <Ionicons name="list-outline" size={16} color="#6b7280" style={{ marginRight: 6 }} />
+              <Text style={[styles.placeholderText, { color: category ? '#111827' : '#9ca3af' }]}>{category || 'Select category'}</Text>
+              <Ionicons name={categoryOpen ? 'chevron-up' : 'chevron-down'} size={16} color="#9ca3af" />
+            </Pressable>
+            {categoryOpen && (
+              <View style={styles.dropdown}>
+                {['Travel','Meals','Office Supplies','Software','Other'].map((opt) => (
+                  <Pressable key={opt} style={styles.dropdownItem} onPress={() => { setCategory(opt); setCategoryOpen(false); }}>
+                    <Text style={styles.dropdownText}>{opt}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            )}
+
+            {/* Amount */}
+            <Text style={styles.fieldLabel}>Amount <Text style={{ color: '#ef4444' }}>*</Text></Text>
+            <View style={styles.inputRow}>
+              <Ionicons name="cash-outline" size={16} color="#6b7280" style={{ marginRight: 6 }} />
+              <TextInput
+                value={amount}
+                onChangeText={setAmount}
+                placeholder="$ 0.00"
+                placeholderTextColor="#9ca3af"
+                keyboardType="decimal-pad"
+                style={styles.textInput}
+              />
+            </View>
+
+            {/* Date */}
+            <Text style={styles.fieldLabel}>Expense Date <Text style={{ color: '#ef4444' }}>*</Text></Text>
+            <View style={styles.inputRow}>
+              <Ionicons name="calendar-outline" size={16} color="#6b7280" style={{ marginRight: 6 }} />
+              <TextInput
+                value={expDate}
+                onChangeText={setExpDate}
+                placeholder="dd/mm/yyyy"
+                placeholderTextColor="#9ca3af"
+                keyboardType="numbers-and-punctuation"
+                style={styles.textInput}
+              />
+            </View>
+
+            {/* Description */}
+            <Text style={styles.fieldLabel}>Description <Text style={{ color: '#ef4444' }}>*</Text></Text>
+            <View style={[styles.inputRow, { height: 90, alignItems: 'flex-start', paddingTop: 8 }] }>
+              <TextInput
+                value={desc}
+                onChangeText={setDesc}
+                placeholder="Describe the expense..."
+                placeholderTextColor="#9ca3af"
+                multiline
+                style={[styles.textInput, { textAlignVertical: 'top' }]}
+              />
+            </View>
+
+            {/* Receipt upload */}
+            <Text style={[styles.fieldLabel, { marginTop: 10 }]}>Receipt (Optional)</Text>
+            <View style={styles.uploadBox}>
+              <Ionicons name="cloud-upload-outline" size={22} color="#6b7280" />
+              <Text style={[styles.placeholderText, { color: '#6b7280', marginTop: 8 }]}>Upload receipt image</Text>
+              <Pressable style={styles.secondaryBtn}>
+                <Ionicons name="document-outline" size={14} color="#111827" />
+                <Text style={styles.secondaryBtnText}>Choose File</Text>
+              </Pressable>
+            </View>
+
+            <Pressable
+              style={[styles.primaryBtn, { alignSelf: 'stretch', marginTop: 12 }]}
+              onPress={() => {
+                if (!category) return Alert.alert('Missing', 'Please select a category.');
+                if (!amount || isNaN(Number(amount))) return Alert.alert('Invalid Amount', 'Enter a valid amount.');
+                if (!expDate) return Alert.alert('Missing', 'Please enter expense date.');
+                if (!desc) return Alert.alert('Missing', 'Please enter a brief description.');
+                Alert.alert('Submitted', 'Your expense claim has been created.');
+                setShowModal(false);
+                setCategory(''); setAmount(''); setExpDate(''); setDesc('');
+              }}
+            >
+              <Text style={styles.primaryBtnText}>Submit Claim</Text>
+            </Pressable>
+            </ScrollView>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
@@ -207,7 +318,7 @@ const styles = StyleSheet.create({
   iconCircle: { width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f3f4f6' },
   cardTitle: { color: '#111827', fontWeight: '700', marginTop: 12 },
   cardSubtitle: { color: '#6b7280', fontSize: 12, marginTop: 4, textAlign: 'center' },
-  primaryBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#0b0b1b', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 8, marginTop: 14 },
+  primaryBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#0b0b1b', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 8, marginTop: 14 },
   primaryBtnText: { color: '#fff', fontWeight: '700', marginLeft: 8 },
 
   tipBox: { backgroundColor: '#eef5ff', borderRadius: 12, borderWidth: 1, borderColor: '#c7dbff', padding: 12, margin: 12 },
@@ -225,4 +336,23 @@ const styles = StyleSheet.create({
   metaText: { color: '#6b7280', marginLeft: 6 },
   statusPill: { flexDirection: 'row', alignItems: 'center', borderRadius: 12, paddingHorizontal: 8, paddingVertical: 4, alignSelf: 'flex-start', marginTop: 6 },
   statusText: { fontWeight: '700', marginLeft: 6, fontSize: 12 },
+
+  // Modal styles
+  modalOverlay: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end', alignItems: 'stretch' },
+  modalCard: { backgroundColor: '#fff', width: '100%', borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: 12, elevation: 6, shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 8, shadowOffset: { width: 0, height: 2 } },
+  modalContent: { paddingBottom: 10 },
+  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  modalTitle: { color: '#111827', fontWeight: '700' },
+  modalSubtitle: { color: '#6b7280', fontSize: 12, marginTop: 4 },
+  fieldLabel: { color: '#111827', fontWeight: '700', marginTop: 12 },
+  inputRow: { height: 40, borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 8, backgroundColor: '#f9fafb', marginTop: 6, paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center' },
+  leftIcon: { color: '#6b7280', marginRight: 6 },
+  placeholderText: { color: '#9ca3af', flex: 1 },
+  textInput: { flex: 1, color: '#111827' },
+  uploadBox: { borderWidth: 1, borderColor: '#e5e7eb', borderStyle: 'dashed', borderRadius: 8, alignItems: 'center', justifyContent: 'center', paddingVertical: 16, marginTop: 8 },
+  secondaryBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, marginTop: 10 },
+  secondaryBtnText: { color: '#111827', fontWeight: '700', marginLeft: 6 },
+  dropdown: { borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 8, backgroundColor: '#fff', marginTop: 6, overflow: 'hidden' },
+  dropdownItem: { paddingHorizontal: 12, paddingVertical: 10 },
+  dropdownText: { color: '#111827' },
 });
