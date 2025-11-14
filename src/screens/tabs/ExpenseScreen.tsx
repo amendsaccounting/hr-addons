@@ -17,6 +17,43 @@ export default function ExpenseScreen() {
   const [amount, setAmount] = useState<string>('');
   const [expDate, setExpDate] = useState<string>('');
   const [desc, setDesc] = useState<string>('');
+  const [receiptName, setReceiptName] = useState<string>('');
+  const [receiptUri, setReceiptUri] = useState<string>('');
+
+  const pickReceipt = async () => {
+    try {
+      // Try DocumentPicker first
+      try {
+        const DPmod: any = (require('react-native-document-picker') as any);
+        const DocumentPicker = DPmod?.default || DPmod;
+        if (DocumentPicker?.pickSingle) {
+          const res = await DocumentPicker.pickSingle({ type: [DocumentPicker.types.images, DocumentPicker.types.pdf] });
+          const uri = res?.uri || '';
+          const name = res?.name || (uri ? uri.split('/').pop() : 'file');
+          if (uri) { setReceiptUri(uri); setReceiptName(String(name || 'file')); return; }
+        }
+      } catch (e: any) {
+        // ignore and fall back
+      }
+
+      // Fallback to ImagePicker (photo library)
+      try {
+        const IP: any = require('react-native-image-picker');
+        const launchImageLibrary = IP?.launchImageLibrary;
+        if (launchImageLibrary) {
+          const resp = await launchImageLibrary({ mediaType: 'photo', selectionLimit: 1 });
+          const asset = resp?.assets?.[0];
+          if (asset?.uri) { setReceiptUri(asset.uri); setReceiptName(asset.fileName || 'photo'); return; }
+        }
+      } catch (e) {
+        // ignore
+      }
+
+      Alert.alert('Setup Needed', 'Please install react-native-document-picker or react-native-image-picker to pick a receipt file.');
+    } catch (err) {
+      Alert.alert('Error', 'Could not open file picker.');
+    }
+  };
 
   const onTabChange = (tab: 'Submit' | 'History') => {
     if (tab === activeTab) return;
@@ -129,7 +166,7 @@ export default function ExpenseScreen() {
             styles.modalCard,
             { paddingBottom: insets.bottom + 12, maxHeight: Math.max(320, Math.round(Dimensions.get('window').height - headerHeight - insets.bottom - 8)) }
           ]}>
-            <ScrollView contentContainerStyle={styles.modalContent} showsVerticalScrollIndicator={true}>
+            <ScrollView contentContainerStyle={styles.modalContent} showsVerticalScrollIndicator={false}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>New Expense Claim</Text>
               <Pressable onPress={() => setShowModal(false)} accessibilityRole="button">
@@ -199,12 +236,31 @@ export default function ExpenseScreen() {
             {/* Receipt upload */}
             <Text style={[styles.fieldLabel, { marginTop: 10 }]}>Receipt (Optional)</Text>
             <View style={styles.uploadBox}>
-              <Ionicons name="cloud-upload-outline" size={22} color="#6b7280" />
-              <Text style={[styles.placeholderText, { color: '#6b7280', marginTop: 8 }]}>Upload receipt image</Text>
-              <Pressable style={styles.secondaryBtn}>
-                <Ionicons name="document-outline" size={14} color="#111827" />
-                <Text style={styles.secondaryBtnText}>Choose File</Text>
-              </Pressable>
+              {receiptUri ? (
+                <>
+                  <Ionicons name="document-text-outline" size={22} color="#2563eb" />
+                  <Text style={styles.fileName}>{receiptName || 'Selected file'}</Text>
+                  <View style={{ flexDirection: 'row', marginTop: 8 }}>
+                    <Pressable style={[styles.secondaryBtn, { marginRight: 8 }]} onPress={() => { setReceiptName(''); setReceiptUri(''); }}>
+                      <Ionicons name="trash-outline" size={14} color="#111827" />
+                      <Text style={styles.secondaryBtnText}>Remove</Text>
+                    </Pressable>
+                    <Pressable style={styles.secondaryBtn} onPress={pickReceipt}>
+                      <Ionicons name="swap-vertical" size={14} color="#111827" />
+                      <Text style={styles.secondaryBtnText}>Change</Text>
+                    </Pressable>
+                  </View>
+                </>
+              ) : (
+                <>
+                  <Ionicons name="cloud-upload-outline" size={22} color="#6b7280" />
+                  <Text style={[styles.placeholderText, { color: '#6b7280', marginTop: 8 }]}>Upload receipt image</Text>
+                  <Pressable style={styles.secondaryBtn} onPress={pickReceipt}>
+                    <Ionicons name="document-outline" size={14} color="#111827" />
+                    <Text style={styles.secondaryBtnText}>Choose File</Text>
+                  </Pressable>
+                </>
+              )}
             </View>
 
             <Pressable
@@ -217,6 +273,7 @@ export default function ExpenseScreen() {
                 Alert.alert('Submitted', 'Your expense claim has been created.');
                 setShowModal(false);
                 setCategory(''); setAmount(''); setExpDate(''); setDesc('');
+                setReceiptName(''); setReceiptUri('');
               }}
             >
               <Text style={styles.primaryBtnText}>Submit Claim</Text>
@@ -348,6 +405,7 @@ const styles = StyleSheet.create({
   inputRow: { height: 40, borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 8, backgroundColor: '#f9fafb', marginTop: 6, paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center' },
   leftIcon: { color: '#6b7280', marginRight: 6 },
   placeholderText: { color: '#9ca3af', flex: 1 },
+  fileName: { color: '#111827', marginTop: 8 },
   textInput: { flex: 1, color: '#111827' },
   uploadBox: { borderWidth: 1, borderColor: '#e5e7eb', borderStyle: 'dashed', borderRadius: 8, alignItems: 'center', justifyContent: 'center', paddingVertical: 16, marginTop: 8 },
   secondaryBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, marginTop: 10 },

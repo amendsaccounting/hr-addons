@@ -1,9 +1,11 @@
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView, TextInput, Pressable } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function LeadScreen() {
   (Ionicons as any)?.loadFont?.();
+  const insets = useSafeAreaInsets();
 
   const metrics = [
     { key: 'total', label: 'Total Leads', value: '3' },
@@ -14,7 +16,7 @@ export default function LeadScreen() {
   return (
     <View style={styles.screen}>
       {/* Fixed Header */}
-      <View style={styles.headerCard}>
+      <View style={[styles.headerCard, { paddingTop: insets.top + 12 }]}>
         <View style={styles.headerRow}>
           <Ionicons name="trending-up" size={18} color="#fff" style={{ marginRight: 8 }} />
           <Text style={styles.headerTitle}>Sales Leads</Text>
