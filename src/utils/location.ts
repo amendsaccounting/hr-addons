@@ -13,5 +13,5 @@ export const getCurrentLocation = (): Promise<{ latitude: number; longitude: num
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
     );
   });
+  
 };
-
