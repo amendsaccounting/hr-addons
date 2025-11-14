@@ -1,9 +1,10 @@
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, Alert, Modal, TextInput, FlatList } from 'react-native';
  
-import AppHeader from '../../components/AppHeader';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function LeaveScreen() {
+  const insets = useSafeAreaInsets();
 
   const balances = [
     { key: 'annual', name: 'Annual Leave', used: 6, total: 30 },
@@ -39,7 +40,10 @@ export default function LeaveScreen() {
 
   return (
     <View style={styles.screen}>
-      <AppHeader title="Leave Management" subtitle="Manage your leave requests" bgColor="#0b0b1b" statusBarStyle="light-content" />
+      <View style={[styles.headerCard, { paddingTop: insets.top + 12 }]}>
+        <Text style={styles.headerTitle}>Leave Management</Text>
+        <Text style={styles.headerSubtitle}>Apply and track your leave</Text>
+      </View>
       <ScrollView contentContainerStyle={{ padding: 16 }}>
         <Text style={styles.sectionTitle}>Leave Balance</Text>
         {balances.map((b) => {
@@ -169,6 +173,9 @@ export default function LeaveScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#fff' },
+  headerCard: { backgroundColor: '#090a1a', borderBottomLeftRadius: 16, borderBottomRightRadius: 16, paddingBottom: 16, paddingHorizontal: 16 },
+  headerTitle: { color: '#fff', fontWeight: '700', fontSize: 18 },
+  headerSubtitle: { color: '#cbd5e1', marginTop: 4, fontSize: 12 },
   
   placeholder: { fontSize: 16, color: '#374151' },
   sectionTitle: { fontSize: 16, fontWeight: '700', color: '#111827', marginBottom: 10 },
