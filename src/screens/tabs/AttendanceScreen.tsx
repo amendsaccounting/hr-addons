@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, useColorScheme, ScrollView, Pressable, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-
+import Ionicons from 'react-native-vector-icons/Ionicons';
 
 type WeekStats = { totalMinutes: number; days: number; late: number };
 type DayHistory = { date: Date; minutes: number; firstIn?: Date | null; lastOut?: Date | null };
@@ -24,16 +24,17 @@ export default function AttendanceScreen() {
     return () => clearInterval(id);
   }, []);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const stats = await computeWeekStats(employeeId, new Date());
-        setWeekStats(stats);
-        const list = await computeRecentHistory(employeeId, new Date(), 14);
-        setRecent(list);
-      } catch {}
-    })();
-  }, [employeeId]);
+  const refreshData = async () => {
+    try {
+      const today = new Date();
+      const stats = await computeWeekStats(employeeId, today);
+      setWeekStats(stats);
+      const list = await computeRecentHistory(employeeId, today, 14);
+      setRecent(list);
+    } catch {}
+  };
+
+  useEffect(() => { refreshData(); }, [employeeId]);
 
   const timeText = formatTime(now);
   const dateText = formatDate(now);
@@ -119,12 +120,25 @@ export default function AttendanceScreen() {
         <Text style={styles.sectionTitle}>Recent History</Text>
         <View style={styles.historyCard}>
           {recent.length === 0 ? (
-            <Text style={styles.historyEmpty}>No records</Text>
+            <View style={styles.emptyWrap}>
+              <View style={styles.emptyPill}>
+                <Ionicons name="time-outline" size={24} color="#6b7280" />
+              </View>
+              <Text style={styles.historyEmpty}>No records</Text>
+            </View>
           ) : (
             recent.slice().sort((a,b)=>b.date.getTime()-a.date.getTime()).slice(0,10).map((d, idx) => (
               <View key={idx} style={[styles.historyRow, idx !== 0 && styles.historyRowDivider]}>
-                <View style={styles.historyLeft}><Text style={{ marginRight: 8 }}>📅</Text><Text style={styles.historyDate}>{formatDateShort(d.date)}</Text></View>
-                <View style={styles.historyRight}><Text style={styles.historyTime}>In {d.firstIn ? formatTime(d.firstIn) : '-'}</Text><Text style={styles.historyTime}>Out {d.lastOut ? formatTime(d.lastOut) : '-'}</Text></View>
+                <View style={{ flex: 1 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <Ionicons name="calendar-outline" size={14} color="#6b7280" style={{ marginRight: 8 }} />
+                    <Text style={styles.historyDate}>{formatDateShort(d.date)}</Text>
+                  </View>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 }}>
+                    <Text style={styles.historyTime}>In: {d.firstIn ? formatTime(d.firstIn) : '-'}</Text>
+                    <Text style={styles.historyTime}>Out: {d.lastOut ? formatTime(d.lastOut) : '-'}</Text>
+                  </View>
+                </View>
                 <Text style={styles.historyDuration}>{formatDuration(d.minutes)}</Text>
               </View>
             ))
@@ -177,7 +191,7 @@ const styles = StyleSheet.create({
   headerCard: { backgroundColor: '#090a1a', borderBottomLeftRadius: 16, borderBottomRightRadius: 16, paddingBottom: 16, paddingHorizontal: 16, marginBottom: 10 },
   headerTitle: { color: '#fff', fontWeight: '700', fontSize: 18 },
   headerSubtitle: { color: '#cbd5e1', marginTop: 4, fontSize: 12 },
-  screen: { flex: 1 },
+  screen: { flex: 1, backgroundColor: '#fff' },
   
   card: { backgroundColor: '#fff', borderRadius: 14, marginHorizontal: 12, padding: 16, borderWidth: StyleSheet.hairlineWidth, borderColor: '#e5e7eb' },
   clockIconCircle: { alignSelf: 'center', width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f3f4f6', marginTop: 4, marginBottom: 12 },
@@ -205,5 +219,12 @@ const styles = StyleSheet.create({
   historyDate: { color: '#374151', fontSize: 13 },
   historyTime: { color: '#6b7280', fontSize: 11 },
   historyDuration: { color: '#059669', fontWeight: '600', fontSize: 13 },
+  emptyWrap: { alignItems: 'center', justifyContent: 'center', paddingVertical: 16 },
+  emptyPill: { width: 140, height: 44, borderRadius: 22, backgroundColor: '#f3f4f6', alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
+  historyEmpty: { color: '#9ca3af' },
 });
+
+
+
+
 
