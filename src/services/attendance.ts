@@ -101,7 +101,7 @@ async function reverseGeocode(latNum: number, lonNum: number): Promise<string> {
   return fallback;
 }
 
-async function getLocationString(): Promise<string> {
+export async function getLocationString(): Promise<string> {
   try {
     const { latitude, longitude } = await getCurrentLocation();
     return await reverseGeocode(latitude, longitude);
