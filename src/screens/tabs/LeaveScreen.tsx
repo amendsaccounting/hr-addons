@@ -80,6 +80,31 @@ const SkeletonBalanceCard: React.FC = React.memo(() => {
   );
 });
 
+// Skeleton for Leave Requests while history loads
+const SkeletonRequestCard: React.FC = React.memo(() => {
+  const pulse = React.useRef(new Animated.Value(0.3)).current;
+  React.useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1, duration: 700, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 0.3, duration: 700, useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => { loop.stop(); };
+  }, [pulse]);
+  const a = { opacity: pulse } as const;
+  return (
+    <View style={styles.historyItem}>
+      <Animated.View style={[styles.skelLine, a, { width: '40%', height: 14 }]} />
+      <View style={{ height: 8 }} />
+      <Animated.View style={[styles.skelLine, a, { width: '85%', height: 10 }]} />
+      <View style={{ height: 8 }} />
+      <Animated.View style={[styles.skelLine, a, { width: '60%', height: 10 }]} />
+    </View>
+  );
+});
+
 const LIST_CONTENT_STYLE = { padding: 16, paddingTop: 28, paddingBottom: 16 } as const;
 
 export default function LeaveScreen() {
@@ -239,9 +264,11 @@ export default function LeaveScreen() {
                 ? allocations
                 : [{ __type: 'ALLOC_EMPTY', text: 'No leave allocations found.' }]);
           const applyData: any[] = [{ __type: 'APPLY_CARD' }];
-          const requestsData: any[] = requests.length > 0
-            ? requests
-            : [{ __type: 'REQ_PLACEHOLDER', text: 'No leave requests exist' }];
+          const requestsData: any[] = loadingAlloc
+            ? [0, 1].map(i => ({ __type: 'REQ_LOADING', id: i }))
+            : (requests.length > 0
+                ? requests
+                : [{ __type: 'REQ_PLACEHOLDER', text: 'No leave requests exist' }]);
           return [
             { key: 'alloc', title: 'Leave Balance', data: allocData },
             { key: 'apply', title: undefined, data: applyData },
@@ -258,6 +285,9 @@ export default function LeaveScreen() {
           }
           if (item?.__type === 'ALLOC_EMPTY') {
             return <Text style={styles.placeholder}>{item.text}</Text>;
+          }
+          if (item?.__type === 'REQ_LOADING') {
+            return <SkeletonRequestCard />;
           }
           if (item?.__type === 'APPLY_CARD') {
             return <ApplyCard onPress={() => onOpenApply()} />;
