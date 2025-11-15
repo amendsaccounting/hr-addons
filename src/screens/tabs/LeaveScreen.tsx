@@ -1,16 +1,15 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Alert, Modal, TextInput, FlatList } from 'react-native';
- 
+import { View, Text, StyleSheet, ScrollView, Pressable, Alert, Modal, TextInput, FlatList, StatusBar } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { fetchLeaveAllocations, type LeaveAllocation } from '../../services/leave';
 
 export default function LeaveScreen() {
   const insets = useSafeAreaInsets();
 
-  const balances = [
-    { key: 'annual', name: 'Annual Leave', used: 6, total: 30 },
-    { key: 'sick', name: 'Sick Leave', used: 2, total: 10 },
-    { key: 'casual', name: 'Casual Leave', used: 1, total: 5 },
-  ];
+  const [employeeId, setEmployeeId] = React.useState<string | null>(null);
+  const [allocations, setAllocations] = React.useState<LeaveAllocation[]>([]);
+  const [loadingAlloc, setLoadingAlloc] = React.useState(false);
 
   const requests = React.useMemo(
     () => [
@@ -21,10 +20,37 @@ export default function LeaveScreen() {
   );
 
   const [showApplyModal, setShowApplyModal] = React.useState(false);
-  const [leaveType, setLeaveType] = React.useState<string>('Annual Leave');
+  const [leaveType, setLeaveType] = React.useState<string>('');
   const [fromDate, setFromDate] = React.useState<string>('');
   const [toDate, setToDate] = React.useState<string>('');
   const [reason, setReason] = React.useState<string>('');
+
+  React.useEffect(() => {
+    (async () => {
+      try {
+        const id = await AsyncStorage.getItem('employeeId');
+        console.log("id====>",id)       
+        setEmployeeId(id);
+      } catch (e) {
+        console.warn('Failed to read employeeId from storage', e);
+      }
+    })();
+  }, []);
+
+  React.useEffect(() => {
+    if (!employeeId) return;
+    (async () => {
+      try {
+        setLoadingAlloc(true);
+        const data = await fetchLeaveAllocations(employeeId);
+        setAllocations(data);
+      } catch (e) {
+        console.error('Failed to load leave allocations', e);
+      } finally {
+        setLoadingAlloc(false);
+      }
+    })();
+  }, [employeeId]);
 
   const submitLeaveRequest = () => {
     if (!leaveType || !fromDate || !toDate || !reason) {
@@ -40,26 +66,28 @@ export default function LeaveScreen() {
 
   return (
     <View style={styles.screen}>
+      <StatusBar barStyle="light-content" backgroundColor="#090a1a" />
       <View style={[styles.headerCard, { paddingTop: insets.top + 12 }]}>
         <Text style={styles.headerTitle}>Leave Management</Text>
         <Text style={styles.headerSubtitle}>Apply and track your leave</Text>
       </View>
       <ScrollView contentContainerStyle={{ padding: 16 }}>
         <Text style={styles.sectionTitle}>Leave Balance</Text>
-        {balances.map((b) => {
-          const pct = Math.min(100, Math.max(0, Math.round((b.used / (b.total || 1)) * 100)));
-          return (
-            <View key={b.key} style={styles.balanceItemCard}>
-              <View style={styles.rowTop}>
-                <Text style={styles.progressLabel}>{b.name}</Text>
-                <Text style={styles.progressValue}>{b.used}/{b.total} days</Text>
-              </View>
-              <View style={styles.progressTrack}>
-                <View style={[styles.progressFill, { width: `${pct}%` }]} />
-              </View>
+        {loadingAlloc && <Text style={styles.placeholder}>Loading balances…</Text>}
+        {!loadingAlloc && allocations.length === 0 && (
+          <Text style={styles.placeholder}>No leave allocations found.</Text>
+        )}
+        {allocations.map((a) => (
+          <View key={a.name} style={styles.balanceItemCard}>
+            <View style={styles.rowTop}>
+              <Text style={styles.progressLabel}>{a.leave_type}</Text>
+              <Text style={styles.progressValue}>{a.leaves_allocated} days</Text>
             </View>
-          );
-        })}
+            <Text style={styles.progressValue}>
+              {a.from_date} → {a.to_date}
+            </Text>
+          </View>
+        ))}
 
         <View style={styles.applyCard}>
           <View style={{ flex: 1 }}>
@@ -117,7 +145,7 @@ export default function LeaveScreen() {
             <Text style={styles.helperText}>Fill in the details below to submit your leave request.</Text>
             <Text style={styles.fieldLabel}>Leave Type</Text>
             <View style={styles.typeRow}>
-              {['Annual Leave', 'Sick Leave', 'Casual Leave'].map((t) => (
+              {/* {(leaveTypes.length > 0 ? leaveTypes.map(t => t.name) : ['Annual Leave', 'Sick Leave', 'Casual Leave']).map((t) => (
                 <Pressable
                   key={t}
                   onPress={() => setLeaveType(t)}
@@ -125,7 +153,7 @@ export default function LeaveScreen() {
                 >
                   <Text style={[styles.typeChipText, leaveType === t && styles.typeChipTextSelected]}>{t}</Text>
                 </Pressable>
-              ))}
+              ))} */}
             </View>
 
             <Text style={styles.fieldLabel}>From Date</Text>
