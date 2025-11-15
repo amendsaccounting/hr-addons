@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Platform, TextInput, Pressable, StyleProp, ViewStyle, Keyboard, Alert, StatusBar } from 'react-native';
+import { View, Text, StyleSheet, Platform, TextInput, Pressable, StyleProp, ViewStyle, KeyboardAvoidingView, Alert, StatusBar } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { validateEmail } from '../../utils/validators';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -20,16 +20,7 @@ export default function LoginScreen({ onSignedIn, onRegister }: Props) {
   const [email, setEmail] = useState('');
   const [emailError, setEmailError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [kbVisible, setKbVisible] = useState(false);
-  const [kbHeight, setKbHeight] = useState(0);
-
-  useEffect(() => {
-    const onShow = (e: any) => { setKbVisible(true); setKbHeight(e?.endCoordinates?.height || 0); };
-    const onHide = () => { setKbVisible(false); setKbHeight(0); };
-    const s = Keyboard.addListener('keyboardDidShow', onShow);
-    const h = Keyboard.addListener('keyboardDidHide', onHide);
-    return () => { s.remove(); h.remove(); };
-  }, []);
+  // KeyboardAvoidingView will handle shifting content to avoid the keyboard
 
   const onContinue = async () => {
   if (loading) return;
@@ -69,18 +60,18 @@ export default function LoginScreen({ onSignedIn, onRegister }: Props) {
         <View style={[StyleSheet.absoluteFillObject, { backgroundColor: '#0c0f1e' }]} />
       )}
 
-      <View style={{ flex: 1 }}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={[styles.header, { paddingTop: insets.top + 28 }]}>
           <View style={styles.logoBox}>
             {IoniconsComp ? (<IoniconsComp name="business-outline" size={24} color="#030213" />) : (<Text style={{ fontSize: 24 }}>🏢</Text>)}
           </View>
-          <Text style={styles.appName}>ERPNext HR</Text>
+          <Text style={styles.appName}>ADDON-S HR</Text>
           <Text style={styles.tagline}>Sign in to your account</Text>
         </View>
 
         <View style={[
           styles.whiteSection,
-          { paddingBottom: 16 + insets.bottom + (kbVisible ? kbHeight : 0) } as StyleProp<ViewStyle>,
+          { paddingBottom: 16 + insets.bottom } as StyleProp<ViewStyle>,
         ]}>
           <Text style={styles.label}>Email</Text>
           <View style={styles.inputRow}>
@@ -123,7 +114,7 @@ export default function LoginScreen({ onSignedIn, onRegister }: Props) {
             <Text style={{ color: '#6b7280' }}>Don't have an account? <Text onPress={onRegister} style={styles.link}>Register</Text></Text>
           </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </View>
   );
 }
