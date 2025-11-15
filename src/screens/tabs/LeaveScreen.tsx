@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Alert, Modal, TextInput, FlatList, StatusBar } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Alert, Modal, TextInput, StatusBar, SectionList } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { fetchLeaveAllocations, fetchLeaveUsage, type LeaveAllocation } from '../../services/leave';
@@ -11,6 +11,10 @@ export default function LeaveScreen() {
   const [allocations, setAllocations] = React.useState<LeaveAllocation[]>([]);
   const [loadingAlloc, setLoadingAlloc] = React.useState(false);
   const [usedByType, setUsedByType] = React.useState<Record<string, number>>({});
+  const leaveTypes = React.useMemo(
+    () => Array.from(new Set(allocations.map(a => a.leave_type))).filter(Boolean),
+    [allocations]
+  );
 
   const requests = React.useMemo(
     () => [
@@ -76,82 +80,111 @@ export default function LeaveScreen() {
         <Text style={styles.headerTitle}>Leave Management</Text>
         <Text style={styles.headerSubtitle}>Apply and track your leave</Text>
       </View>
-      <ScrollView
+      <SectionList
         style={{ flex: 1 }}
-        contentContainerStyle={{ padding: 16, paddingTop: 28 }}
+        contentContainerStyle={{ padding: 16, paddingTop: 28, paddingBottom: 16 }}
         bounces={false}
-        alwaysBounceVertical={false}
         overScrollMode="never"
         contentInsetAdjustmentBehavior="never"
-      >
-        <Text style={styles.sectionTitle}>Leave Balance</Text>
-        {loadingAlloc && <Text style={styles.placeholder}>Loading balances…</Text>}
-        {!loadingAlloc && allocations.length === 0 && (
-          <Text style={styles.placeholder}>No leave allocations found.</Text>
+        sections={React.useMemo(() => {
+          const allocData: any[] = loadingAlloc
+            ? [{ __type: 'ALLOC_PLACEHOLDER', text: 'Loading balances…' }]
+            : (allocations.length > 0
+                ? allocations
+                : [{ __type: 'ALLOC_PLACEHOLDER', text: 'No leave allocations found.' }]);
+          const applyData: any[] = [{ __type: 'APPLY_CARD' }];
+          const requestsData: any[] = requests.length > 0
+            ? requests
+            : [{ __type: 'REQ_PLACEHOLDER', text: 'No leave requests exist' }];
+          return [
+            { key: 'alloc', title: 'Leave Balance', data: allocData },
+            { key: 'apply', title: undefined, data: applyData },
+            { key: 'req', title: 'Leave Requests', data: requestsData },
+          ];
+        }, [loadingAlloc, allocations, requests])}
+        keyExtractor={(item: any, index, section) => item?.name || item?.id || item?.__type || `${section.key}-${index}`}
+        renderSectionHeader={({ section }) => (
+          !!section.title ? <Text style={[styles.sectionTitle, { marginTop: section.key === 'req' ? 16 : 0 }]}>{section.title}</Text> : null
         )}
-        {allocations.map((a) => {
-          const total = Number(a.leaves_allocated || 0) || 0;
-          const used = Number(usedByType[a.leave_type] || 0) || 0;
-          const remaining = Math.max(0, total - used);
-          // Fill shows remaining balance in black
-          const pct = total > 0 ? Math.max(0, Math.min(100, Math.round((remaining / total) * 100))) : 0;
+        renderItem={React.useCallback(({ item, section }: any) => {
+          if (item?.__type === 'ALLOC_PLACEHOLDER') {
+            return <Text style={styles.placeholder}>{item.text}</Text>;
+          }
+          if (item?.__type === 'APPLY_CARD') {
+            return (
+              <View style={styles.applyCard}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.applyTitle}>Apply for Leave</Text>
+                  <Text style={styles.applySubtitle}>Submit a new leave request</Text>
+                </View>
+                <Pressable
+                  onPress={() => { if (!leaveType && leaveTypes.length > 0) setLeaveType(leaveTypes[0]); setShowApplyModal(true); }}
+                  style={({ pressed }) => [styles.applyButton, pressed && { opacity: 0.9 }]}
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.applyButtonText}>Apply Now</Text>
+                </Pressable>
+              </View>
+            );
+          }
+          if (section.key === 'alloc') {
+            const a = item as LeaveAllocation;
+            const total = Number(a.leaves_allocated || 0) || 0;
+            const used = Number(usedByType[a.leave_type] || 0) || 0;
+            const remaining = Math.max(0, total - used);
+            const pct = total > 0 ? Math.max(0, Math.min(100, Math.round((remaining / total) * 100))) : 0;
+            return (
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => { setLeaveType(a.leave_type); setShowApplyModal(true); }}
+                style={({ pressed }) => [styles.balanceItemCard, pressed && { opacity: 0.96 }]}
+              >
+                <View style={styles.rowTop}>
+                  <Text style={styles.progressLabel}>{a.leave_type}</Text>
+                  <Text style={styles.progressValue}>{used}/{total} days</Text>
+                </View>
+                <View style={styles.progressTrack}>
+                  <View style={[styles.progressFill, { width: `${pct}%` }]} />
+                </View>
+              </Pressable>
+            );
+          }
+          if (item?.__type === 'REQ_PLACEHOLDER') {
+            return (
+              <View style={styles.noRequestsContainer}>
+                <Text style={styles.noRequestsText}>{item.text}</Text>
+              </View>
+            );
+          }
+          // Requests item
+          const r = item as any;
           return (
-            <View key={a.name} style={styles.balanceItemCard}>
-              <View style={styles.rowTop}>
-                <Text style={styles.progressLabel}>{a.leave_type}</Text>
-                <Text style={styles.progressValue}>{used}/{total} days</Text>
-              </View>
-              <View style={styles.progressTrack}>
-                <View style={[styles.progressFill, { width: `${pct}%` }]} />
-              </View>
-              {/* Date range removed per request */}
-            </View>
-          );
-        })}
-
-        <View style={styles.applyCard}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.applyTitle}>Apply for Leave</Text>
-            <Text style={styles.applySubtitle}>Submit a new leave request</Text>
-          </View>
-          <Pressable
-            onPress={() => setShowApplyModal(true)}
-            style={({ pressed }) => [styles.applyButton, pressed && { opacity: 0.9 }]}
-            accessibilityRole="button"
-          >
-            <Text style={styles.applyButtonText}>Apply Now</Text>
-          </Pressable>
-        </View>
-
-        <Text style={styles.historyTitle}>Leave Requests</Text>
-        <FlatList
-          data={requests}
-          keyExtractor={(item) => item.id}
-          scrollEnabled={false}
-          contentContainerStyle={styles.historyList}
-          renderItem={({ item }) => (
             <View style={styles.historyItem}>
               <View style={styles.historyTopRow}>
-                <Text style={styles.historyType}>{item.type}</Text>
+                <Text style={styles.historyType}>{r.type}</Text>
                 <View style={[
                   styles.statusPill,
-                  item.status === 'Approved' ? styles.statusApproved : item.status === 'Pending' ? styles.statusPending : styles.statusRejected,
+                  r.status === 'Approved' ? styles.statusApproved : r.status === 'Pending' ? styles.statusPending : styles.statusRejected,
                 ]}>
-                  <Text style={styles.statusText}>{item.status}</Text>
+                  <Text style={styles.statusText}>{r.status}</Text>
                 </View>
               </View>
-              <Text style={styles.historyDesc}>{item.desc}</Text>
+              <Text style={styles.historyDesc}>{r.desc}</Text>
               <View style={styles.historyDateRow}>
                 <Text style={styles.historyDateIcon}>📅</Text>
-                <Text style={styles.historyDates}>{item.from}</Text>
+                <Text style={styles.historyDates}>{r.from}</Text>
                 <Text style={styles.historyArrow}> → </Text>
-                <Text style={styles.historyDates}>{item.to}</Text>
+                <Text style={styles.historyDates}>{r.to}</Text>
               </View>
-              <Text style={styles.historyDays}>{item.days} days</Text>
+              <Text style={styles.historyDays}>{r.days} days</Text>
             </View>
-          )}
-        />
-      </ScrollView>
+          );
+        }, [usedByType, setShowApplyModal])}
+        removeClippedSubviews
+        windowSize={8}
+        initialNumToRender={8}
+        maxToRenderPerBatch={8}
+      />
 
       <Modal
         animationType="slide"
@@ -165,15 +198,16 @@ export default function LeaveScreen() {
             <Text style={styles.helperText}>Fill in the details below to submit your leave request.</Text>
             <Text style={styles.fieldLabel}>Leave Type</Text>
             <View style={styles.typeRow}>
-              {/* {(leaveTypes.length > 0 ? leaveTypes.map(t => t.name) : ['Annual Leave', 'Sick Leave', 'Casual Leave']).map((t) => (
+              {(leaveTypes.length > 0 ? leaveTypes : ['Annual Leave', 'Sick Leave', 'Casual Leave']).map((t) => (
                 <Pressable
                   key={t}
                   onPress={() => setLeaveType(t)}
                   style={[styles.typeChip, leaveType === t && styles.typeChipSelected]}
+                  accessibilityRole="button"
                 >
                   <Text style={[styles.typeChipText, leaveType === t && styles.typeChipTextSelected]}>{t}</Text>
                 </Pressable>
-              ))} */}
+              ))}
             </View>
 
             <Text style={styles.fieldLabel}>From Date</Text>
