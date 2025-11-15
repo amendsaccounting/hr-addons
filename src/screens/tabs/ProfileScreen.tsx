@@ -27,6 +27,84 @@ type ProfileData = {
   role?: string | null; 
 };
 
+// Optimized memoized header
+const HeaderCard = React.memo(function HeaderCard({
+  imageSource,
+  initials,
+  name,
+  role,
+  empId,
+}: {
+  imageSource: any | null;
+  initials: string;
+  name: string;
+  role: string;
+  empId: string;
+}) {
+  return (
+    <View style={styles.headerCard}>
+      {imageSource ? (
+        <Image source={imageSource} style={styles.headerAvatar} />
+      ) : (
+        <View style={styles.headerAvatarPlaceholder}>
+          <Text style={styles.headerAvatarText}>{initials}</Text>
+        </View>
+      )}
+      <View style={styles.headerTextCol}>
+        <Text style={styles.headerName}>{name}</Text>
+        <Text style={styles.headerRole}>{role}</Text>
+        <Text style={styles.headerEmpId}>{empId}</Text>
+      </View>
+    </View>
+  );
+});
+
+const InfoCard = React.memo(function InfoCard({
+  email,
+  phone,
+  dept,
+  joinDate,
+  location,
+}: {
+  email: string; phone: string; dept: string; joinDate: string; location: string;
+}) {
+  return (
+    <View style={styles.infoCard}>
+      <DetailItem icon="mail-outline" label="Email" value={email} />
+      <DetailItem icon="call-outline" label="Phone" value={phone} />
+      <DetailItem icon="briefcase-outline" label="Department" value={dept} />
+      <DetailItem icon="calendar-outline" label="Join Date" value={joinDate} />
+      <DetailItem icon="location-outline" label="Location" value={location} />
+    </View>
+  );
+});
+
+const QuickCard = React.memo(function QuickCard({ items, onPress }: { items: Array<{ key: string; icon: string; label: string }>; onPress: (label: string) => void }) {
+  return (
+    <View style={styles.quickCard}>
+      {items.map((q, idx) => (
+        <QuickItem
+          key={q.key}
+          icon={q.icon as any}
+          label={q.label}
+          onPress={() => onPress(q.label)}
+          first={idx === 0}
+          last={idx === items.length - 1}
+        />
+      ))}
+    </View>
+  );
+});
+
+const LogoutButton = React.memo(function LogoutButton({ onPress }: { onPress: () => void }) {
+  return (
+    <Pressable style={styles.logoutBtn} onPress={onPress}>
+      <Ionicons name="log-out-outline" size={18} color="#fff" />
+      <Text style={styles.logoutText}>Logout</Text>
+    </Pressable>
+  );
+});
+
 export default function ProfileScreen() {
   (Ionicons as any)?.loadFont?.();
 
@@ -129,13 +207,13 @@ export default function ProfileScreen() {
   };
 
   // Prepare FlatList rows to virtualize screen while keeping design
-  const quickLinks = [
+  const quickLinks = React.useMemo(() => ([
     { key: 'ql-personal', icon: 'person-outline', label: 'Personal Information' },
     { key: 'ql-payslips', icon: 'pricetags-outline', label: 'Payslips' },
     { key: 'ql-calendar', icon: 'calendar-outline', label: 'My Calendar' },
     { key: 'ql-docs', icon: 'document-text-outline', label: 'Documents' },
     { key: 'ql-settings', icon: 'settings-outline', label: 'Settings' },
-  ];
+  ]), []);
 
   type Row =
     | { type: 'header'; key: string }
@@ -144,97 +222,76 @@ export default function ProfileScreen() {
     | { type: 'quick-card'; key: string }
     | { type: 'logout'; key: string };
 
-  const rows: Row[] = [
+  const rows: Row[] = React.useMemo(() => ([
     { type: 'header', key: 'header' },
     { type: 'info', key: 'info' },
     { type: 'quick-title', key: 'quick-title' },
     { type: 'quick-card', key: 'quick-card' },
     { type: 'logout', key: 'logout' },
-  ];
+  ]), []);
 
-  const renderItem: ListRenderItem<Row> = ({ item }) => {
+  // Compute image source once with minimal churn
+  const imageSource = React.useMemo(() => {
+    const src = String(profile.image || '');
+    if (!src) return null;
+    const apiKey = (Config as any).ERP_APIKEY || (Config as any).ERP_API_KEY || '';
+    const apiSecret = (Config as any).ERP_SECRET || (Config as any).ERP_API_SECRET || '';
+    const host = ((Config as any).ERP_URL_METHOD || (Config as any).ERP_URL_RESOURCE || '').replace(/\/api\/(method|resource)$/i, '');
+    const needsAuth = !!src && host && src.startsWith(host) && src.includes('/private/');
+    return needsAuth ? ({ uri: src, headers: { Authorization: `token ${apiKey}:${apiSecret}` } } as any)
+                     : ({ uri: src } as any);
+  }, [profile.image]);
+
+  const onQuickPress = React.useCallback((label: string) => Alert.alert(label, 'Coming soon.'), []);
+
+  const renderItem: ListRenderItem<Row> = React.useCallback(({ item }) => {
     switch (item.type) {
       case 'header':
         return (
-          <View style={styles.headerCard}>
-            <StatusBar barStyle="light-content" backgroundColor="#090a1a" />
-            {(() => {
-              const apiKey = (Config as any).ERP_APIKEY || (Config as any).ERP_API_KEY || '';
-              const apiSecret = (Config as any).ERP_SECRET || (Config as any).ERP_API_SECRET || '';
-              const host = ((Config as any).ERP_URL_METHOD || (Config as any).ERP_URL_RESOURCE || '').replace(/\/api\/(method|resource)$/i, '');
-              const src = String(profile.image || '');
-              const addAuth = !!src && host && src.startsWith(host) && src.includes('/private/');
-              const imageSource = src
-                ? (addAuth
-                    ? ({ uri: src, headers: { Authorization: `token ${apiKey}:${apiSecret}` } } as any)
-                    : ({ uri: src } as any))
-                : null;
-              return imageSource ? (
-                <Image
-                  source={imageSource}
-                  style={styles.headerAvatar}
-                  onError={() => setProfile((p) => ({ ...p, image: null }))}
-                />
-              ) : (
-                <View style={styles.headerAvatarPlaceholder}>
-                  <Text style={styles.headerAvatarText}>{initials}</Text>
-                </View>
-              );
-            })()}
-            <View style={styles.headerTextCol}>
-              <Text style={styles.headerName}>{displayName}</Text>
-              <Text style={styles.headerRole}>{displayRole}</Text>
-              <Text style={styles.headerEmpId}>{displayEmpId}</Text>
-            </View>
-          </View>
+          <HeaderCard
+            imageSource={imageSource}
+            initials={initials}
+            name={displayName}
+            role={displayRole}
+            empId={displayEmpId}
+          />
         );
       case 'info':
         return (
-          <View style={styles.infoCard}>
-            <DetailItem icon="mail-outline" label="Email" value={displayEmail} />
-            <DetailItem icon="call-outline" label="Phone" value={displayPhone} />
-            <DetailItem icon="briefcase-outline" label="Department" value={displayDept} />
-            <DetailItem icon="calendar-outline" label="Join Date" value={displayJoinDate} />
-            <DetailItem icon="location-outline" label="Location" value={displayLocation} />
-          </View>
+          <InfoCard
+            email={displayEmail}
+            phone={displayPhone}
+            dept={displayDept}
+            joinDate={displayJoinDate}
+            location={displayLocation}
+          />
         );
       case 'quick-title':
         return <Text style={styles.quickTitle}>Quick Links</Text>;
       case 'quick-card':
-        return (
-          <View style={styles.quickCard}>
-            {quickLinks.map((q, idx) => (
-              <QuickItem
-                key={q.key}
-                icon={q.icon as any}
-                label={q.label}
-                onPress={() => Alert.alert(q.label, 'Coming soon.')}
-                first={idx === 0}
-                last={idx === quickLinks.length - 1}
-              />
-            ))}
-          </View>
-        );
+        return <QuickCard items={quickLinks} onPress={onQuickPress} />;
       case 'logout':
-        return (
-          <Pressable style={styles.logoutBtn} onPress={signOut}>
-            <Ionicons name="log-out-outline" size={18} color="#fff" />
-            <Text style={styles.logoutText}>Logout</Text>
-          </Pressable>
-        );
+        return <LogoutButton onPress={signOut} />;
       default:
         return null;
     }
-  };
+  }, [imageSource, initials, displayName, displayRole, displayEmpId, displayEmail, displayPhone, displayDept, displayJoinDate, displayLocation, quickLinks, onQuickPress, signOut]);
 
   return (
-    <FlatList
-      data={rows}
-      renderItem={renderItem}
-      keyExtractor={(r) => r.key}
-      contentContainerStyle={styles.container}
-      showsVerticalScrollIndicator={false}
-    />
+    <>
+      <StatusBar barStyle="light-content" backgroundColor="#090a1a" />
+      <FlatList
+        data={rows}
+        renderItem={renderItem}
+        keyExtractor={(r) => r.key}
+        contentContainerStyle={styles.container}
+        showsVerticalScrollIndicator={false}
+        removeClippedSubviews
+        windowSize={5}
+        initialNumToRender={3}
+        maxToRenderPerBatch={3}
+      />
+    </>
   );
 }
 

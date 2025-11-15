@@ -79,12 +79,12 @@ function TabButton({
       accessibilityRole="button"
       accessibilityLabel={label}
       onPress={onPress}
-      style={({ pressed }) => [styles.tabButton, active && styles.tabButtonActive, pressed && styles.tabButtonPressed]}
+      style={({ pressed }) => [styles.tabButton, /* no focused background */ pressed && styles.tabButtonPressed]}
     >
       <Ionicons
         name={active ? iconActive : iconInactive}
         size={active ? 24 : 22}
-        color={active ? '#0b6dff' : '#666'}
+        color={active ? '#000' : '#666'}
         style={styles.iconSpacing}
       />
       <Text style={[styles.tabLabel, active ? styles.tabLabelActive : styles.tabLabelInactive]}>{label}</Text>
@@ -133,12 +133,12 @@ const styles = StyleSheet.create({
     marginHorizontal: 2,
     borderRadius: 10,
   },
-  tabButtonActive: { backgroundColor: '#eef5ff' },
+  tabButtonActive: {},
   tabButtonPressed: { opacity: 0.7 },
   iconSpacing: { marginTop: 2 },
   tabLabel: { fontSize: 11, marginTop: 2 },
   tabLabelInactive: { color: '#666' },
-  tabLabelActive: { color: '#0b6dff', fontWeight: '600' },
+  tabLabelActive: { color: '#000', fontWeight: '600' },
   backdrop: { backgroundColor: 'transparent' },
   drawerPanel: {
     position: 'absolute',
