@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Platform, TextInput, Pressable, StyleProp, ViewStyle, Keyboard, Alert } from 'react-native';
+import { View, Text, StyleSheet, Platform, TextInput, Pressable, StyleProp, ViewStyle, Keyboard, Alert, StatusBar } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { validateEmail } from '../../utils/validators';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -62,6 +62,7 @@ export default function LoginScreen({ onSignedIn, onRegister }: Props) {
 
   return (
     <View style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor="#0c0f1e" />
       {LinearGradientComp ? (
         <LinearGradientComp colors={["#0c0f1e", "#0e1429", "#0c0f1e"]} start={{x:0,y:0}} end={{x:1,y:1}} style={StyleSheet.absoluteFillObject} />
       ) : (

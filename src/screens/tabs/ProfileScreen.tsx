@@ -197,14 +197,25 @@ export default function ProfileScreen() {
     return fallback[0]?.toUpperCase?.() || 'U';
   }, [profile.name, profile.employeeId, profile.email]);
 
-  const signOut = async () => {
+  const doSignOut = React.useCallback(async () => {
     try {
       await AsyncStorage.multiRemove(['userEmail', 'employeeId', 'employeeData', 'username']);
-      Alert.alert('Signed Out', 'Your local session has been cleared.');
-    } catch (e) {
+      Alert.alert('Signed Out', 'You have been signed out.');
+    } catch {
       Alert.alert('Error', 'Could not sign out. Please try again.');
     }
-  };
+  }, []);
+
+  const confirmSignOut = React.useCallback(() => {
+    Alert.alert(
+      'Confirm Logout',
+      'Are you sure you want to sign out?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Logout', style: 'destructive', onPress: () => { void doSignOut(); } },
+      ]
+    );
+  }, [doSignOut]);
 
   // Prepare FlatList rows to virtualize screen while keeping design
   const quickLinks = React.useMemo(() => ([
@@ -271,11 +282,11 @@ export default function ProfileScreen() {
       case 'quick-card':
         return <QuickCard items={quickLinks} onPress={onQuickPress} />;
       case 'logout':
-        return <LogoutButton onPress={signOut} />;
+        return <LogoutButton onPress={confirmSignOut} />;
       default:
         return null;
     }
-  }, [imageSource, initials, displayName, displayRole, displayEmpId, displayEmail, displayPhone, displayDept, displayJoinDate, displayLocation, quickLinks, onQuickPress, signOut]);
+  }, [imageSource, initials, displayName, displayRole, displayEmpId, displayEmail, displayPhone, displayDept, displayJoinDate, displayLocation, quickLinks, onQuickPress, confirmSignOut]);
 
   return (
     <>

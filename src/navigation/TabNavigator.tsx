@@ -1,8 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, Pressable, Animated, Dimensions, Easing } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
-// Ensure icon font is loaded in RN CLI builds
-// (safe no-op if already loaded)
 (Ionicons as any)?.loadFont?.();
 import DashboardScreen from '../screens/tabs/DashboardScreen';
 import AttendanceScreen from '../screens/tabs/AttendanceScreen';
