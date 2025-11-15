@@ -120,3 +120,58 @@ export const fetchLeaveAllocations = async (employeeId: string): Promise<LeaveAl
     }
   }
 };
+
+// Sum of approved leave days per leave_type for an employee
+export async function fetchLeaveUsage(employeeId: string): Promise<Record<string, number>> {
+  const result: Record<string, number> = {};
+  // Attempt 1: Resource endpoint
+  try {
+    const res = await axios.get(`${BASE_URL}/Leave%20Application`, {
+      params: {
+        filters: JSON.stringify([
+          ["employee", "=", employeeId],
+          ["status", "=", "Approved"],
+        ]),
+        fields: JSON.stringify(["leave_type", "total_leave_days"]),
+        limit_page_length: 500,
+      },
+      headers: buildHeaders(),
+    });
+    const rows = (res?.data?.data ?? []) as any[];
+    for (const r of rows) {
+      const k = r.leave_type;
+      const v = Number(r.total_leave_days || 0) || 0;
+      result[k] = (result[k] || 0) + v;
+    }
+    return result;
+  } catch (err1: any) {
+    console.warn('Leave usage attempt 1 failed', err1?.response?.data || err1.message);
+  }
+
+  // Attempt 2: Method endpoint
+  try {
+    if (!METHOD_URL) throw new Error('METHOD_URL not configured');
+    const res2 = await axios.get(`${METHOD_URL}/frappe.client.get_list`, {
+      params: {
+        doctype: 'Leave Application',
+        fields: JSON.stringify(["leave_type", "total_leave_days"]),
+        filters: JSON.stringify([
+          ["employee", "=", employeeId],
+          ["status", "=", "Approved"],
+        ]),
+        limit_page_length: 500,
+      },
+      headers: buildHeaders(),
+    });
+    const rows = (res2?.data?.message ?? []) as any[];
+    for (const r of rows) {
+      const k = r.leave_type;
+      const v = Number(r.total_leave_days || 0) || 0;
+      result[k] = (result[k] || 0) + v;
+    }
+    return result;
+  } catch (err2: any) {
+    console.error('Leave usage attempt 2 failed', err2?.response?.data || err2.message);
+    return result;
+  }
+}

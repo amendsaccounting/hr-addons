@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, Alert, Modal, TextInput, FlatList, StatusBar } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { fetchLeaveAllocations, type LeaveAllocation } from '../../services/leave';
+import { fetchLeaveAllocations, fetchLeaveUsage, type LeaveAllocation } from '../../services/leave';
 
 export default function LeaveScreen() {
   const insets = useSafeAreaInsets();
@@ -10,6 +10,7 @@ export default function LeaveScreen() {
   const [employeeId, setEmployeeId] = React.useState<string | null>(null);
   const [allocations, setAllocations] = React.useState<LeaveAllocation[]>([]);
   const [loadingAlloc, setLoadingAlloc] = React.useState(false);
+  const [usedByType, setUsedByType] = React.useState<Record<string, number>>({});
 
   const requests = React.useMemo(
     () => [
@@ -42,8 +43,12 @@ export default function LeaveScreen() {
     (async () => {
       try {
         setLoadingAlloc(true);
-        const data = await fetchLeaveAllocations(employeeId);
-        setAllocations(data);
+        const [alloc, used] = await Promise.all([
+          fetchLeaveAllocations(employeeId),
+          fetchLeaveUsage(employeeId).catch(() => ({} as Record<string, number>)),
+        ]);
+        setAllocations(alloc);
+        setUsedByType(used || {});
       } catch (e) {
         console.error('Failed to load leave allocations', e);
       } finally {
@@ -71,23 +76,38 @@ export default function LeaveScreen() {
         <Text style={styles.headerTitle}>Leave Management</Text>
         <Text style={styles.headerSubtitle}>Apply and track your leave</Text>
       </View>
-      <ScrollView contentContainerStyle={{ padding: 16 }}>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ padding: 16, paddingTop: 28 }}
+        bounces={false}
+        alwaysBounceVertical={false}
+        overScrollMode="never"
+        contentInsetAdjustmentBehavior="never"
+      >
         <Text style={styles.sectionTitle}>Leave Balance</Text>
         {loadingAlloc && <Text style={styles.placeholder}>Loading balances…</Text>}
         {!loadingAlloc && allocations.length === 0 && (
           <Text style={styles.placeholder}>No leave allocations found.</Text>
         )}
-        {allocations.map((a) => (
-          <View key={a.name} style={styles.balanceItemCard}>
-            <View style={styles.rowTop}>
-              <Text style={styles.progressLabel}>{a.leave_type}</Text>
-              <Text style={styles.progressValue}>{a.leaves_allocated} days</Text>
+        {allocations.map((a) => {
+          const total = Number(a.leaves_allocated || 0) || 0;
+          const used = Number(usedByType[a.leave_type] || 0) || 0;
+          const remaining = Math.max(0, total - used);
+          // Fill shows remaining balance in black
+          const pct = total > 0 ? Math.max(0, Math.min(100, Math.round((remaining / total) * 100))) : 0;
+          return (
+            <View key={a.name} style={styles.balanceItemCard}>
+              <View style={styles.rowTop}>
+                <Text style={styles.progressLabel}>{a.leave_type}</Text>
+                <Text style={styles.progressValue}>{used}/{total} days</Text>
+              </View>
+              <View style={styles.progressTrack}>
+                <View style={[styles.progressFill, { width: `${pct}%` }]} />
+              </View>
+              {/* Date range removed per request */}
             </View>
-            <Text style={styles.progressValue}>
-              {a.from_date} → {a.to_date}
-            </Text>
-          </View>
-        ))}
+          );
+        })}
 
         <View style={styles.applyCard}>
           <View style={{ flex: 1 }}>
@@ -212,7 +232,7 @@ const styles = StyleSheet.create({
   progressLabel: { color: '#374151', fontSize: 14, fontWeight: '600' },
   progressValue: { color: '#6b7280', fontSize: 12 },
   progressTrack: { height: 10, backgroundColor: '#d1d5db', borderRadius: 6, overflow: 'hidden' },
-  progressFill: { height: '100%', borderRadius: 6, backgroundColor: '#0b0b1b' },
+  progressFill: { height: '100%', borderRadius: 6, backgroundColor: '#000' },
   applyCard: { backgroundColor: '#0b0b1b', borderRadius: 12, padding: 16, flexDirection: 'row', alignItems: 'center', marginTop: 8 },
   applyTitle: { color: '#fff', fontSize: 16, fontWeight: '700' },
   applySubtitle: { color: '#cbd5e1', fontSize: 12, marginTop: 2 },
