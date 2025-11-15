@@ -439,7 +439,7 @@ const styles = StyleSheet.create({
   headerSubtitle: { color: '#cbd5e1', marginTop: 4, fontSize: 12 },
   screen: { flex: 1, backgroundColor: '#fff' },
   
-  card: { backgroundColor: '#fff', borderRadius: 14, marginHorizontal: 12, padding: 16, borderWidth: StyleSheet.hairlineWidth, borderColor: '#e5e7eb' },
+  card: { backgroundColor: '#fff', borderRadius: 14, marginHorizontal: 12, padding: 16, borderWidth: 1.25, borderColor: '#d1d5db' },
   clockIconCircle: { alignSelf: 'center', width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f3f4f6', marginTop: 4, marginBottom: 12 },
   clockIcon: { fontSize: 24 },
   clockTime: { fontSize: 28, fontWeight: '700', textAlign: 'center', marginBottom: 6 },
