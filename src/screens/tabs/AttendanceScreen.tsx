@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, useColorScheme, ScrollView, Pressable, Alert, Linking, Platform, RefreshControl, AppState, AppStateStatus, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, useColorScheme, ScrollView, Pressable, Alert, Linking, Platform, RefreshControl, AppState, AppStateStatus, ActivityIndicator, StatusBar } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { checkInOutDoctype, requestLocationPermission, fetchEmployeeCheckins, getLocationString } from '../../services/attendance';
@@ -292,6 +292,7 @@ const onClockOut = async () => {
 
   return (
     <View style={styles.screen}>
+      <StatusBar barStyle="light-content" backgroundColor="#090a1a" />
       <View style={[styles.headerCard, { paddingTop: insets.top + 12 }]}>
         <Text style={styles.headerTitle}>Attendance</Text>
         <Text style={styles.headerSubtitle}>Track your work hours</Text>

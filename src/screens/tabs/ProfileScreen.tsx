@@ -8,9 +8,12 @@ import {
   Alert,
   FlatList,
   ListRenderItem,
+  StatusBar,
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import Config from 'react-native-config';
+import { fetchEmployeeProfile, type ProfileView } from '../../services/profile';
 
 type ProfileData = {
   name?: string | null;
@@ -19,9 +22,9 @@ type ProfileData = {
   image?: string | null;
   phone?: string | null;
   department?: string | null;
-  joinDate?: string | null; // ISO or display string
+  joinDate?: string | null; 
   location?: string | null;
-  role?: string | null; // designation/title
+  role?: string | null; 
 };
 
 export default function ProfileScreen() {
@@ -29,10 +32,12 @@ export default function ProfileScreen() {
 
   const [profile, setProfile] = React.useState<ProfileData>({});
 
+  console.log("profile====>",profile);
+  
+
   React.useEffect(() => {
     (async () => {
       try {
-        // Preferred: a consolidated object if present
         const raw = await AsyncStorage.getItem('employeeData');
         let fromObj: ProfileData = {};
         if (raw) {
@@ -52,7 +57,6 @@ export default function ProfileScreen() {
           } catch {}
         }
 
-        // Fallbacks from individual keys written by login/registration flows
         const [emailKey, empIdKey, usernameKey, phoneKey] = await Promise.all([
           AsyncStorage.getItem('userEmail'),
           AsyncStorage.getItem('employeeId'),
@@ -73,29 +77,47 @@ export default function ProfileScreen() {
           role: fromObj.role || null,
         };
         setProfile(merged);
+
+        const eid = merged.employeeId || empIdKey || '';
+        if (eid) {
+          const remote = await fetchEmployeeProfile(eid);
+          if (remote) {
+            const next: ProfileData = {
+              name: remote.name ?? merged.name,
+              email: remote.email ?? merged.email,
+              employeeId: remote.employeeId ?? merged.employeeId,
+              image: remote.image ?? merged.image,
+              phone: remote.phone ?? merged.phone,
+              department: remote.department ?? merged.department,
+              joinDate: remote.joinDate ?? merged.joinDate,
+              location: remote.location ?? merged.location,
+              role: remote.role ?? merged.role,
+            };
+            setProfile(next);
+            try { await AsyncStorage.setItem('employeeData', JSON.stringify(remote)); } catch {}
+          }
+        }
       } catch {}
     })();
   }, []);
 
-  const displayName = String(profile.name || 'John Doe');
-  const displayEmail = String(profile.email || 'john.doe@company.com');
-  const displayEmpId = String(profile.employeeId || 'EMP-2024-001');
-  const displayRole = String(profile.role || 'Senior Software Engineer');
-  const displayPhone = String(profile.phone || '+1 234-567-8900');
-  const displayDept = String(profile.department || 'Engineering');
-  const displayJoinDate = formatJoinDate(profile.joinDate) || 'Jan 15, 2022';
-  const displayLocation = String(profile.location || 'New York Office');
+  const displayName = String(
+    profile.name || profile.employeeId || (profile.email ? profile.email.split('@')[0] : '-') || '-'
+  );
+  const displayEmail = String(profile.email || '-');
+  const displayEmpId = String(profile.employeeId || '-');
+  const displayRole = String(profile.role || '-');
+  const displayPhone = String(profile.phone || '-');
+  const displayDept = String(profile.department || '-');
+  const displayJoinDate = formatJoinDate(profile.joinDate) || '-';
+  const displayLocation = String(profile.location || '-');
 
   const initials = React.useMemo(() => {
-    const src = (profile.name || profile.email || 'U').toString();
-    const parts = src
-      .replace(/\s+/g, ' ')
-      .trim()
-      .split(' ')
-      .filter(Boolean);
-    const letters = parts.length >= 2 ? parts[0][0] + parts[1][0] : src[0];
-    return letters.toUpperCase();
-  }, [profile.name, profile.email]);
+    const name = (profile.name || '').trim();
+    if (name) return name[0].toUpperCase();
+    const fallback = (profile.employeeId || profile.email || 'U').toString();
+    return fallback[0]?.toUpperCase?.() || 'U';
+  }, [profile.name, profile.employeeId, profile.email]);
 
   const signOut = async () => {
     try {
@@ -135,13 +157,30 @@ export default function ProfileScreen() {
       case 'header':
         return (
           <View style={styles.headerCard}>
-            {profile.image ? (
-              <Image source={{ uri: profile.image }} style={styles.headerAvatar} />
-            ) : (
-              <View style={styles.headerAvatarPlaceholder}>
-                <Text style={styles.headerAvatarText}>{initials}</Text>
-              </View>
-            )}
+            <StatusBar barStyle="light-content" backgroundColor="#090a1a" />
+            {(() => {
+              const apiKey = (Config as any).ERP_APIKEY || (Config as any).ERP_API_KEY || '';
+              const apiSecret = (Config as any).ERP_SECRET || (Config as any).ERP_API_SECRET || '';
+              const host = ((Config as any).ERP_URL_METHOD || (Config as any).ERP_URL_RESOURCE || '').replace(/\/api\/(method|resource)$/i, '');
+              const src = String(profile.image || '');
+              const addAuth = !!src && host && src.startsWith(host) && src.includes('/private/');
+              const imageSource = src
+                ? (addAuth
+                    ? ({ uri: src, headers: { Authorization: `token ${apiKey}:${apiSecret}` } } as any)
+                    : ({ uri: src } as any))
+                : null;
+              return imageSource ? (
+                <Image
+                  source={imageSource}
+                  style={styles.headerAvatar}
+                  onError={() => setProfile((p) => ({ ...p, image: null }))}
+                />
+              ) : (
+                <View style={styles.headerAvatarPlaceholder}>
+                  <Text style={styles.headerAvatarText}>{initials}</Text>
+                </View>
+              );
+            })()}
             <View style={styles.headerTextCol}>
               <Text style={styles.headerName}>{displayName}</Text>
               <Text style={styles.headerRole}>{displayRole}</Text>
