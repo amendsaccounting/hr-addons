@@ -8,6 +8,7 @@ import {
   FlatList,
   Alert,
   Platform,
+  StatusBar,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
@@ -387,12 +388,13 @@ const AttendanceScreen = () => {
 
   return (
     <View style={styles.container}>
-      {/* Header (gradient) */}
+      <StatusBar barStyle="light-content" backgroundColor="#0b0b1b" animated />
+      <View style={{ height: insets.top, backgroundColor: '#0b0b1b' }} />
       <LinearGradient
         colors={["#0b0b1b", "#161a2e"]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
-        style={[styles.headerCard, { paddingTop: insets.top + 14 }]}
+        style={[styles.headerCard, { paddingTop: 14 }]}
       >
         <View style={styles.headerRow}>
           <View style={styles.headerLeftRow}>
@@ -402,12 +404,9 @@ const AttendanceScreen = () => {
             <Text style={styles.headerTitle}>Attendance</Text>
           </View>
         </View>
-        <Text style={styles.headerDate}>{currentDate}</Text>
+        <Text style={styles.headerDate}>Track your work hours</Text>
       </LinearGradient>
-
       <View style={styles.wrapper}>
-
-        {/* Clock section */}
         <View style={styles.clockCard}>
           <Text style={styles.timeText}>{currentTime}</Text>
           <Text style={styles.dateText}>{currentDate}</Text>
