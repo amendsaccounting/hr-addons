@@ -1,248 +1,337 @@
-import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Platform, StyleSheet, Alert } from 'react-native';
-import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
-import DatePicker from 'react-native-date-picker';
-import CountryPicker, { Country, CountryCode, Flag } from 'react-native-country-picker-modal';
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, useColorScheme, ScrollView, Pressable, Alert, Linking, Platform, RefreshControl, AppState, AppStateStatus } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { checkInOutDoctype, requestLocationPermission, fetchEmployeeCheckins } from '../../services/attendance';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 
-type Props = {
-  onLogin?: () => void;
-  onRegistered?: () => void;
+type WeekStats = { totalMinutes: number; days: number; late: number };
+type DayHistory = { date: Date; minutes: number; firstIn?: Date | null; lastOut?: Date | null };
+
+export default function AttendanceScreen() {
+  const isDark = useColorScheme() === 'dark';
+  const insets = useSafeAreaInsets();
+
+  const [now, setNow] = useState(new Date());
+  const [isClockedIn, setIsClockedIn] = useState(false);
+  const [clockInAt, setClockInAt] = useState<Date | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [employeeId, setEmployeeId] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const [weekStats, setWeekStats] = useState<WeekStats>({ totalMinutes: 0, days: 0, late: 0 });
+  const [recent, setRecent] = useState<DayHistory[]>([]);
+  type IOPair = { date: Date; inTime: Date | null; outTime: Date | null; locationIn?: string | null; locationOut?: string | null };
+  const [recentPairs, setRecentPairs] = useState<IOPair[]>([]);
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const refreshData = async () => {
+    try {
+      if (!employeeId) return;
+      const today = new Date();
+      const stats = await computeWeekStats(employeeId, today);
+      setWeekStats(stats);
+      const list = await computeRecentHistory(employeeId, today, 14);
+      setRecent(list);
+      const pairs = await computeRecentIOPairs(employeeId, today, 14);
+      setRecentPairs(pairs);
+    } catch {}
+  };
+
+  useEffect(() => { refreshData(); }, [employeeId]);
+
+  // Load logged-in employee ID from AsyncStorage
+  useEffect(() => {
+    (async () => {
+      try {
+        const id = await AsyncStorage.getItem('employeeId');
+        if (id) setEmployeeId(id);
+      } catch {}
+    })();
+  }, []);
+
+  // Refresh when app comes to foreground (focus-like behavior)
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state: AppStateStatus) => {
+      if (state === 'active') {
+        refreshData();
+      }
+    });
+    return () => sub.remove();
+  }, [employeeId]);
+
+  const onPullRefresh = async () => {
+    try {
+      setRefreshing(true);
+      await refreshData();
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const timeText = formatTime(now);
+  const dateText = formatDate(now);
+
+const onClockIn = async () => {
+  if (submitting) return;
+  if (!employeeId) {
+    Alert.alert('Not Signed In', 'Employee not found. Please login again.');
+    return;
+  }
+  setSubmitting(true);
+  try {
+    const perm = await requestLocationPermission();
+    if (!perm) {
+      Alert.alert(
+        'Enable Location',
+        'Location permission is required to clock in. Open settings to grant access.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Open Settings', onPress: () => Linking.openSettings?.() },
+        ]
+      );
+      return;
+    }
+    const res = await checkInOutDoctype(employeeId, 'IN');
+    if (!res) throw new Error('Clock in failed');
+    setIsClockedIn(true);
+    setClockInAt(new Date());
+    await refreshData();
+    Alert.alert('Clock In', 'Successfully clocked in!');
+  } catch (e) {
+    const msg = String((e as any)?.message || 'Unexpected error');
+    if (msg.includes('Location is required')) {
+      Alert.alert(
+        'Enable GPS',
+        'Turn on device location (GPS) and try again. If already on, move near a window or outdoors to improve GPS.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Open Settings', onPress: () => Linking.openSettings?.() },
+        ]
+      );
+    } else {
+      Alert.alert('Clock In Failed', msg);
+    }
+  } finally {
+    setSubmitting(false);
+  }
 };
 
-export default function RegisterScreen({ onLogin }: Props) {
-  const scrollRef = React.useRef<KeyboardAwareScrollView | null>(null);
-  const emailRef = React.useRef<TextInput | null>(null);
-  const phoneRef = React.useRef<TextInput | null>(null);
-  const [form, setForm] = useState({
-    firstName: '',
-    lastName: '',
-    gender: '',
-    dob: '',
-    dateOfJoining: '',
-    email: '',
-    countryCode: '+971',
-    phoneNumber: '',
-  });
 
-  const [errors, setErrors] = useState<{ [K in keyof typeof form]?: string | null }>({});
-
-  const setField = (k: keyof typeof form, v: string) => {
-    setForm((prev) => ({ ...prev, [k]: v }));
-    if (errors[k]) setErrors((e) => ({ ...e, [k]: null }));
-  };
-
-  const [dobDate, setDobDate] = useState<Date | null>(null);
-  const [dojDate, setDojDate] = useState<Date | null>(null);
-  const [showDOB, setShowDOB] = useState(false);
-  const [showDOJ, setShowDOJ] = useState(false);
-  const [showCountryPicker, setShowCountryPicker] = useState(false);
-  const [countryIso, setCountryIso] = useState<CountryCode>('AE');
-
-  const formatDate = (d: Date | null) => {
-    if (!d) return '';
-    const dd = String(d.getDate()).padStart(2, '0');
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const yyyy = d.getFullYear();
-    return `${dd}/${mm}/${yyyy}`;
-  };
-
-  const openPicker = (which: 'dob' | 'doj') => {
-    if (which === 'dob') setShowDOB(true); else setShowDOJ(true);
-  };
-
-  const scrollToInput = (ref: React.RefObject<any>) => {
-  };
-
-
-const submit = async () => {
-
+const onClockOut = async () => {
+  if (submitting) return;
+  if (!employeeId) {
+    Alert.alert('Not Signed In', 'Employee not found. Please login again.');
+    return;
+  }
+  const clockOutAt = new Date();
+  try {
+    setSubmitting(true);
+    const perm = await requestLocationPermission();
+    if (!perm) {
+      Alert.alert(
+        'Enable Location',
+        'Location permission is required to clock out. Open settings to grant access.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Open Settings', onPress: () => Linking.openSettings?.() },
+        ]
+      );
+      return;
+    }
+    const res = await checkInOutDoctype(employeeId, 'OUT');
+    if (!res) throw new Error('Clock out failed');
+    let message = 'Checked out.';
+    if (clockInAt) {
+      const mins = Math.max(0, Math.round((clockOutAt.getTime() - (clockInAt as Date).getTime()) / 60000));
+      const h = Math.floor(mins / 60);
+      const m = mins % 60;
+      message = `Worked ${h}h ${m}m`;
+    }
+    Alert.alert('Clock Out', message);
+    setIsClockedIn(false);
+    setClockInAt(null);
+    await refreshData();
+  } catch (e) {
+    const msg = String((e as any)?.message || 'Unexpected error');
+    if (msg.includes('Location is required')) {
+      Alert.alert(
+        'Enable GPS',
+        'Turn on device location (GPS) and try again. If already on, move near a window or outdoors to improve GPS.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Open Settings', onPress: () => Linking.openSettings?.() },
+        ]
+      );
+    } else {
+      Alert.alert('Clock Out Failed', msg);
+    }
+  } finally {
+    setSubmitting(false);
+  }
 };
+
 
   return (
-    <View style={styles.container}>
-      <View style={styles.headerSection}>
-        <Ionicons name="business-outline" size={56} color="#fff" style={styles.hrIcon} />
-        <Text style={styles.appName}>Create Account</Text>
+    <View style={styles.screen}>
+      <View style={[styles.headerCard, { paddingTop: insets.top + 12 }]}>
+        <Text style={styles.headerTitle}>Attendance</Text>
+        <Text style={styles.headerSubtitle}>Track your work hours</Text>
       </View>
 
-      <View style={styles.contentWrapper}>
-      <KeyboardAwareScrollView
-        innerRef={(r) => (scrollRef.current = r)}
-        contentContainerStyle={styles.scrollContainer}
-        enableOnAndroid
-        extraScrollHeight={100}
-        keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="on-drag"
-        enableAutomaticScroll
-        style={{ flex: 1 }}
+      <ScrollView
+        contentContainerStyle={{ paddingBottom: 24 }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onPullRefresh} />}
       >
-          <View style={styles.formContainer}>
-            <View style={styles.inputContainer}>
-              <Text style={styles.label}>First Name</Text>
-              <TextInput value={form.firstName} onChangeText={(t) => setField('firstName', t)} placeholder="John" style={styles.input} />
-              {!!errors.firstName && <Text style={styles.errorText}>{errors.firstName}</Text>}
-            </View>
-
-            <View style={styles.inputContainer}>
-              <Text style={styles.label}>Last Name</Text>
-              <TextInput value={form.lastName} onChangeText={(t) => setField('lastName', t)} placeholder="Doe" style={styles.input} />
-              {!!errors.lastName && <Text style={styles.errorText}>{errors.lastName}</Text>}
-            </View>
-
-            <View style={styles.inputContainer}>
-              <Text style={styles.label}>Gender</Text>
-              <View style={styles.genderContainer}>
-                {['Male', 'Female', 'Other'].map((g) => (
-                  <TouchableOpacity key={g} onPress={() => setField('gender', g)} style={[styles.genderButton, form.gender === g && styles.genderButtonSelected]}>
-                    <Text style={[styles.genderText, form.gender === g && styles.genderTextSelected]}>{g}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-              {!!errors.gender && <Text style={styles.errorText}>{errors.gender}</Text>}
-            </View>
-
-            <View style={styles.inputContainer}>
-              <Text style={styles.label}>Date of Birth</Text>
-              <TouchableOpacity onPress={() => openPicker('dob')} style={[styles.input, styles.pickerInput]}>
-                <Text style={[styles.pickerText, { color: form.dob ? '#111827' : '#9ca3af' }]}>
-                  {form.dob || 'Select date'}
-                </Text>
-              </TouchableOpacity>
-              {!!errors.dob && <Text style={styles.errorText}>{errors.dob}</Text>}
-            </View>
-
-            <View style={styles.inputContainer}>
-              <Text style={styles.label}>Date of Joining</Text>
-              <TouchableOpacity onPress={() => openPicker('doj')} style={[styles.input, styles.pickerInput]}>
-                <Text style={[styles.pickerText, { color: form.dateOfJoining ? '#111827' : '#9ca3af' }]}>
-                  {form.dateOfJoining || 'Select date'}
-                </Text>
-              </TouchableOpacity>
-              {!!errors.dateOfJoining && <Text style={styles.errorText}>{errors.dateOfJoining}</Text>}
-            </View>
-
-            <View style={styles.inputContainer}>
-              <Text style={styles.label}>Email</Text>
-              <TextInput
-                ref={emailRef}
-                value={form.email}
-                onChangeText={(t) => setField('email', t)}
-                onFocus={() => scrollToInput(emailRef)}
-                placeholder="name@company.com"
-                autoCapitalize="none"
-                keyboardType="email-address"
-                style={styles.input}
-                returnKeyType="next"
-                onSubmitEditing={() => phoneRef.current?.focus()}
-                blurOnSubmit={false}
-              />
-              {!!errors.email && <Text style={styles.errorText}>{errors.email}</Text>}
-            </View>
-
-            <View style={styles.inputContainer}>
-              <Text style={styles.label}>Phone</Text>
-              <View style={styles.phoneInputContainer}>
-                <TouchableOpacity onPress={() => setShowCountryPicker(true)} style={[styles.input, { width: 100, marginBottom: 0, borderTopRightRadius: 0, borderBottomRightRadius: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingRight: 6 }]}>
-                  <Text style={styles.codeText}>{form.countryCode}</Text>
-                  <View style={styles.codeRight}>
-                    <Flag countryCode={countryIso} flagSize={16} withEmoji={false} />
-                    <Text style={styles.arrow}>▾</Text>
-                  </View>
-                </TouchableOpacity>
-                <TextInput
-                  ref={phoneRef}
-                  value={form.phoneNumber}
-                  onChangeText={(t) => setField('phoneNumber', t)}
-                  onFocus={() => scrollToInput(phoneRef)}
-                  style={[styles.input, { flex: 1, marginBottom: 0, borderTopLeftRadius: 0, borderBottomLeftRadius: 0 }]}
-                  placeholder="501234567"
-                  keyboardType="phone-pad"
-                  returnKeyType="done"
-                />
-                {!!errors.phoneNumber && <Text style={[styles.errorText, { position: 'absolute', left: 0, right: 0, bottom: -20 }]}>{errors.phoneNumber}</Text>}
-              </View>
-            </View>
-            <TouchableOpacity style={styles.registerButton} onPress={submit}>
-              <Text style={styles.registerButtonText}>Register</Text>
-            </TouchableOpacity>
-            <View style={{ alignItems: 'center', marginTop: 14 }}>
-              <Text style={{ color: '#666' }}>
-                Already have an account?{' '}
-                <Text style={{ color: '#007AFF', fontWeight: '600' }} onPress={onLogin}>Login</Text>
-              </Text>
-            </View>
+        <View style={styles.card}>
+          <View style={styles.clockIconCircle}><Text style={styles.clockIcon}>🕒</Text></View>
+          <Text style={styles.clockTime}>{timeText}</Text>
+          <Text style={styles.clockDate}>{dateText}</Text>
+          <View style={styles.locationRow}>
+            <Text style={styles.locationDot}>📍</Text>
+            <Text style={styles.locationText}>Office - Main Building</Text>
           </View>
-        </KeyboardAwareScrollView>
-      </View>
-        <DatePicker
-          modal
-          open={showDOB}
-          date={dobDate || new Date(1990, 0, 1)}
-          mode="date"
-          maximumDate={new Date()}
-          onConfirm={(d) => { setShowDOB(false); setDobDate(d); setField('dob', formatDate(d)); }}
-          onCancel={() => setShowDOB(false)}
-        />
-        <DatePicker
-          modal
-          open={showDOJ}
-          date={dojDate || new Date()}
-          mode="date"
-          minimumDate={dobDate || undefined}
-          maximumDate={new Date()}
-          onConfirm={(d) => { setShowDOJ(false); setDojDate(d); setField('dateOfJoining', formatDate(d)); }}
-          onCancel={() => setShowDOJ(false)}
-        />
-        <CountryPicker
-          countryCode={countryIso}
-          withFilter
-          withFlag
-          withCallingCode
-          withFlagButton={false}
-          withModal={true}
-          visible={showCountryPicker}
-          onClose={() => setShowCountryPicker(false)}
-          onSelect={(c: Country) => {
-            setCountryIso(c.cca2 as CountryCode);
-            const dial = c.callingCode && c.callingCode.length > 0 ? `+${c.callingCode[0]}` : form.countryCode;
-            setField('countryCode', dial);
-            setShowCountryPicker(false);
-          }}
-        />
-      
+          <View style={[styles.locationRow, { marginTop: -8, marginBottom: 16 }]}>
+            <Text style={styles.locationDot}>🧾</Text>
+            <Text style={styles.locationText}>Employee: {employeeId || '-'}</Text>
+          </View>
+          <Pressable onPress={isClockedIn ? onClockOut : onClockIn} style={({ pressed }) => [styles.primaryButton, isClockedIn ? styles.btnDanger : styles.btnPrimary, pressed && styles.btnPressed]}>
+            <Text style={styles.primaryButtonText}>{submitting ? 'Please wait…' : isClockedIn ? 'Clock Out' : 'Clock In'}</Text>
+          </Pressable>
+        </View>
+
+        <Text style={styles.sectionTitle}>This Week</Text>
+        <View style={styles.statsCard}>
+          <View style={styles.statItem}><Text style={styles.statValue}>{Math.round(weekStats.totalMinutes / 60)}</Text><Text style={styles.statLabel}>Hours</Text></View>
+          <View style={styles.statItem}><Text style={styles.statValue}>{weekStats.days}</Text><Text style={styles.statLabel}>Days</Text></View>
+          <View style={styles.statItem}><Text style={styles.statValue}>{weekStats.late}</Text><Text style={styles.statLabel}>Late</Text></View>
+        </View>
+
+        <Text style={styles.sectionTitle}>Recent History</Text>
+
+      </ScrollView>
     </View>
   );
 }
 
+function twoDigits(n: number) { return n < 10 ? `0${n}` : String(n); }
+function formatTime(d: Date) { let h=d.getHours(); const m=twoDigits(d.getMinutes()); const ap=h>=12?'PM':'AM'; h=h%12; if(h===0)h=12; return `${twoDigits(h)}:${m} ${ap}`; }
+function formatDate(d: Date) { const W=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][d.getDay()]; const M=['January','February','March','April','May','June','July','August','September','October','November','December'][d.getMonth()]; return `${W}, ${M} ${d.getDate()}, ${d.getFullYear()}`; }
+function formatDateShort(d: Date) { const M=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()]; return `${M} ${d.getDate()}, ${d.getFullYear()}`; }
+function formatDuration(mins:number){const h=Math.floor(mins/60); const m=mins%60; return `${h}h ${m}m`;}
+
+function startOfWeekMonday(d: Date) { const t=new Date(d.getFullYear(), d.getMonth(), d.getDate()); const day=t.getDay(); const diff=(day===0?-6:1)-day; t.setDate(t.getDate()+diff); t.setHours(0,0,0,0); return t; }
+function endOfWeekFrom(start: Date){const e=new Date(start); e.setDate(e.getDate()+7); e.setHours(0,0,0,0); return e; }
+function startOfDay(d: Date){ const x=new Date(d); x.setHours(0,0,0,0); return x; }
+function addDays(d: Date,n:number){ const x=new Date(d); x.setDate(x.getDate()+n); return x; }
+function ymdKey(d: Date){ return `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`; }
+
+async function computeWeekStats(employeeId: string, refDate: Date) {
+  const from = startOfWeekMonday(refDate);
+  const to = endOfWeekFrom(from);
+  const rows = await fetchEmployeeCheckins({ employeeId, from, to, limit: 1000 });
+  const items = rows.map(r=>({ ...r, dt:new Date(r.time)})).sort((a,b)=>a.dt.getTime()-b.dt.getTime());
+  let totalMinutes=0; const daysSet=new Set<string>(); const firstInByDay=new Map<string,Date>(); let lastIn: Date | null=null;
+  for(const it of items){ const dayKey=ymdKey(it.dt); if(it.log_type==='IN'){ if(!firstInByDay.has(dayKey)) firstInByDay.set(dayKey,it.dt); daysSet.add(dayKey); lastIn=it.dt; } else if(it.log_type==='OUT'){ if(lastIn && it.dt>lastIn){ totalMinutes+=Math.max(0,Math.round((it.dt.getTime()-lastIn.getTime())/60000)); lastIn=null; } } }
+  if(lastIn){ const end=Math.min(new Date().getTime(), endOfWeekFrom(startOfWeekMonday(refDate)).getTime()); totalMinutes+=Math.max(0,Math.round((end-lastIn.getTime())/60000)); }
+  const LATE_HOUR=9, LATE_MIN=30; let late=0; for(const [,dt] of firstInByDay.entries()){ const cutoff=new Date(dt); cutoff.setHours(LATE_HOUR,LATE_MIN,0,0); if(dt.getTime()>cutoff.getTime()) late++; }
+  return { totalMinutes, days: daysSet.size, late } as WeekStats;
+}
+
+async function computeRecentHistory(employeeId: string, refDate: Date, daysBack: number){
+  const to = addDays(startOfDay(refDate),1); const from=addDays(startOfDay(refDate), -daysBack);
+  const rows = await fetchEmployeeCheckins({ employeeId, from, to, limit: 2000 });
+  const items = rows.map(r=>({ ...r, dt:new Date(r.time)})).sort((a,b)=>a.dt.getTime()-b.dt.getTime());
+  const perDay=new Map<string,number>(); const firstInByDay=new Map<string,Date>(); const lastOutByDay=new Map<string,Date>();
+  let lastIn: Date | null=null; let lastInDayKey: string | null=null;
+  for(const it of items){ const dk=ymdKey(it.dt); if(it.log_type==='IN'){ lastIn=it.dt; lastInDayKey=dk; const prev=firstInByDay.get(dk); if(!prev||it.dt<prev) firstInByDay.set(dk,it.dt); } else if(it.log_type==='OUT' && lastIn){ if(dk===lastInDayKey){ const mins=Math.max(0,Math.round((it.dt.getTime()-lastIn.getTime())/60000)); perDay.set(dk,(perDay.get(dk)||0)+mins);} const lo=lastOutByDay.get(dk); if(!lo||it.dt>lo) lastOutByDay.set(dk,it.dt); lastIn=null; lastInDayKey=null; } }
+  const out: DayHistory[]=[]; for(let i=0;i<daysBack;i++){ const d=addDays(startOfDay(refDate),-i); const dk=ymdKey(d); const mins=perDay.get(dk)||0; const firstIn=firstInByDay.get(dk)||null; const lastOut=lastOutByDay.get(dk)||null; if(mins>0||firstIn||lastOut) out.push({ date:d, minutes:mins, firstIn, lastOut }); }
+  // If there is no data, just return empty (no mock fallback)
+  return out;
+}
+
+async function computeRecentIOPairs(employeeId: string, refDate: Date, daysBack: number){
+  const to = addDays(startOfDay(refDate),1); const from=addDays(startOfDay(refDate), -daysBack);
+  const rows = await fetchEmployeeCheckins({ employeeId, from, to, limit: 2000 });
+  const items = rows.map(r=>({ ...r, dt:new Date(r.time)})).sort((a,b)=>a.dt.getTime()-b.dt.getTime());
+  const out: { date: Date; inTime: Date | null; outTime: Date | null; locationIn?: string | null; locationOut?: string | null }[] = [];
+  let openIn: { dayKey: string; dt: Date; location?: string | null } | null = null;
+  for(const it of items){
+    const dk = ymdKey(it.dt);
+    if(String(it.log_type).toUpperCase() === 'IN'){
+      if(openIn){
+        out.push({ date: startOfDay(openIn.dt), inTime: openIn.dt, outTime: null, locationIn: openIn.location || null, locationOut: null });
+      }
+      openIn = { dayKey: dk, dt: it.dt, location: (it as any)?.location || null };
+    } else if(String(it.log_type).toUpperCase() === 'OUT'){
+      if(openIn && openIn.dayKey === dk && it.dt.getTime() > openIn.dt.getTime()){
+        out.push({ date: startOfDay(it.dt), inTime: openIn.dt, outTime: it.dt, locationIn: openIn.location || null, locationOut: (it as any)?.location || null });
+        openIn = null;
+      } else {
+        out.push({ date: startOfDay(it.dt), inTime: null, outTime: it.dt, locationIn: null, locationOut: (it as any)?.location || null });
+      }
+    }
+  }
+  if(openIn){
+    out.push({ date: startOfDay(openIn.dt), inTime: openIn.dt, outTime: null, locationIn: openIn.location || null, locationOut: null });
+    openIn = null;
+  }
+  return out;
+}
+
+function generateMockRecentHistory(refDate: Date, days: number): DayHistory[] { const res: DayHistory[]=[]; for(let i=0;i<days;i++){ const d=addDays(startOfDay(refDate),-i); const day=d.getDay(); if(day===0||day===6) continue; const base=8*60+0; const jitter=(i%4)*15; const minutes=base+jitter; const firstIn=new Date(d); const firstInMin=9*60+5+(i%4)*10; firstIn.setHours(Math.floor(firstInMin/60), firstInMin%60,0,0); const lastOut=new Date(firstIn); lastOut.setMinutes(lastOut.getMinutes()+minutes); res.push({ date:d, minutes, firstIn, lastOut }); } return res; }
+
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#000' },
-  headerSection: { backgroundColor: '#000', paddingTop: 48, paddingBottom: 24, alignItems: 'center', justifyContent: 'center' },
-  iconWrapper: { width: 70, height: 70, borderRadius: 35, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', marginBottom: 12, display: 'none' as any },
-  hrIcon: { marginBottom: 12 },
-  contentWrapper: { flex: 1, backgroundColor: '#fff', borderTopLeftRadius: 16, borderTopRightRadius: 16, overflow: 'hidden' },
-  appName: { fontSize: 22, fontWeight: 'bold', color: '#fff' },
-  scrollContainer: { flexGrow: 1, paddingHorizontal: 20, paddingTop: 20, paddingBottom: 30 },
-  formContainer: { width: '100%' },
-  inputContainer: { marginBottom: 16 },
-  label: { fontSize: 14, fontWeight: '600', color: '#333', marginBottom: 8 },
-  errorText: { color: '#ef4444', marginTop: 6 },
-  input: { height: 48, borderWidth: 1, borderColor: '#ddd', borderRadius: 10, paddingHorizontal: 12, fontSize: 16, backgroundColor: '#f9f9f9', color: '#333', ...(Platform.OS === 'android' ? { textAlignVertical: 'center' } as any : {}) },
-  pickerInput: { justifyContent: 'center' },
-  pickerText: { fontSize: 16, ...(Platform.OS === 'android' ? { includeFontPadding: false } as any : {}) },
-  codeText: { fontSize: 16, color: '#333', ...(Platform.OS === 'android' ? { includeFontPadding: false, textAlignVertical: 'center', lineHeight: 20 } as any : {}) },
-  codeRight: { flexDirection: 'row', alignItems: 'center' },
-  arrow: { color: '#666', marginLeft: 6, ...(Platform.OS === 'android' ? { includeFontPadding: false, lineHeight: 18 } as any : {}) },
-  phoneInputContainer: { flexDirection: 'row' },
-  genderContainer: { flexDirection: 'row', justifyContent: 'space-between' },
-  genderButton: { flex: 1, height: 48, borderWidth: 1, borderColor: '#ddd', borderRadius: 10, justifyContent: 'center', alignItems: 'center', marginHorizontal: 4, backgroundColor: '#f9f9f9' },
-  genderButtonSelected: { backgroundColor: '#0b0b1b', borderColor: '#0b0b1b' },
-  genderText: { fontSize: 16, color: '#666', fontWeight: '500' },
-  genderTextSelected: { color: '#fff', fontWeight: '700' },
-  registerButton: { height: 52, backgroundColor: '#0b0b1b', borderRadius: 10, justifyContent: 'center', alignItems: 'center', marginTop: 24, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.35, shadowRadius: 5, elevation: 8 },
-  registerButtonText: { color: '#fff', fontSize: 17, fontWeight: 'bold' },
+  headerCard: { backgroundColor: '#090a1a', borderBottomLeftRadius: 16, borderBottomRightRadius: 16, paddingBottom: 16, paddingHorizontal: 16, marginBottom: 10 },
+  headerTitle: { color: '#fff', fontWeight: '700', fontSize: 18 },
+  headerSubtitle: { color: '#cbd5e1', marginTop: 4, fontSize: 12 },
+  screen: { flex: 1, backgroundColor: '#fff' },
+  
+  card: { backgroundColor: '#fff', borderRadius: 14, marginHorizontal: 12, padding: 16, borderWidth: StyleSheet.hairlineWidth, borderColor: '#e5e7eb' },
+  clockIconCircle: { alignSelf: 'center', width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f3f4f6', marginTop: 4, marginBottom: 12 },
+  clockIcon: { fontSize: 24 },
+  clockTime: { fontSize: 28, fontWeight: '700', textAlign: 'center', marginBottom: 6 },
+  clockDate: { fontSize: 12, color: '#6b7280', textAlign: 'center', marginBottom: 12 },
+  locationRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
+  locationDot: { marginRight: 6 },
+  locationText: { color: '#6b7280', fontSize: 12 },
+  primaryButton: { borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
+  btnPrimary: { backgroundColor: '#0b0b1b' },
+  btnDanger: { backgroundColor: '#e11d48' },
+  btnPressed: { opacity: 0.85 },
+  primaryButtonText: { color: '#fff', fontWeight: '600' },
+  sectionTitle: { marginTop: 16, marginBottom: 8, marginLeft: 16, fontSize: 14, fontWeight: '700', color: '#111827' },
+  statsCard: { backgroundColor: '#fff', borderRadius: 14, marginHorizontal: 12, paddingVertical: 14, borderWidth: StyleSheet.hairlineWidth, borderColor: '#e5e7eb', flexDirection: 'row', justifyContent: 'space-around' },
+  statItem: { alignItems: 'center', flex: 1 },
+  statValue: { fontSize: 20, fontWeight: '700', color: '#111827' },
+  statLabel: { fontSize: 11, color: '#6b7280', marginTop: 2 },
+  historyCard: { backgroundColor: '#fff', borderRadius: 14, marginHorizontal: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: '#e5e7eb', paddingHorizontal: 12, paddingVertical: 6 },
+  historyRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10 },
+  historyRowDivider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#e5e7eb' },
+  historyLeft: { flexDirection: 'row', alignItems: 'center' },
+  historyRight: { flexDirection: 'column', alignItems: 'flex-end', marginRight: 12 },
+  historyDate: { color: '#374151', fontSize: 13 },
+  historyTime: { color: '#6b7280', fontSize: 11 },
+  historyDuration: { color: '#059669', fontWeight: '600', fontSize: 13 },
+  emptyWrap: { alignItems: 'center', justifyContent: 'center', paddingVertical: 16 },
+  emptyPill: { width: 140, height: 44, borderRadius: 22, backgroundColor: '#f3f4f6', alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
+  historyEmpty: { color: '#9ca3af' },
 });
 
-// Country picker handled by react-native-country-picker-modal
+
+
+
+
+
+
+
+
+
+
+
 
 

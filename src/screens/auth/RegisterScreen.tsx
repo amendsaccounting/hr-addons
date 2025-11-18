@@ -116,7 +116,7 @@ export default function RegisterScreen({ onLogin, onRegistered }: Props) {
           );
           const emailToStore = updated?.email || form.email;
           if (emailToStore) {
-            await AsyncStorage.setItem('username', emailToStore);
+            await AsyncStorage.setItem('userEmail', emailToStore);
             console.log('Username saved to AsyncStorage:', emailToStore);
           }
           onRegistered && onRegistered();
@@ -151,7 +151,6 @@ export default function RegisterScreen({ onLogin, onRegistered }: Props) {
           Alert.alert('Create Failed', 'Could not create ERPNext user.');
           return;
         }
-
         const employeePayload = {
           first_name: form.firstName,
           last_name: form.lastName,
@@ -174,8 +173,6 @@ export default function RegisterScreen({ onLogin, onRegistered }: Props) {
             'User created, but employee record failed.',
           );
         }
-
-        // Save email and navigate to tabs after successful create flow (full or partial)
         if (form.email) {
           await AsyncStorage.setItem('username', form.email);
           console.log('Username saved to AsyncStorage:', form.email);

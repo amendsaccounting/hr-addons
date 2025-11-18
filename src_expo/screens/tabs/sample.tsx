@@ -17,6 +17,15 @@ const AttendanceScreen = () => {
   const [isClockedIn, setIsClockedIn] = useState(false);
   const [recentHistory, setRecentHistory] = useState<any[]>([]);
 
+  // Dummy attendance history (static sample data)
+  const dummyHistory = [
+    { id: 'd1', date: 'Mon, Oct 28, 2025', clockIn: '09:02 AM', clockOut: '06:01 PM' },
+    { id: 'd2', date: 'Tue, Oct 29, 2025', clockIn: '09:06 AM', clockOut: '06:05 PM' },
+    { id: 'd3', date: 'Wed, Oct 30, 2025', clockIn: '09:00 AM', clockOut: '05:58 PM' },
+    { id: 'd4', date: 'Thu, Oct 31, 2025', clockIn: '09:10 AM', clockOut: '06:12 PM' },
+    { id: 'd5', date: 'Fri, Nov 01, 2025', clockIn: '08:55 AM', clockOut: '05:50 PM' },
+  ];
+
 useEffect(() => {
   const interval = setInterval(() => {
     const now = new Date();
@@ -159,27 +168,33 @@ const getCurrentDateTime = () => {
     }
   };
 
+  // Time helpers shared by both history renderers
+  const parseTime = (time: string) => {
+    if (!time) return { hours: 0, minutes: 0 };
+    if (time.includes('AM') || time.includes('PM')) {
+      const [h, mPart] = time.split(':');
+      const m = mPart.slice(0, 2);
+      const ampm = mPart.slice(3);
+      let hours = parseInt(h, 10);
+      if (ampm === 'PM' && hours !== 12) hours += 12;
+      if (ampm === 'AM' && hours === 12) hours = 0;
+      return { hours, minutes: parseInt(m, 10) };
+    } else {
+      const [h, m] = time.split(':');
+      return { hours: parseInt(h, 10), minutes: parseInt(m, 10) };
+    }
+  };
+
+  const computeTotalHours = (clockIn: string, clockOut: string) => {
+    const start = parseTime(clockIn);
+    const end = parseTime(clockOut);
+    const total = (end.hours + end.minutes / 60) - (start.hours + start.minutes / 60);
+    return isNaN(total) ? '0.00' : total.toFixed(2);
+  };
+
   // 🧾 Render history items
   const renderHistoryItem = ({ item }: any) => {
-    const parseTime = (time: string) => {
-      if (!time) return { hours: 0, minutes: 0 };
-      if (time.includes('AM') || time.includes('PM')) {
-        const [h, mPart] = time.split(':');
-        const m = mPart.slice(0, 2);
-        const ampm = mPart.slice(3);
-        let hours = parseInt(h, 10);
-        if (ampm === 'PM' && hours !== 12) hours += 12;
-        if (ampm === 'AM' && hours === 12) hours = 0;
-        return { hours, minutes: parseInt(m, 10) };
-      } else {
-        const [h, m] = time.split(':');
-        return { hours: parseInt(h, 10), minutes: parseInt(m, 10) };
-      }
-    };
-
-    const start = parseTime(item.clockIn);
-    const end = parseTime(item.clockOut);
-    const totalHours = ((end.hours + end.minutes / 60) - (start.hours + start.minutes / 60)).toFixed(2);
+    const totalHours = computeTotalHours(item.clockIn, item.clockOut);
 
     return (
       <View style={styles.historyItem}>
@@ -238,6 +253,27 @@ const getCurrentDateTime = () => {
             </View>
           }
         />
+
+        {/* Dummy history section */}
+        <Text style={styles.sectionTitle}>Dummy Attendance History</Text>
+        <View style={styles.historyGroup}>
+          {dummyHistory.map((item) => (
+            <View key={item.id} style={styles.historyItem}>
+              <View style={styles.historyLeft}>
+                <View style={styles.dateRow}>
+                  <Ionicons name="calendar-outline" size={20} color="#333" />
+                  <Text style={styles.historyDate}>{item.date}</Text>
+                </View>
+                <Text style={styles.historyClockIn}>In: {item.clockIn}</Text>
+              </View>
+              <View style={styles.historyRight}>
+                {/* Total hours computed similarly to renderHistoryItem */}
+                <Text style={styles.historyTotal}>{computeTotalHours(item.clockIn, item.clockOut)} hrs</Text>
+                <Text style={styles.historyClockOut}>Out: {item.clockOut}</Text>
+              </View>
+            </View>
+          ))}
+        </View>
       </View>
     </View>
   );
@@ -315,12 +351,19 @@ const styles = StyleSheet.create({
         elevation: 4,
     },
     statsTitle: {
-        fontSize: 18,
-        fontWeight: '600',
-        color: '#000',
-        marginTop: 16,
-        marginBottom: 8,
-        textAlign: 'left',
+      fontSize: 18,
+      fontWeight: '600',
+      color: '#000',
+      marginTop: 16,
+      marginBottom: 8,
+      textAlign: 'left',
+    },
+    sectionTitle: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: '#111',
+      marginTop: 18,
+      marginBottom: 8,
     },
     statsRow: {
         flexDirection: 'row',
@@ -341,15 +384,18 @@ const styles = StyleSheet.create({
         marginTop: 4,
     },
     historyItem: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        paddingVertical: 12,
-        paddingHorizontal: 12,
-        backgroundColor: '#fff',
-        borderWidth: 1,
-        borderColor: '#ddd',
-        borderRadius: 5,
-        marginBottom: 8,
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      paddingVertical: 12,
+      paddingHorizontal: 12,
+      backgroundColor: '#fff',
+      borderWidth: 1,
+      borderColor: '#ddd',
+      borderRadius: 5,
+      marginBottom: 8,
+    },
+    historyGroup: {
+      marginTop: 4,
     },
     dateRow: {
         flexDirection: 'row',

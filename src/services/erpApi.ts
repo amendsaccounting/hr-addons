@@ -71,6 +71,7 @@ export async function updateUser(email: string, updatedFields: Record<string, an
       body: JSON.stringify(updatedFields),
     });
     const json = await res.json().catch(() => null);
+    console.log("json=====>",json);
     if (res.ok) return (json as any)?.data ?? json ?? true;
     console.warn('ERP updateUser error', json);
     return null;
