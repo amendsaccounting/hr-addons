@@ -8,15 +8,15 @@ import {
   Animated,
   Modal,
   StatusBar,
-  TextInput,
-  ScrollView,
-  Dimensions,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 
 (Ionicons as any)?.loadFont?.();
+import { computeLeaveBalances } from '../../services/leave';
 
+// Types and sample data kept outside to avoid redeclaration on re-renders
 type ReqItem = {
   id: string;
   title: string;
@@ -38,22 +38,14 @@ const REQUESTS_SAMPLE: ReqItem[] = [
   { id: '3', title: 'Casual Leave', subtitle: 'Personal errand', status: 'Rejected', start: 'Aug 02, 2025', end: 'Aug 02, 2025' },
 ];
 
-const BALANCES_SAMPLE: LeaveBalanceItem[] = [
-  { label: 'Annual Leave', used: 12, total: 20 },
-  { label: 'Sick Leave', used: 8, total: 10 },
-  { label: 'Casual Leave', used: 3, total: 5 },
-];
-
-const LEAVE_TYPES = [
-  { key: 'annual', label: 'Annual Leave' },
-  { key: 'sick', label: 'Sick Leave' },
-  { key: 'casual', label: 'Casual Leave' },
-];
+// Balances are fetched from ERP; keep a minimal placeholder type for UI
 
 export default function LeaveScreen() {
   const insets = useSafeAreaInsets();
   const requests: ReqItem[] = REQUESTS_SAMPLE;
-  const balances: LeaveBalanceItem[] = BALANCES_SAMPLE;
+  const [employeeId, setEmployeeId] = React.useState<string | null>(null);
+  const [balances, setBalances] = React.useState<LeaveBalanceItem[]>([]);
+  const [loadingBalances, setLoadingBalances] = React.useState(false);
   const [applyVisible, setApplyVisible] = React.useState(false);
 
   const openApply = React.useCallback(() => setApplyVisible(true), []);
@@ -69,9 +61,59 @@ export default function LeaveScreen() {
     />
   ), []);
 
-  const headerEl = React.useMemo(() => (
-    <ContentHeader balances={balances} onApply={openApply} />
-  ), [balances, openApply]);
+  // Load logged-in employee ID (fast local lookup similar to Attendance screen)
+  React.useEffect(() => {
+    (async () => {
+      try {
+        const [id, raw] = await AsyncStorage
+          .multiGet(['employeeId', 'employeeData'])
+          .then(rows => [rows.find(r=>r[0]==='employeeId')?.[1], rows.find(r=>r[0]==='employeeData')?.[1]]);
+        if (id) {
+          setEmployeeId(id);
+        } else if (raw) {
+          try {
+            const obj = JSON.parse(raw);
+            const cand = [
+              obj?.name,
+              obj?.employee,
+              obj?.employee_id,
+              obj?.employeeId,
+              obj?.data?.name,
+              obj?.data?.employee,
+              obj?.data?.employee_id,
+              obj?.data?.employeeId,
+            ].find((v:any)=> typeof v === 'string' && v.trim().length>0);
+            if (cand) setEmployeeId(String(cand));
+          } catch {}
+        }
+      } catch {}
+    })();
+  }, []);
+
+  // Fetch leave balances from ERP using Leave Allocation and usage
+  React.useEffect(() => {
+    if (!employeeId) return;
+    let mounted = true;
+    (async () => {
+      try {
+        setLoadingBalances(true);
+        const list = await computeLeaveBalances(employeeId);
+        if (!mounted) return;
+        const mapped: LeaveBalanceItem[] = (list || []).map(b => ({
+          label: b.leave_type,
+          used: b.used,
+          total: b.allocated,
+        }));
+        setBalances(mapped);
+      } catch (err) {
+        try { console.warn('Leave balances load failed', err); } catch {}
+        if (mounted) setBalances([]);
+      } finally {
+        mounted && setLoadingBalances(false);
+      }
+    })();
+    return () => { mounted = false; };
+  }, [employeeId]);
 
   return (
     <View style={styles.screen}>
@@ -86,7 +128,7 @@ export default function LeaveScreen() {
         contentContainerStyle={styles.contentContainer}
         data={requests}
         keyExtractor={keyExtractor}
-        ListHeaderComponent={headerEl}
+        ListHeaderComponent={<ContentHeader balances={balances} onApply={openApply} />}
         renderItem={renderItem}
         ListEmptyComponent={<EmptyRequests />}
         ListFooterComponent={ListFooter}
@@ -129,9 +171,18 @@ const ContentHeader = React.memo(function ContentHeader({ balances, onApply }: {
       <Text style={styles.sectionTitle}>Leave Balance</Text>
       {balances && balances.length > 0 ? (
         <>
-          {balances.map((b, idx) => (
-            <BalanceCard key={idx} label={b.label} valueText={`${b.used}/${b.total}`} progress={b.total ? b.used / b.total : 0} />
-          ))}
+          {balances.map((b, idx) => {
+            const remaining = Math.max(0, (b.total || 0) - (b.used || 0));
+            const progress = b.total ? remaining / b.total : 0;
+            return (
+              <BalanceCard
+                key={idx}
+                label={b.label}
+                valueText={`${remaining}/${b.total}`}
+                progress={progress}
+              />
+            );
+          })}
         </>
       ) : (
         <View style={[styles.card, styles.emptyCard]}>
@@ -144,7 +195,7 @@ const ContentHeader = React.memo(function ContentHeader({ balances, onApply }: {
       )}
 
       <View style={styles.applyWrapper}>
-        <Pressable style={styles.flexOne} onPress={onApply} accessibilityLabel="Open apply form">
+        <Pressable style={{ flex: 1 }} onPress={onApply} accessibilityLabel="Open apply form">
           <Text style={styles.applyTitle}>Apply for Leave</Text>
           <Text style={styles.applySubtitle}>Submit a new leave request</Text>
         </Pressable>
@@ -281,10 +332,6 @@ const styles = StyleSheet.create({
     borderColor: '#e5e7eb',
   },
   applyNowText: { color: '#111827', fontWeight: '700', marginLeft: 6, fontSize: 12 },
-  // utility
-  flexOne: { flex: 1 },
-  colRightGap: { marginRight: 6 },
-  colLeftGap: { marginLeft: 6 },
   listFooter: { height: 12 },
   emptyCard: { alignItems: 'flex-start' },
   emptyRow: { flexDirection: 'row', alignItems: 'center' },
@@ -302,39 +349,9 @@ const styles = StyleSheet.create({
     paddingBottom: 18,
   },
   sheetHandle: { alignSelf: 'center', width: 42, height: 4, borderRadius: 2, backgroundColor: '#e5e7eb', marginBottom: 8 },
-  sheetHeaderRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
+  sheetHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
   sheetTitle: { fontSize: 16, fontWeight: '700', color: '#111827' },
   sheetSub: { color: '#6b7280', fontSize: 12 },
-  closeIconBtn: { marginLeft: 10, padding: 6 },
-  sheetContent: { marginTop: 10 },
-  sheetContentContainer: { paddingBottom: 12 },
-  fieldLabel: { color: '#374151', fontSize: 12, marginTop: 12, marginBottom: 6, fontWeight: '600' },
-  inputRow: { },
-  dropdown: { borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, paddingVertical: 12, paddingHorizontal: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  dropdownText: { color: '#111827' },
-  dropdownMenu: { borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, marginTop: 6, overflow: 'hidden' },
-  dropdownItem: { paddingVertical: 10, paddingHorizontal: 12, backgroundColor: '#fff' },
-  dropdownItemText: { color: '#111827' },
-  rowTwo: { flexDirection: 'row', marginTop: 10 },
-  col: { flex: 1 },
-  inputPressable: { borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, paddingVertical: 12, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center' },
-  inputText: { marginLeft: 8, color: '#111827' },
-  textArea: { borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, padding: 12, minHeight: 90, textAlignVertical: 'top', color: '#111827' },
-  errorText: { color: '#ef4444', marginTop: 8 },
-  sheetActionsRow: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 14 },
-  actionRightBtn: { marginLeft: 10 },
-  // Calendar
-  calCard: { borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, padding: 12, marginTop: 10, backgroundColor: '#fff' },
-  calHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  calIconBtn: { padding: 6 },
-  calTitle: { fontWeight: '700', color: '#111827' },
-  calWeekRow: { flexDirection: 'row', marginTop: 8 },
-  calWeekLabel: { flex: 1, textAlign: 'center', color: '#6b7280', fontSize: 12 },
-  calGrid: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 6 },
-  calCell: { width: `${100/7}%`, aspectRatio: 1, alignItems: 'center', justifyContent: 'center', borderRadius: 8 },
-  calCellText: { color: '#111827' },
-  calCellTextDim: { color: '#d1d5db' },
-  calCellDisabled: { opacity: 0.5 },
 });
 
 const ListFooter = React.memo(() => <View style={styles.listFooter} />);
@@ -357,29 +374,6 @@ const BottomApplyModal = React.memo(function BottomApplyModal({ visible, onClose
   }, [visible, slide]);
   const translateY = slide.interpolate({ inputRange: [0, 1], outputRange: [400, 0] });
   const backdropOpacity = slide.interpolate({ inputRange: [0, 1], outputRange: [0, 0.35] });
-  const sheetMaxHeight = Math.round(Dimensions.get('window').height * 0.78);
-
-  const [leaveType, setLeaveType] = React.useState(LEAVE_TYPES[0]);
-  const [fromDate, setFromDate] = React.useState<Date | null>(null);
-  const [toDate, setToDate] = React.useState<Date | null>(null);
-  const [reason, setReason] = React.useState('');
-  const [showType, setShowType] = React.useState(false);
-  const [showCal, setShowCal] = React.useState<'from' | 'to' | null>(null);
-  const [error, setError] = React.useState('');
-
-  const reset = () => { setLeaveType(LEAVE_TYPES[0]); setFromDate(null); setToDate(null); setReason(''); setShowType(false); setShowCal(null); setError(''); };
-  const closeAll = () => { reset(); onClose(); };
-
-  const submit = () => {
-    setError('');
-    if (!fromDate || !toDate) { setError('Please select both dates.'); return; }
-    if (toDate.getTime() < fromDate.getTime()) { setError('To date cannot be earlier than From date.'); return; }
-    if (!reason.trim()) { setError('Please enter a reason.'); return; }
-    // Here you can call API or navigate; for now just close
-    closeAll();
-  };
-
-  const fmt = (d: Date | null) => d ? d.toDateString().slice(4) : 'Select date';
 
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={onClose} statusBarTranslucent>
@@ -387,152 +381,22 @@ const BottomApplyModal = React.memo(function BottomApplyModal({ visible, onClose
         <Pressable style={[StyleSheet.absoluteFill, styles.modalBackdrop]} onPress={onClose}>
           <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: '#000', opacity: backdropOpacity }]} />
         </Pressable>
-        <Animated.View style={[styles.sheet, { transform: [{ translateY }], maxHeight: sheetMaxHeight }]}> 
+        <Animated.View style={[styles.sheet, { transform: [{ translateY }] }]}> 
           <View style={styles.sheetHandle} />
           <View style={styles.sheetHeaderRow}>
             <Text style={styles.sheetTitle}>Apply for Leave</Text>
+            <Pressable onPress={onClose} accessibilityLabel="Close">
+              <Ionicons name="close" size={18} color="#111827" />
+            </Pressable>
           </View>
           <Text style={styles.sheetSub}>Fill the details to submit your leave request.</Text>
-          <ScrollView style={styles.sheetContent} contentContainerStyle={styles.sheetContentContainer} showsVerticalScrollIndicator={false}>
-            {/* Leave Type */}
-            <Text style={styles.fieldLabel}>Leave Type</Text>
-            <View style={styles.inputRow}>
-              <Pressable style={styles.dropdown} onPress={() => setShowType((v) => !v)}>
-                <Text style={styles.dropdownText}>{leaveType.label}</Text>
-                <Ionicons name={showType ? 'chevron-up' : 'chevron-down'} size={16} color="#6b7280" />
-              </Pressable>
-            </View>
-            {showType && (
-              <View style={styles.dropdownMenu}>
-                {LEAVE_TYPES.map((t) => (
-                  <Pressable key={t.key} style={styles.dropdownItem} onPress={() => { setLeaveType(t); setShowType(false); }}>
-                    <Text style={styles.dropdownItemText}>{t.label}</Text>
-                  </Pressable>
-                ))}
-              </View>
-            )}
-
-            {/* Dates */}
-            <View style={styles.rowTwo}>
-              <View style={[styles.col, styles.colRightGap]}>
-                <Text style={styles.fieldLabel}>From date</Text>
-                <Pressable style={styles.inputPressable} onPress={() => setShowCal('from')} accessibilityLabel="Pick from date">
-                  <Ionicons name="calendar-outline" size={16} color="#6b7280" />
-                  <Text style={styles.inputText}>{fmt(fromDate)}</Text>
-                </Pressable>
-              </View>
-              <View style={[styles.col, styles.colLeftGap]}>
-                <Text style={styles.fieldLabel}>To date</Text>
-                <Pressable style={styles.inputPressable} onPress={() => setShowCal('to')} accessibilityLabel="Pick to date">
-                  <Ionicons name="calendar-outline" size={16} color="#6b7280" />
-                  <Text style={styles.inputText}>{fmt(toDate)}</Text>
-                </Pressable>
-              </View>
-            </View>
-            {showCal && (
-              <CalendarPicker
-                initialDate={(showCal === 'from' ? fromDate : toDate) ?? new Date()}
-                minDate={showCal === 'to' ? fromDate ?? undefined : undefined}
-                maxDate={showCal === 'from' ? toDate ?? undefined : undefined}
-                onChange={(d) => {
-                  if (showCal === 'from') {
-                    setFromDate(d);
-                    if (toDate && d.getTime() > toDate.getTime()) setToDate(d);
-                  } else {
-                    if (fromDate && d.getTime() < fromDate.getTime()) {
-                      setError('To date cannot be earlier than From date.');
-                      return; // keep calendar open
-                    }
-                    setToDate(d);
-                  }
-                  setError('');
-                  setShowCal(null);
-                }}
-                onCancel={() => setShowCal(null)}
-              />
-            )}
-
-            {/* Reason */}
-            <Text style={styles.fieldLabel}>Reason</Text>
-            <TextInput
-              style={styles.textArea}
-              value={reason}
-              onChangeText={setReason}
-              placeholder="Type your reason..."
-              placeholderTextColor="#9ca3af"
-              multiline
-              numberOfLines={4}
-            />
-
-            {error ? <Text style={styles.errorText}>{error}</Text> : null}
-
-            <View style={styles.sheetActionsRow}>
-              <Pressable style={[styles.applyNowButton, { backgroundColor: '#f3f4f6' }]} onPress={closeAll}>
-                <Ionicons name="close" size={16} color="#111827" />
-                <Text style={[styles.applyNowText, { color: '#111827' }]}>Cancel</Text>
-              </Pressable>
-              <Pressable style={[styles.applyNowButton, styles.actionRightBtn, { backgroundColor: '#111827' }]} onPress={submit}>
-                <Ionicons name="checkmark" size={16} color="#fff" />
-                <Text style={[styles.applyNowText, { color: '#fff' }]}>Submit</Text>
-              </Pressable>
-            </View>
-          </ScrollView>
+          {/* Placeholder action; hook up to form/navigation if needed */}
+          <Pressable style={[styles.applyNowButton, { alignSelf: 'flex-end', marginTop: 12 }]} onPress={onClose}>
+            <Ionicons name="checkmark" size={16} color="#111827" />
+            <Text style={styles.applyNowText}>Submit</Text>
+          </Pressable>
         </Animated.View>
       </View>
     </Modal>
   );
 });
-
-// Lightweight inline calendar picker
-function CalendarPicker({ initialDate, onChange, onCancel, minDate, maxDate }: { initialDate: Date; onChange: (d: Date) => void; onCancel: () => void; minDate?: Date; maxDate?: Date }) {
-  const [cursor, setCursor] = React.useState(new Date(initialDate.getFullYear(), initialDate.getMonth(), 1));
-  const year = cursor.getFullYear();
-  const month = cursor.getMonth();
-  const start = new Date(year, month, 1);
-  const startDay = start.getDay();
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const grid: (number | null)[] = Array(startDay).fill(null).concat(Array.from({ length: daysInMonth }, (_, i) => i + 1));
-  while (grid.length % 7 !== 0) grid.push(null);
-
-  const label = start.toLocaleString(undefined, { month: 'long', year: 'numeric' });
-  const sod = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-  const minTs = minDate ? sod(minDate) : undefined;
-  const maxTs = maxDate ? sod(maxDate) : undefined;
-
-  return (
-    <View style={styles.calCard}>
-      <View style={styles.calHeader}>
-        <Pressable style={styles.calIconBtn} onPress={() => setCursor(new Date(year, month - 1, 1))}>
-          <Ionicons name="chevron-back" size={18} color="#111827" />
-        </Pressable>
-        <Text style={styles.calTitle}>{label}</Text>
-        <Pressable style={styles.calIconBtn} onPress={() => setCursor(new Date(year, month + 1, 1))}>
-          <Ionicons name="chevron-forward" size={18} color="#111827" />
-        </Pressable>
-      </View>
-      <View style={styles.calWeekRow}>
-        {['S','M','T','W','T','F','S'].map((d) => (
-          <Text key={d} style={styles.calWeekLabel}>{d}</Text>
-        ))}
-      </View>
-      <View style={styles.calGrid}>
-        {grid.map((day, i) => {
-          const dateObj = day ? new Date(year, month, day) : null;
-          const ts = dateObj ? sod(dateObj) : undefined;
-          const disabled = !day || (minTs !== undefined && ts! < minTs) || (maxTs !== undefined && ts! > maxTs);
-          return (
-            <Pressable key={i} style={[styles.calCell, disabled && styles.calCellDisabled]} disabled={disabled} onPress={() => dateObj && onChange(dateObj)}>
-              <Text style={[styles.calCellText, (!day || disabled) && styles.calCellTextDim]}>{day ?? ''}</Text>
-            </Pressable>
-          );
-        })}
-      </View>
-      <View style={styles.sheetActionsRow}>
-        <Pressable style={[styles.applyNowButton, { backgroundColor: '#f3f4f6' }]} onPress={onCancel}>
-          <Ionicons name="close" size={16} color="#111827" />
-          <Text style={[styles.applyNowText, { color: '#111827' }]}>Cancel</Text>
-        </Pressable>
-      </View>
-    </View>
-  );
-}
