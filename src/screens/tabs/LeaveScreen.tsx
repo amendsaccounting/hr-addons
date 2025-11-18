@@ -11,13 +11,14 @@ import {
   TextInput,
   Alert,
   Platform,
+  Linking,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 
 (Ionicons as any)?.loadFont?.();
-import { computeLeaveBalances } from '../../services/leave';
+import { computeLeaveBalances, fetchLeaveHistory, applyLeave } from '../../services/leave';
 import DateTimePicker from '@react-native-community/datetimepicker';
 
 // Types and sample data kept outside to avoid redeclaration on re-renders
@@ -36,21 +37,18 @@ type LeaveBalanceItem = {
   total: number;
 };
 
-const REQUESTS_SAMPLE: ReqItem[] = [
-  { id: '1', title: 'Annual Leave', subtitle: 'Family vacation', status: 'Pending', start: 'Oct 20, 2025', end: 'Oct 22, 2025' },
-  { id: '2', title: 'Sick Leave', subtitle: 'Flu recovery', status: 'Approved', start: 'Sep 12, 2025', end: 'Sep 13, 2025' },
-  { id: '3', title: 'Casual Leave', subtitle: 'Personal errand', status: 'Rejected', start: 'Aug 02, 2025', end: 'Aug 02, 2025' },
-];
+const REQUESTS_SAMPLE: ReqItem[] = [];
 
 // Balances are fetched from ERP; keep a minimal placeholder type for UI
 
 export default function LeaveScreen() {
   const insets = useSafeAreaInsets();
-  const requests: ReqItem[] = REQUESTS_SAMPLE;
+  const [requests, setRequests] = React.useState<ReqItem[]>(REQUESTS_SAMPLE);
   const [employeeId, setEmployeeId] = React.useState<string | null>(null);
   const [balances, setBalances] = React.useState<LeaveBalanceItem[]>([]);
   const [loadingBalances, setLoadingBalances] = React.useState(false);
   const [applyVisible, setApplyVisible] = React.useState(false);
+  const [refreshKey, setRefreshKey] = React.useState(0);
 
   const openApply = React.useCallback(() => setApplyVisible(true), []);
   const closeApply = React.useCallback(() => setApplyVisible(false), []);
@@ -117,7 +115,33 @@ export default function LeaveScreen() {
       }
     })();
     return () => { mounted = false; };
-  }, [employeeId]);
+  }, [employeeId, refreshKey]);
+
+  // Fetch leave applications for requests list (latest first)
+  React.useEffect(() => {
+    if (!employeeId) return;
+    let mounted = true;
+    (async () => {
+      try {
+        const items = await fetchLeaveHistory(employeeId, 100);
+        if (!mounted) return;
+        const fmt = (s: string) => new Date(s).toLocaleDateString(undefined, { month: 'short', day: '2-digit', year: 'numeric' });
+        const mapped: ReqItem[] = (items || []).map((h: any) => ({
+          id: String(h?.name || ''),
+          title: String(h?.leave_type || ''),
+          subtitle: String(h?.description || ''),
+          status: String(h?.status || ''),
+          start: h?.from_date ? fmt(String(h.from_date)) : '',
+          end: h?.to_date ? fmt(String(h.to_date)) : '',
+        }));
+        setRequests(mapped);
+      } catch (err) {
+        try { console.warn('Leave requests load failed', err); } catch {}
+        if (mounted) setRequests([]);
+      }
+    })();
+    return () => { mounted = false; };
+  }, [employeeId, refreshKey]);
 
   return (
     <View style={styles.screen}>
@@ -145,6 +169,8 @@ export default function LeaveScreen() {
       <BottomApplyModal
         visible={applyVisible}
         onClose={closeApply}
+        employeeId={employeeId}
+        onApplied={() => setRefreshKey((k) => k + 1)}
         types={React.useMemo(() => Array.from(new Set(balances.map(b => b.label))).filter(Boolean), [balances])}
       />
     </View>
@@ -425,7 +451,7 @@ const EmptyRequests = React.memo(() => (
 ));
 
 // Bottom sheet-style modal for applying leave
-const BottomApplyModal = React.memo(function BottomApplyModal({ visible, onClose, types }: { visible: boolean; onClose: () => void; types?: string[] }) {
+const BottomApplyModal = React.memo(function BottomApplyModal({ visible, onClose, types, employeeId, onApplied }: { visible: boolean; onClose: () => void; types?: string[]; employeeId?: string | null; onApplied?: () => void }) {
   const slide = React.useRef(new Animated.Value(0)).current;
   React.useEffect(() => {
     Animated.timing(slide, { toValue: visible ? 1 : 0, duration: 250, useNativeDriver: true }).start();
@@ -440,6 +466,7 @@ const BottomApplyModal = React.memo(function BottomApplyModal({ visible, onClose
   const [showFromPicker, setShowFromPicker] = React.useState(false);
   const [showToPicker, setShowToPicker] = React.useState(false);
   const [showTypeMenu, setShowTypeMenu] = React.useState(false);
+  const [submitting, setSubmitting] = React.useState(false);
 
   const fmt = (d: Date) => {
     const pad = (n: number) => (n < 10 ? `0${n}` : String(n));
@@ -462,7 +489,9 @@ const BottomApplyModal = React.memo(function BottomApplyModal({ visible, onClose
     onClose();
   }, [onClose]);
 
-  const onSubmit = React.useCallback(() => {
+  const onSubmit = React.useCallback(async () => {
+    if (submitting) return;
+    if (!employeeId) { Alert.alert('Not ready', 'Employee ID not found. Try again.'); return; }
     if (!leaveType || !fromDate || !toDate || !reason) {
       Alert.alert('Incomplete', 'Please fill all fields.');
       return;
@@ -473,12 +502,71 @@ const BottomApplyModal = React.memo(function BottomApplyModal({ visible, onClose
     if (f < now0) { Alert.alert('Invalid date', 'From date cannot be in the past.'); return; }
     if (t < now0) { Alert.alert('Invalid date', 'To date cannot be in the past.'); return; }
     if (t < f) { Alert.alert('Invalid range', 'To date cannot be before From date.'); return; }
-    try { console.log('Submit Leave', { leaveType, fromDate, toDate, reason }); } catch {}
-    onClose();
-    setTimeout(() => {
-      setLeaveType(''); setFromDate(''); setToDate(''); setReason('');
-    }, 0);
-  }, [leaveType, fromDate, toDate, reason, onClose]);
+    try {
+      setSubmitting(true);
+      await applyLeave({
+        employee: String(employeeId),
+        leave_type: leaveType,
+        from_date: fromDate,
+        to_date: toDate,
+        description: reason,
+      });
+      Alert.alert('Submitted', 'Your leave request has been submitted.');
+      onClose();
+      onApplied && onApplied();
+      setTimeout(() => { setLeaveType(''); setFromDate(''); setToDate(''); setReason(''); }, 0);
+    } catch (err: any) {
+      const data = err?.response?.data || {};
+      const rawException: string = String(data?.exception || '');
+      const excType: string = String(data?.exc_type || '');
+      let title = 'Error';
+      let msg = err?.response?.data?.message || err?.message || 'Failed to submit leave.';
+      try {
+        if (excType.includes('OverlapError') || rawException.includes('OverlapError')) {
+          title = 'Already Applied';
+          const html = rawException || '';
+          // Try to extract details: leave type and date range from server text
+          const typeMatch = html.match(/applied for\s+([^<]+?)\s+between/i);
+          const dateMatch = html.match(/between\s+(\d{1,2}-\d{1,2}-\d{4})\s+and\s+(\d{1,2}-\d{1,2}-\d{4})/i);
+          const docMatch = html.match(/>([^<]+)<\/?a>/i);
+          const urlMatch = html.match(/href=\"([^\"]+)\"/i);
+          const type = typeMatch?.[1]?.trim();
+          const d1 = dateMatch?.[1];
+          const d2 = dateMatch?.[2];
+          const docname = docMatch?.[1];
+          const url = urlMatch?.[1];
+          const fmtNice = (dstr?: string) => {
+            if (!dstr) return '';
+            const [dd, mm, yyyy] = dstr.split('-').map((s) => parseInt(s, 10));
+            if (!yyyy || !mm || !dd) return dstr;
+            const dt = new Date(yyyy, mm - 1, dd);
+            if (isNaN(dt.getTime())) return dstr;
+            return dt.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' });
+          };
+          const niceFrom = fmtNice(d1);
+          const niceTo = fmtNice(d2);
+          const rangeText = niceFrom && niceTo ? `${niceFrom} to ${niceTo}` : (d1 && d2 ? `${d1} to ${d2}` : 'these dates');
+          const typeText = type ? type : 'leave';
+          const docText = docname ? ` (${docname})` : '';
+          msg = `You already have a ${typeText} from ${rangeText}.${docText ? ` View: ${docText}` : ''}`;
+
+          if (url) {
+      Alert.alert(
+  "⚠️ Leave Conflict",
+  "These dates already have a leave request. Please adjust your selection.",
+  [
+    { text: "🔄 Adjust Dates", style: "cancel" },
+  ]
+);
+            return;
+          }
+        }
+      } catch {}
+      Alert.alert(title, String(msg));
+    } finally {
+      setSubmitting(false);
+    }
+  }, [submitting, employeeId, leaveType, fromDate, toDate, reason, onClose, onApplied]);
 
 
   return (
@@ -648,6 +736,8 @@ const BottomApplyModal = React.memo(function BottomApplyModal({ visible, onClose
 });
 
 // Custom inline calendar removed; using native DateTimePicker
+
+
 
 
 

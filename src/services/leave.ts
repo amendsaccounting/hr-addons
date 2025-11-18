@@ -236,3 +236,111 @@ export async function computeLeaveBalances(employeeId: string): Promise<LeaveBal
   result.sort((a, b) => a.leave_type.localeCompare(b.leave_type));
   return result;
 }
+
+export type LeaveHistoryItem = {
+  name: string;
+  leave_type: string;
+  description?: string | null;
+  from_date: string;
+  to_date: string;
+  total_leave_days?: number;
+  status: string;
+};
+
+export async function fetchLeaveHistory(employeeId: string, limit: number = 50): Promise<LeaveHistoryItem[]> {
+  const id = String(employeeId || '').trim();
+  if (!id) return [];
+  // Attempt 1: Resource endpoint
+  try {
+    const res = await axios.get(`${BASE_URL}/Leave%20Application`, {
+      params: {
+        filters: JSON.stringify([["employee", "=", id]]),
+        fields: JSON.stringify([
+          'name',
+          'leave_type',
+          'description',
+          'from_date',
+          'to_date',
+          'total_leave_days',
+          'status',
+        ]),
+        order_by: 'creation desc',
+        limit_page_length: limit,
+      },
+      headers: headers(),
+    });
+    return (res?.data?.data ?? []) as LeaveHistoryItem[];
+  } catch (err1: any) {
+    const server = err1?.response?.data;
+    console.warn('fetchLeaveHistory resource failed', server || err1?.message);
+  }
+  // Attempt 2: Method endpoint
+  try {
+    if (!METHOD_URL) throw new Error('METHOD_URL not configured');
+    const res = await axios.get(`${METHOD_URL}/frappe.client.get_list`, {
+      params: {
+        doctype: 'Leave Application',
+        fields: JSON.stringify([
+          'name',
+          'leave_type',
+          'description',
+          'from_date',
+          'to_date',
+          'total_leave_days',
+          'status',
+        ]),
+        filters: JSON.stringify([["employee", "=", id]]),
+        order_by: 'creation desc',
+        limit_page_length: limit,
+      },
+      headers: headers(),
+    });
+    return (res?.data?.message ?? []) as LeaveHistoryItem[];
+  } catch (err2: any) {
+    const server = err2?.response?.data;
+    console.error('fetchLeaveHistory method failed', server || err2?.message);
+    return [];
+  }
+}
+
+export type ApplyLeaveInput = {
+  employee: string;
+  leave_type: string;
+  from_date: string; // YYYY-MM-DD
+  to_date: string;   // YYYY-MM-DD
+  description?: string;
+  company?: string;
+};
+
+// Create a Leave Application for the given employee
+export async function applyLeave(input: ApplyLeaveInput): Promise<any> {
+  const payload: Record<string, any> = {
+    employee: input.employee,
+    leave_type: input.leave_type,
+    from_date: input.from_date,
+    to_date: input.to_date,
+  };
+  if (input.description) payload.description = input.description;
+  if (input.company) payload.company = input.company;
+
+  // Try resource endpoint first
+  try {
+    const res = await axios.post(`${BASE_URL}/Leave%20Application`, payload, { headers: headers() });
+    return (res?.data?.data ?? res?.data ?? true);
+  } catch (err1: any) {
+    const server1 = err1?.response?.data;
+    console.warn('applyLeave resource failed', server1 || err1.message);
+  }
+
+  // Fallback: method endpoint
+  try {
+    if (!METHOD_URL) throw new Error('METHOD_URL not configured');
+    const doc = { doctype: 'Leave Application', ...payload };
+    const res2 = await axios.post(`${METHOD_URL}/frappe.client.insert`, { doc }, { headers: headers() });
+    return (res2?.data?.message ?? true);
+  } catch (err2: any) {
+    const server2 = err2?.response?.data;
+    console.error('applyLeave method failed', server2 || err2.message);
+    throw err2;
+  }
+}
