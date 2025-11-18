@@ -18,6 +18,8 @@ const AttendanceScreen = () => {
   const [loadingLocation, setLoadingLocation] = useState(false);
   const [isClockedIn, setIsClockedIn] = useState(false);
   const [recentHistory, setRecentHistory] = useState<any[]>([]);
+  const [employeeId, setEmployeeId] = useState<string | null>(null);
+  const latest = recentHistory && recentHistory.length > 0 ? recentHistory[0] : null;
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -36,12 +38,91 @@ const AttendanceScreen = () => {
 
   useEffect(() => {
     (async () => {
-      const savedHistory = await AsyncStorage.getItem('recentHistory');
-      if (savedHistory) {
-        setRecentHistory(JSON.parse(savedHistory));
-      }
+      try {
+        const [id, data] = await AsyncStorage.multiGet(['employeeId', 'employeeData']).then(rows => [rows.find(r=>r[0]==='employeeId')?.[1], rows.find(r=>r[0]==='employeeData')?.[1]]);
+        if (id) {
+          setEmployeeId(id);
+        } else if (data) {
+          try { setEmployeeId(JSON.parse(data)?.name || null); } catch {}
+        }
+      } catch {}
+      await loadRecentHistory();
     })();
   }, []);
+
+  const formatTime12 = (date: Date) => {
+    const h = date.getHours();
+    const m = date.getMinutes();
+    const hh = ((h % 12) || 12).toString().padStart(2, '0');
+    const mm = m.toString().padStart(2, '0');
+    const ap = h >= 12 ? 'PM' : 'AM';
+    return `${hh}:${mm} ${ap}`;
+  };
+
+  const loadRecentHistory = async () => {
+    try {
+      // Prefer explicit employeeId key, then fallback to employeeData.name
+      let id: string | null = employeeId;
+      if (!id) {
+        const [rawId, rawData] = await AsyncStorage.multiGet(['employeeId', 'employeeData']).then(rows => [rows.find(r=>r[0]==='employeeId')?.[1], rows.find(r=>r[0]==='employeeData')?.[1]]);
+        id = rawId || (rawData ? (()=>{ try { return JSON.parse(rawData as string)?.name || null; } catch { return null; } })() : null);
+      }
+      if (!id) return;
+
+      const params: any = {
+        filters: JSON.stringify([["employee", "=", id]]),
+        fields: JSON.stringify(["name","employee","log_type","time","location"]),
+        order_by: 'time asc',
+        limit_page_length: '200',
+      };
+      const listRes = await axios.get(`${ERP_URL_RESOURCE}/${encodeURIComponent('Employee Checkin')}` , {
+        params,
+        headers: { Authorization: `token ${ERP_APIKEY}:${ERP_SECRET}` },
+      });
+      const rows: any[] = listRes?.data?.data || [];
+      const items = rows.map(r => ({ ...r, dt: new Date(r.time) })).sort((a,b)=>a.dt.getTime()-b.dt.getTime());
+      const out: any[] = [];
+      let open: any | null = null;
+      for (const it of items) {
+        const lt = String(it.log_type).toUpperCase();
+        if (lt === 'IN') {
+          if (open) {
+            out.push({ id: `${open.name}-open`, date: open.dt.toLocaleDateString(), clockIn: formatTime12(open.dt), clockOut: '', locationIn: open.location || '', locationOut: '' });
+          }
+          open = it;
+        } else if (lt === 'OUT') {
+          if (open && it.dt.getTime() > open.dt.getTime()) {
+            out.push({
+              id: `${open.name}-${it.name}`,
+              date: it.dt.toLocaleDateString(),
+              clockIn: formatTime12(open.dt),
+              clockOut: formatTime12(it.dt),
+              locationIn: open.location || '',
+              locationOut: it.location || '',
+            });
+            open = null;
+          } else {
+            out.push({ id: `${it.name}`, date: it.dt.toLocaleDateString(), clockIn: '', clockOut: formatTime12(it.dt), locationIn: '', locationOut: it.location || '' });
+          }
+        }
+      }
+      if (open) {
+        out.push({ id: `${open.name}-open`, date: open.dt.toLocaleDateString(), clockIn: formatTime12(open.dt), clockOut: '', locationIn: open.location || '', locationOut: '' });
+      }
+      // Built in ascending order; show latest first
+      const desc = out.slice().reverse();
+      const finalList = desc.slice(0, 10);
+      setRecentHistory(finalList);
+      try { console.log('Expo Attendance history', { employeeId: id, count: finalList.length }); } catch {}
+      // Reflect current session in UI
+      if (out.length > 0) {
+        const latest = out[0];
+        setIsClockedIn(!!latest.clockIn && !latest.clockOut);
+      }
+    } catch (e) {
+      // Silent fail; keep whatever is shown
+    }
+  };
 
   const fetchUserLocation = async () => {
     try {
@@ -100,9 +181,9 @@ const AttendanceScreen = () => {
       if (!isClockedIn) {
         // Clock IN
         const response = await axios.post(
-          `${ERP_URL_RESOURCE}/Employee Checkin`,
+          `${ERP_URL_RESOURCE}/${encodeURIComponent('Employee Checkin')}`,
           {
-            employee: employee.name,
+            employee: employeeId || employee.name,
             log_type: 'IN',
             time: formattedTime,
             device_id: 'MobileApp',
@@ -115,26 +196,15 @@ const AttendanceScreen = () => {
             },
           }
         );
-        const newRecord = {
-          id: Date.now().toString(),
-          date,
-          clockIn: time,
-          clockOut: '',
-          location: loc,
-          checkinName: response.data.data.name,
-        };
-
-        const updatedHistory = [newRecord, ...(recentHistory || [])];
-        setRecentHistory(updatedHistory);
-        await AsyncStorage.setItem('recentHistory', JSON.stringify(updatedHistory));
+        await loadRecentHistory();
         setIsClockedIn(true);
         Alert.alert('Success', 'You have clocked in successfully!');
       } else {
         // Clock OUT
         const response = await axios.post(
-          `${ERP_URL_RESOURCE}/Employee Checkin`,
+          `${ERP_URL_RESOURCE}/${encodeURIComponent('Employee Checkin')}`,
           {
-            employee: employee.name,
+            employee: employeeId || employee.name,
             log_type: 'OUT',
             time: formattedTime,
             device_id: 'MobileApp',
@@ -148,12 +218,7 @@ const AttendanceScreen = () => {
           }
         );
 
-        const updated = [...recentHistory];
-        updated[0].clockOut = time;
-        updated[0].location = loc;
-
-        setRecentHistory(updated);
-        await AsyncStorage.setItem('recentHistory', JSON.stringify(updated));
+        await loadRecentHistory();
         setIsClockedIn(false);
         Alert.alert('Success', 'You have clocked out successfully!');
       }
@@ -250,19 +315,18 @@ const AttendanceScreen = () => {
             </Text>
           </View>
           <View style={styles.locationRow}>
-            <Ionicons 
-              name="location-outline" 
-              size={12} 
-              color={index === 0 ? "#fff" : "#666"} 
-            />
-            <Text style={[
-              styles.locationText,
-              index === 0 && styles.currentSessionText
-            ]} numberOfLines={1}>
-              {item.location}
+            <Ionicons name="location-outline" size={12} color={index === 0 ? "#fff" : "#666"} />
+            <Text style={[styles.locationText, index === 0 && styles.currentSessionText]} numberOfLines={1}>
+              In: {item.locationIn || '-'}
             </Text>
           </View>
-        </View>
+          <View style={[styles.locationRow, { marginTop: 2 }]}>
+            <Ionicons name="location-outline" size={12} color={index === 0 ? "#fff" : "#666"} />
+            <Text style={[styles.locationText, index === 0 && styles.currentSessionText]} numberOfLines={1}>
+              Out: {item.locationOut || '-'}
+            </Text>
+          </View>
+      </View>
       </View>
     );
   };
@@ -365,6 +429,8 @@ const AttendanceScreen = () => {
             }
           />
         </View>
+
+        {/* Per-row details are shown inline in each history item */}
       </View>
     </View>
   );

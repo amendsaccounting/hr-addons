@@ -54,6 +54,22 @@ const LeaveScreen = () => {
             alert('Please fill all fields');
             return;
         }
+        // Prevent applying for dates that overlap with existing requests (Pending/Approved)
+        try {
+            const newFrom = new Date(dates.from);
+            const newTo = new Date(dates.to);
+            const conflict = leaveRequests.some((r: any) => {
+                const status = String(r.status || '').toLowerCase();
+                if (status === 'rejected') return false;
+                const rFrom = new Date(r.from);
+                const rTo = new Date(r.to);
+                return !(newTo < rFrom || newFrom > rTo);
+            });
+            if (conflict) {
+                alert('You already have a leave request that overlaps with the selected dates.');
+                return;
+            }
+        } catch {}
         try {
             setLoading(true);
             const payload = {

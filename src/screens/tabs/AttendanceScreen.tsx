@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, useColorScheme, ScrollView, Pressable, Alert, Linking, Platform, RefreshControl, AppState, AppStateStatus, ActivityIndicator, StatusBar } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { checkInOutDoctype, requestLocationPermission, fetchEmployeeCheckins, getLocationString } from '../../services/attendance';
+import { checkInOutDoctype, requestLocationPermission, fetchEmployeeCheckins, getLocationString, fetchAttendanceHistory } from '../../services/attendance';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 
 type WeekStats = { totalMinutes: number; days: number; late: number };
@@ -21,9 +21,10 @@ export default function AttendanceScreen() {
   const [headerLocation, setHeaderLocation] = useState<string>('-');
 
   const [weekStats, setWeekStats] = useState<WeekStats>({ totalMinutes: 0, days: 0, late: 0 });
-  const [recent, setRecent] = useState<DayHistory[]>([]);
   type IOPair = { date: Date; inTime: Date | null; outTime: Date | null; locationIn?: string | null; locationOut?: string | null };
   const [recentPairs, setRecentPairs] = useState<IOPair[]>([]);
+
+  console.log("recentPairs====>",recentPairs);
 
   // Offline fallback: persist/restore clocked-in state
   const STORAGE_CLOCKED_IN = 'attendance:isClockedIn';
@@ -45,21 +46,6 @@ export default function AttendanceScreen() {
       if (lastLoc) setHeaderLocation(lastLoc);
     } catch {}
   };
-
-  // Dummy recent history (shown first)
-  const buildDate = (daysAgo: number, h: number, m: number) => {
-    const x = new Date();
-    x.setDate(x.getDate() - daysAgo);
-    x.setHours(h, m, 0, 0);
-    return x;
-  };
-  const dummyRecentPairs: IOPair[] = [
-    { date: startOfDay(buildDate(0, 0, 0)), inTime: buildDate(0, 9, 5), outTime: buildDate(0, 17, 52), locationIn: 'Main Gate', locationOut: 'Main Gate' },
-    { date: startOfDay(buildDate(1, 0, 0)), inTime: buildDate(1, 9, 12), outTime: buildDate(1, 18, 3), locationIn: 'Reception', locationOut: 'Reception' },
-    { date: startOfDay(buildDate(2, 0, 0)), inTime: buildDate(2, 8, 58), outTime: buildDate(2, 17, 40), locationIn: 'Main Gate', locationOut: 'Main Gate' },
-    { date: startOfDay(buildDate(3, 0, 0)), inTime: buildDate(3, 9, 7), outTime: buildDate(3, 17, 55), locationIn: 'Reception', locationOut: 'Reception' },
-    { date: startOfDay(buildDate(4, 0, 0)), inTime: buildDate(4, 9, 0), outTime: buildDate(4, 17, 48), locationIn: 'Main Gate', locationOut: 'Main Gate' },
-  ];
 
   // Modern history row renderer (reused by dummy and live)
   const renderModernHistoryRow = (item: IOPair, idx: number, keyPrefix: string) => (
@@ -85,7 +71,8 @@ export default function AttendanceScreen() {
           <Ionicons name="time-outline" size={14} color="#065f46" />
           <Text style={styles.durationText}>{formatDuration(item.inTime, item.outTime)}</Text>
         </View>
-        <Text style={styles.locationSmall} numberOfLines={1} ellipsizeMode="tail">{item.locationOut || item.locationIn || '-'}</Text>
+        <Text style={styles.locationSmall} numberOfLines={1} ellipsizeMode="tail">In: {item.locationIn || '-'}</Text>
+        <Text style={styles.locationSmall} numberOfLines={1} ellipsizeMode="tail">Out: {item.locationOut || '-'}</Text>
       </View>
     </View>
   );
@@ -99,12 +86,77 @@ export default function AttendanceScreen() {
     try {
       if (!employeeId) return;
       const today = new Date();
-      const stats = await computeWeekStats(employeeId, today);
-      setWeekStats(stats);
-      const list = await computeRecentHistory(employeeId, today, 14);
-      setRecent(list);
-      const pairs = await computeRecentIOPairs(employeeId, today, 14);
-      setRecentPairs(pairs);
+      let recentLocal: IOPair[] = [];
+
+      // Compute week stats (independent error handling)
+      try {
+        const stats = await computeWeekStats(employeeId, today);
+        setWeekStats(stats);
+      } catch {}
+
+      // Fetch recent history (independent error handling)
+      try {
+        const pairs = await fetchAttendanceHistory({ employeeId, daysBack: 14 });
+        // Collapse to one row per date: first IN and last OUT
+        const byDay = new Map<string, IOPair>();
+        for (const p of pairs || []) {
+          const day = startOfDay(p.date);
+          const key = ymdKey(day);
+          const prev = byDay.get(key) || { date: day, inTime: null, outTime: null, locationIn: null, locationOut: null };
+          if (p.inTime && (!prev.inTime || p.inTime.getTime() < (prev.inTime as Date | null)?.getTime?.() || Infinity)) {
+            prev.inTime = p.inTime;
+            prev.locationIn = p.locationIn || prev.locationIn || null;
+          }
+          if (p.outTime && (!prev.outTime || p.outTime.getTime() > (prev.outTime as Date | null)?.getTime?.() || -Infinity)) {
+            prev.outTime = p.outTime;
+            prev.locationOut = p.locationOut || prev.locationOut || null;
+          }
+          byDay.set(key, prev);
+        }
+        let daily = Array.from(byDay.values()).sort((a, b) => a.date.getTime() - b.date.getTime());
+        if (!daily || daily.length === 0) {
+          // Fallback: build from raw checkins over a wider window
+          const from2 = addDays(startOfDay(today), -90);
+          const to2 = addDays(startOfDay(today), 1);
+        const rows = await fetchEmployeeCheckins({ employeeId, from: from2, to: to2, limit: 2000 });
+        const parseLocal = (s: any) => {
+          if (!s || typeof s !== 'string') return null as any;
+          let d = new Date(s.replace(' ', 'T'));
+          if (!isNaN(d.getTime())) return d;
+          const m = s.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})(?:\.\d+)?$/);
+          if (m) { const [_, yy, MM, dd, hh, mi, ss] = m; return new Date(Number(yy), Number(MM)-1, Number(dd), Number(hh), Number(mi), Number(ss), 0); }
+          return null as any;
+        };
+        const items = (rows || [])
+          .map(r => ({ ...r, dt: parseLocal((r as any).time) }))
+          .filter(it => it.dt && !isNaN((it as any).dt.getTime?.() || NaN))
+          .sort((a, b) => (a as any).dt.getTime() - (b as any).dt.getTime());
+          const tmp = new Map<string, IOPair>();
+          for (const it of items as any[]) {
+            const day = startOfDay(it.dt);
+            const key = ymdKey(day);
+          const type = String(it.log_type).trim().toUpperCase();
+            const loc = (it.location || it.device_id || null) as string | null;
+            const prev = tmp.get(key) || { date: day, inTime: null, outTime: null, locationIn: null, locationOut: null };
+            if (type === 'IN') {
+              if (!prev.inTime || (it.dt as Date).getTime() < (prev.inTime as Date).getTime()) {
+                prev.inTime = it.dt as Date;
+                prev.locationIn = (loc || prev.locationIn || null) as any;
+              }
+            } else if (type === 'OUT') {
+              if (!prev.outTime || (it.dt as Date).getTime() > (prev.outTime as Date).getTime()) {
+                prev.outTime = it.dt as Date;
+                prev.locationOut = (loc || prev.locationOut || null) as any;
+              }
+            }
+            tmp.set(key, prev);
+          }
+          daily = Array.from(tmp.values()).sort((a, b) => a.date.getTime() - b.date.getTime());
+        }
+        recentLocal = daily;
+        setRecentPairs(daily);
+      } catch {}
+      try { console.log('Attendance refresh done', { employeeId }); } catch {}
 
       // Persisted local state overrides server to keep button orange
       const [localFlag, localAt] = await Promise.all([
@@ -119,8 +171,8 @@ export default function AttendanceScreen() {
         }
       } else {
         // Fallback to server-derived state
-        if (pairs && pairs.length > 0) {
-          const latest = pairs[pairs.length - 1];
+        if (recentLocal && recentLocal.length > 0) {
+          const latest = recentLocal[recentLocal.length - 1];
           if (latest && latest.inTime && !latest.outTime) {
             setIsClockedIn(true);
             setClockInAt(latest.inTime);
@@ -143,12 +195,29 @@ export default function AttendanceScreen() {
   // On mount, restore UI state fast (before server)
   useEffect(() => { restoreFromStorage(); }, []);
 
-  // Load logged-in employee ID from AsyncStorage
+  // Load logged-in employee ID from AsyncStorage (with fallback to employeeData.name)
   useEffect(() => {
     (async () => {
       try {
-        const id = await AsyncStorage.getItem('employeeId');
-        if (id) setEmployeeId(id);
+        const [id, raw] = await AsyncStorage.multiGet(['employeeId', 'employeeData']).then(rows => [rows.find(r=>r[0]==='employeeId')?.[1], rows.find(r=>r[0]==='employeeData')?.[1]]);
+        if (id) {
+          setEmployeeId(id);
+        } else if (raw) {
+          try {
+            const obj = JSON.parse(raw);
+            const cand = [
+              obj?.name,
+              obj?.employee,
+              obj?.employee_id,
+              obj?.employeeId,
+              obj?.data?.name,
+              obj?.data?.employee,
+              obj?.data?.employee_id,
+              obj?.data?.employeeId,
+            ].find((v:any)=> typeof v === 'string' && v.trim().length>0);
+            if (cand) setEmployeeId(String(cand));
+          } catch {}
+        }
       } catch {}
     })();
   }, []);
@@ -174,6 +243,7 @@ export default function AttendanceScreen() {
 
   const timeText = formatTime(now);
   const dateText = formatDate(now);
+  const latestPair = recentPairs && recentPairs.length > 0 ? recentPairs[recentPairs.length - 1] : null;
 
 const onClockIn = async () => {
   if (submitting) return;
@@ -352,16 +422,13 @@ const onClockOut = async () => {
         </View>
 
         <Text style={styles.sectionTitle}>Recent History</Text>
-        {/* Recent history list */}
-        {/* Always show dummy sample first */}
-        <View style={styles.historyCard}>
-          {dummyRecentPairs.map((item, idx) => renderModernHistoryRow(item, idx, 'dummy'))}
-        </View>
-
-        {/* Then show real recent records if available */}
-        {recentPairs && recentPairs.length > 0 && (
+        {recentPairs && recentPairs.length > 0 ? (
           <View style={styles.historyCard}>
-            {recentPairs.slice(0, 10).map((item, idx) => renderModernHistoryRow(item, idx, 'live'))}
+            {recentPairs.slice(-10).reverse().map((item, idx) => renderModernHistoryRow(item, idx, 'live'))}
+          </View>
+        ) : (
+          <View style={[styles.historyCard, styles.emptyWrap]}>
+            <Text style={styles.historyEmpty}>No attendance records</Text>
           </View>
         )}
       </ScrollView>
@@ -393,46 +460,7 @@ async function computeWeekStats(employeeId: string, refDate: Date) {
   return { totalMinutes, days: daysSet.size, late } as WeekStats;
 }
 
-async function computeRecentHistory(employeeId: string, refDate: Date, daysBack: number){
-  const to = addDays(startOfDay(refDate),1); const from=addDays(startOfDay(refDate), -daysBack);
-  const rows = await fetchEmployeeCheckins({ employeeId, from, to, limit: 2000 });
-  const items = rows.map(r=>({ ...r, dt:new Date(r.time)})).sort((a,b)=>a.dt.getTime()-b.dt.getTime());
-  const perDay=new Map<string,number>(); const firstInByDay=new Map<string,Date>(); const lastOutByDay=new Map<string,Date>();
-  let lastIn: Date | null=null; let lastInDayKey: string | null=null;
-  for(const it of items){ const dk=ymdKey(it.dt); if(it.log_type==='IN'){ lastIn=it.dt; lastInDayKey=dk; const prev=firstInByDay.get(dk); if(!prev||it.dt<prev) firstInByDay.set(dk,it.dt); } else if(it.log_type==='OUT' && lastIn){ if(dk===lastInDayKey){ const mins=Math.max(0,Math.round((it.dt.getTime()-lastIn.getTime())/60000)); perDay.set(dk,(perDay.get(dk)||0)+mins);} const lo=lastOutByDay.get(dk); if(!lo||it.dt>lo) lastOutByDay.set(dk,it.dt); lastIn=null; lastInDayKey=null; } }
-  const out: DayHistory[]=[]; for(let i=0;i<daysBack;i++){ const d=addDays(startOfDay(refDate),-i); const dk=ymdKey(d); const mins=perDay.get(dk)||0; const firstIn=firstInByDay.get(dk)||null; const lastOut=lastOutByDay.get(dk)||null; if(mins>0||firstIn||lastOut) out.push({ date:d, minutes:mins, firstIn, lastOut }); }
-  // If there is no data, just return empty (no mock fallback)
-  return out;
-}
-
-async function computeRecentIOPairs(employeeId: string, refDate: Date, daysBack: number){
-  const to = addDays(startOfDay(refDate),1); const from=addDays(startOfDay(refDate), -daysBack);
-  const rows = await fetchEmployeeCheckins({ employeeId, from, to, limit: 2000 });
-  const items = rows.map(r=>({ ...r, dt:new Date(r.time)})).sort((a,b)=>a.dt.getTime()-b.dt.getTime());
-  const out: { date: Date; inTime: Date | null; outTime: Date | null; locationIn?: string | null; locationOut?: string | null }[] = [];
-  let openIn: { dayKey: string; dt: Date; location?: string | null } | null = null;
-  for(const it of items){
-    const dk = ymdKey(it.dt);
-    if(String(it.log_type).toUpperCase() === 'IN'){
-      if(openIn){
-        out.push({ date: startOfDay(openIn.dt), inTime: openIn.dt, outTime: null, locationIn: openIn.location || null, locationOut: null });
-      }
-      openIn = { dayKey: dk, dt: it.dt, location: (it as any)?.location || null };
-    } else if(String(it.log_type).toUpperCase() === 'OUT'){
-      if(openIn && openIn.dayKey === dk && it.dt.getTime() > openIn.dt.getTime()){
-        out.push({ date: startOfDay(it.dt), inTime: openIn.dt, outTime: it.dt, locationIn: openIn.location || null, locationOut: (it as any)?.location || null });
-        openIn = null;
-      } else {
-        out.push({ date: startOfDay(it.dt), inTime: null, outTime: it.dt, locationIn: null, locationOut: (it as any)?.location || null });
-      }
-    }
-  }
-  if(openIn){
-    out.push({ date: startOfDay(openIn.dt), inTime: openIn.dt, outTime: null, locationIn: openIn.location || null, locationOut: null });
-    openIn = null;
-  }
-  return out;
-}
+// computeRecentHistory removed: pairs are fetched via fetchAttendanceHistory
 
 const styles = StyleSheet.create({
   headerCard: { backgroundColor: '#090a1a', borderBottomLeftRadius: 16, borderBottomRightRadius: 16, paddingBottom: 16, paddingHorizontal: 16, marginBottom: 10 },
