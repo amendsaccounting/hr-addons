@@ -1,8 +1,11 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, FlatList, Alert, RefreshControl } from 'react-native';
+import React, { useEffect, useMemo, useState, useCallback, useRef, memo } from 'react';
+import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, FlatList, Alert, RefreshControl, Modal, KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard } from 'react-native';
+import DocumentPicker from 'react-native-document-picker';
+import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { listAllLeads, deleteLead, type Lead } from '../../services/leadService';
+import { listAllLeads, deleteLead, createLead, type Lead } from '../../services/leadService';
+import { uploadLeadAttachment } from '../../services/leadService';
 
 export default function LeadScreen() {
   (Ionicons as any)?.loadFont?.();
@@ -12,24 +15,41 @@ export default function LeadScreen() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState<string>('All');
-  const [searchDebounceId, setSearchDebounceId] = useState<any>(null);
+  const searchDebounceRef = useRef<any>(null);
+  const requestIdRef = useRef(0);
+  const [addVisible, setAddVisible] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    lead_name: '',
+    company_name: '',
+    email_id: '',
+    mobile_no: '',
+    location: '',
+    source: '',
+    status: 'Lead',
+    territory: '',
+    notes: '',
+  });
+  const [attachments, setAttachments] = useState<Array<{ uri: string; name?: string; type?: string }>>([]);
+  const [statusPickerVisible, setStatusPickerVisible] = useState(false);
 
   console.log("leadsssdata====>",leads);
   
 
   const statusChips = useMemo(() => ['All', 'Lead', 'Open', 'Replied', 'Qualified', 'Converted'], []);
 
-  const load = async (opts?: { showSpinner?: boolean }) => {
+  const load = useCallback(async (opts?: { showSpinner?: boolean }) => {
+    const reqId = ++requestIdRef.current;
     if (opts?.showSpinner) setLoading(true);
     try {
       const rows = await listAllLeads({ search: query || undefined, status: status === 'All' ? undefined : status, pageSize: 200, hardCap: 20000 });
-      setLeads(rows);
+      if (requestIdRef.current === reqId) setLeads(rows);
     } catch (e: any) {
-      Alert.alert('Leads', e?.message || 'Failed to load leads');
+      if (requestIdRef.current === reqId) Alert.alert('Leads', e?.message || 'Failed to load leads');
     } finally {
-      if (opts?.showSpinner) setLoading(false);
+      if (requestIdRef.current === reqId && opts?.showSpinner) setLoading(false);
     }
-  };
+  }, [query, status]);
 
   useEffect(() => {
     load({ showSpinner: true });
@@ -38,22 +58,20 @@ export default function LeadScreen() {
 
   // Debounced search when typing
   useEffect(() => {
-    if (searchDebounceId) clearTimeout(searchDebounceId);
-    const id = setTimeout(() => {
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    searchDebounceRef.current = setTimeout(() => {
       load({ showSpinner: true });
     }, 400);
-    setSearchDebounceId(id);
-    return () => clearTimeout(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query]);
+    return () => clearTimeout(searchDebounceRef.current);
+  }, [query, load]);
 
-  const onRefresh = async () => {
+  const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await load();
     setRefreshing(false);
-  };
+  }, [load]);
 
-  const onDelete = async (name: string) => {
+  const onDelete = useCallback(async (name: string) => {
     Alert.alert('Delete Lead', 'Are you sure you want to delete this lead?', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: async () => {
@@ -66,7 +84,7 @@ export default function LeadScreen() {
         }
       } },
     ]);
-  };
+  }, [load]);
 
   const metrics = useMemo(() => ([
     { key: 'total', label: 'Total Leads', value: String(leads.length) },
@@ -118,7 +136,7 @@ export default function LeadScreen() {
                 )
               )}
             </View>
-            <Pressable style={styles.addBtn} accessibilityRole="button" onPress={() => Alert.alert('Add Lead', 'Implement create lead form here.') }>
+            <Pressable style={styles.addBtn} accessibilityRole="button" onPress={() => setAddVisible(true)}>
               <Ionicons name="add" size={18} color="#fff" />
             </Pressable>
           </View>
@@ -185,18 +203,220 @@ export default function LeadScreen() {
           />
         )}
       </View>
+      {/* Add Lead Modal */}
+      <Modal visible={addVisible} transparent animationType="fade" onRequestClose={() => setAddVisible(false)}>
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+          <View style={styles.modalBackdrop}>
+            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalWrap}>
+              <View style={styles.modalCard}>
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>Add Lead</Text>
+                  <Pressable accessibilityRole="button" onPress={() => setAddVisible(false)}>
+                    <Ionicons name="close" size={20} color="#fff" />
+                  </Pressable>
+                </View>
+                <ScrollView style={styles.modalBodyScroll} contentContainerStyle={styles.modalBody} showsVerticalScrollIndicator={false}>
+                  <LabeledInput
+                    label="Company Name"
+                    placeholder="e.g. Acme Inc"
+                    value={form.company_name}
+                    onChangeText={(v: string) => setForm({ ...form, company_name: v })}
+                  />
+                  <LabeledInput
+                    label="Contact Person"
+                    placeholder="e.g. John Smith"
+                    value={form.lead_name}
+                    onChangeText={(v: string) => setForm({ ...form, lead_name: v })}
+                  />
+                  <LabeledInput
+                    label="Email"
+                    placeholder="name@company.com"
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    value={form.email_id}
+                    onChangeText={(v: string) => setForm({ ...form, email_id: v })}
+                  />
+                  <LabeledInput
+                    label="Phone"
+                    placeholder="+1 555-123-4567"
+                    keyboardType="phone-pad"
+                    value={form.mobile_no}
+                    onChangeText={(v: string) => setForm({ ...form, mobile_no: v })}
+                  />
+                  <LabeledInput
+                    label="Location"
+                    placeholder="e.g. New York, NY"
+                    value={form.location}
+                    onChangeText={(v: string) => setForm({ ...form, location: v })}
+                  />
+                  <LabeledInput
+                    label="Deal Value"
+                    placeholder="e.g. 50000"
+                    keyboardType="numeric"
+                    value={(form as any).deal_value}
+                    onChangeText={(v: string) => setForm({ ...(form as any), deal_value: v })}
+                  />
+                  <Text style={styles.inputLabel}>Status</Text>
+                  <Pressable accessibilityRole="button" onPress={() => setStatusPickerVisible(true)} style={styles.selectBox}>
+                    <Text style={styles.selectText}>{form.status}</Text>
+                    <Ionicons name="chevron-down" size={18} color="#6b7280" />
+                  </Pressable>
+                  {statusPickerVisible && (
+                    <View style={styles.dropdownPanel}>
+                      {['Lead','Open','Replied','Qualified','Converted'].map(s => (
+                        <Pressable key={s} style={styles.selectOption} onPress={() => { setForm({ ...form, status: s }); setStatusPickerVisible(false); }}>
+                          <Text style={styles.selectOptionText}>{s}</Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  )}
+                  <LabeledInput
+                    label="Lead Source"
+                    placeholder="Website / LinkedIn"
+                    value={form.source}
+                    onChangeText={(v: string) => setForm({ ...form, source: v })}
+                  />
+
+                  <LabeledInput
+                    label="Notes (Optional)"
+                    placeholder="Add any notes here"
+                    value={form.notes}
+                    onChangeText={(v: string) => setForm({ ...form, notes: v })}
+                    style={{ height: 90, textAlignVertical: 'top' }}
+                    multiline
+                  />
+
+                  <Text style={styles.inputLabel}>Attachments</Text>
+                  <View style={styles.attachRow}>
+                    <Pressable style={[styles.attachBtn, styles.attachPrimary]} onPress={async () => {
+                      const res = await launchImageLibrary({ mediaType: 'photo', selectionLimit: 10 });
+                      if (res.assets && res.assets.length) {
+                        const files = res.assets.map(a => ({ uri: a.uri || '', name: a.fileName || 'photo.jpg', type: a.type || 'image/jpeg' })).filter(f => !!f.uri);
+                        setAttachments(prev => [...prev, ...files]);
+                      }
+                    }}>
+                      <Ionicons name="images-outline" size={16} color="#fff" />
+                      <Text style={styles.attachBtnText}>Photos</Text>
+                    </Pressable>
+                    <Pressable style={[styles.attachBtn, styles.attachSecondary]} onPress={async () => {
+                      const res = await launchCamera({ mediaType: 'photo', quality: 0.8 });
+                      if (res.assets && res.assets.length) {
+                        const a = res.assets[0];
+                        if (a?.uri) setAttachments(prev => [...prev, { uri: a.uri, name: a.fileName || 'camera.jpg', type: a.type || 'image/jpeg' }]);
+                      }
+                    }}>
+                      <Ionicons name="camera-outline" size={16} color="#111827" />
+                      <Text style={styles.attachBtnTextSecondary}>Camera</Text>
+                    </Pressable>
+                    <Pressable style={[styles.attachBtn, styles.attachSecondary]} onPress={async () => {
+                      try {
+                        const picks = await DocumentPicker.pickMultiple({ type: [DocumentPicker.types.allFiles] });
+                        const mapped = picks.map(p => ({ uri: p.uri, name: p.name, type: p.type || 'application/octet-stream' }));
+                        setAttachments(prev => [...prev, ...mapped]);
+                      } catch (e: any) {
+                        if (!DocumentPicker.isCancel(e)) Alert.alert('Attachments', 'Unable to pick files');
+                      }
+                    }}>
+                      <Ionicons name="document-attach-outline" size={16} color="#111827" />
+                      <Text style={styles.attachBtnTextSecondary}>Files</Text>
+                    </Pressable>
+                  </View>
+                  {!!attachments.length && (
+                    <View style={styles.attachList}>
+                      {attachments.map((f, idx) => (
+                        <View key={`${f.uri}-${idx}`} style={styles.attachItem}>
+                          <Ionicons name="attach-outline" size={14} color="#6b7280" />
+                          <Text numberOfLines={1} style={styles.attachName}>{f.name || f.uri.split('/').pop()}</Text>
+                          <Pressable accessibilityRole="button" onPress={() => setAttachments(prev => prev.filter((_, i) => i !== idx))}>
+                            <Ionicons name="close-circle" size={16} color="#9ca3af" />
+                          </Pressable>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+                </ScrollView>
+                <View style={styles.modalFooter}>
+                  <Pressable style={[styles.modalBtn, styles.modalBtnSecondary]} onPress={() => setAddVisible(false)}>
+                    <Text style={[styles.modalBtnText, styles.modalBtnTextSecondary]}>Cancel</Text>
+                  </Pressable>
+                  <Pressable style={[styles.modalBtn, styles.modalBtnPrimary]} disabled={saving} onPress={async () => {
+                    if (!form.lead_name && !form.company_name) {
+                      Alert.alert('Add Lead', 'Please enter Lead Name or Company');
+                      return;
+                    }
+                    setSaving(true);
+                    try {
+                      const payload: any = {
+                        company_name: form.company_name,
+                        lead_name: form.lead_name,
+                        email_id: form.email_id,
+                        mobile_no: form.mobile_no,
+                        status: form.status,
+                        source: form.source,
+                        address: form.location,
+                      };
+                      if ((form as any).deal_value) (payload as any).custom_deal_value = (form as any).deal_value;
+                      if (form.notes) payload.notes = form.notes;
+                      const created = await createLead(payload);
+                      if (created) {
+                        // Upload attachments in parallel
+                        if ((created as any)?.name && attachments.length) {
+                          await Promise.allSettled(
+                            attachments.map(f => uploadLeadAttachment((created as any).name, f))
+                          );
+                        }
+                        setAddVisible(false);
+                        setForm({ company_name: '', lead_name: '', email_id: '', mobile_no: '', location: '', deal_value: '', status: 'Lead', source: '', notes: '' });
+                        setAttachments([]);
+                        await load({ showSpinner: true });
+                      } else {
+                        Alert.alert('Add Lead', 'Unable to create lead');
+                      }
+                    } catch (e: any) {
+                      Alert.alert('Add Lead', e?.message || 'Unable to create lead');
+                    } finally {
+                      setSaving(false);
+                    }
+                  }}>
+                    {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.modalBtnText}>Add Lead</Text>}
+                  </Pressable>
+                </View>
+              </View>
+            </KeyboardAvoidingView>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
     </View>
   );
 }
 
-function Row({ icon, text }: { icon: string; text: string }) {
+const Row = React.memo(function Row({ icon, text }: { icon: string; text: string }) {
   return (
-    <View style={styles.row}> 
+    <View style={styles.row}>
       <Ionicons name={icon as any} size={14} color="#6b7280" style={{ width: 18 }} />
       <Text style={styles.rowText}>{text}</Text>
     </View>
   );
-}
+});
+
+const LabeledInput = React.memo(function LabeledInput(props: {
+  label: string;
+  placeholder?: string;
+  value?: string;
+  onChangeText?: (v: string) => void;
+  keyboardType?: any;
+  autoCapitalize?: any;
+  style?: any;
+  multiline?: boolean;
+}) {
+  const { label, ...inputProps } = props as any;
+  return (
+    <View style={{ marginBottom: 10 }}>
+      <Text style={styles.inputLabel}>{label}</Text>
+      <TextInput {...(inputProps as any)} style={[styles.input, (props as any).style]} placeholderTextColor="#9ca3af" />
+    </View>
+  );
+});
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#fff' },
@@ -259,4 +479,36 @@ const styles = StyleSheet.create({
   detailList: { marginTop: 10 },
   row: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },
   rowText: { color: '#374151' },
+
+  // Modal styles
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 16 },
+  modalWrap: { width: '100%', alignItems: 'center' },
+  modalCard: { backgroundColor: '#fff', borderRadius: 16, overflow: 'hidden', width: '96%', maxWidth: 520, elevation: 8, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 16, shadowOffset: { width: 0, height: 8 } },
+  modalHeader: { backgroundColor: '#0b0b1b', paddingHorizontal: 16, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  modalTitle: { color: '#fff', fontWeight: '700' },
+  modalBodyScroll: { maxHeight: 520 },
+  modalBody: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 16 },
+  inputLabel: { color: '#6b7280', fontSize: 12, marginBottom: 6 },
+  input: { borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, color: '#111827', backgroundColor: '#fff' },
+  modalChipsRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 8 },
+  modalFooter: { flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: 12, paddingVertical: 12, gap: 10 },
+  modalBtn: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 10 },
+  modalBtnSecondary: { backgroundColor: '#f3f4f6' },
+  modalBtnPrimary: { backgroundColor: '#0b0b1b' },
+  modalBtnText: { color: '#fff', fontWeight: '700' },
+  modalBtnTextSecondary: { color: '#111827' },
+  selectBox: { borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#fff', marginBottom: 10 },
+  selectText: { color: '#111827', fontWeight: '600' },
+  selectOption: { paddingVertical: 12, paddingHorizontal: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#e5e7eb' },
+  selectOptionText: { color: '#111827' },
+  dropdownPanel: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, overflow: 'hidden', marginTop: 6 },
+  attachRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+  attachBtn: { flexDirection: 'row', alignItems: 'center', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10 },
+  attachPrimary: { backgroundColor: '#0b0b1b' },
+  attachSecondary: { backgroundColor: '#f3f4f6' },
+  attachBtnText: { color: '#fff', marginLeft: 6, fontWeight: '700' },
+  attachBtnTextSecondary: { color: '#111827', marginLeft: 6, fontWeight: '700' },
+  attachList: { marginTop: 6 },
+  attachItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 6, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#e5e7eb' },
+  attachName: { flex: 1, color: '#374151', marginHorizontal: 8 },
 });

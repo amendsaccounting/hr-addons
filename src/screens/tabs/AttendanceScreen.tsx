@@ -8,6 +8,7 @@ import {
   FlatList,
   Alert,
   Platform,
+  PermissionsAndroid,
   StatusBar,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -58,6 +59,22 @@ const AttendanceScreen = () => {
       ];
       await AsyncStorage.multiSet(ops);
     } catch {}
+  };
+
+  const ensureLocationPermission = async (): Promise<boolean> => {
+    try {
+      if (Platform.OS === 'android') {
+        const granted = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
+        );
+        return granted === PermissionsAndroid.RESULTS.GRANTED;
+      } else {
+        const status = await (Geolocation as any).requestAuthorization?.('whenInUse');
+        return status === 'granted';
+      }
+    } catch {
+      return false;
+    }
   };
 
   const loadPersistedState = async () => {
@@ -275,6 +292,12 @@ const AttendanceScreen = () => {
         return;
       }
       const employee = employeeData ? JSON.parse(employeeData) : null;
+
+      const hasPerm = await ensureLocationPermission();
+      if (!hasPerm) {
+        Alert.alert('Permission Required', 'Location permission not granted. Please enable it to clock in.');
+        return;
+      }
 
       setLoadingLocation(true);
       const loc = await requestLocation();

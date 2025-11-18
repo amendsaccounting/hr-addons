@@ -160,3 +160,24 @@ export function toListItem(l: Lead) {
     value: l.source || '',
   };
 }
+
+export async function uploadLeadAttachment(leadName: string, file: { uri: string; name?: string; type?: string }): Promise<boolean> {
+  const id = String(leadName || '').trim();
+  if (!id) return false;
+  // Authorization header from existing helpers
+  const headers = getHeaders();
+  const methodBase = BASE_URL.includes('/api/resource')
+    ? BASE_URL.replace('/api/resource', '/api/method')
+    : `${BASE_URL.replace(/\/$/, '')}/api/method`;
+  const url = `${methodBase}/upload_file`;
+
+  const form = new FormData();
+  form.append('doctype', 'Lead');
+  form.append('docname', id);
+  form.append('is_private', '0');
+  form.append('file', { uri: file.uri as any, name: (file.name || 'attachment'), type: (file.type || 'application/octet-stream') } as any);
+
+  const h: any = { 'Authorization': headers['Authorization'] };
+  const res = await fetch(url, { method: 'POST', headers: h, body: form as any });
+  return res.ok;
+}
