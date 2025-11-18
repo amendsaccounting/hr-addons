@@ -69,6 +69,10 @@ export default function LeaveScreen() {
     />
   ), []);
 
+  const headerEl = React.useMemo(() => (
+    <ContentHeader balances={balances} onApply={openApply} />
+  ), [balances, openApply]);
+
   return (
     <View style={styles.screen}>
       <StatusBar barStyle="light-content" backgroundColor="#090a1a" animated />
@@ -82,7 +86,7 @@ export default function LeaveScreen() {
         contentContainerStyle={styles.contentContainer}
         data={requests}
         keyExtractor={keyExtractor}
-        ListHeaderComponent={<ContentHeader balances={balances} onApply={openApply} />}
+        ListHeaderComponent={headerEl}
         renderItem={renderItem}
         ListEmptyComponent={<EmptyRequests />}
         ListFooterComponent={ListFooter}
@@ -140,7 +144,7 @@ const ContentHeader = React.memo(function ContentHeader({ balances, onApply }: {
       )}
 
       <View style={styles.applyWrapper}>
-        <Pressable style={{ flex: 1 }} onPress={onApply} accessibilityLabel="Open apply form">
+        <Pressable style={styles.flexOne} onPress={onApply} accessibilityLabel="Open apply form">
           <Text style={styles.applyTitle}>Apply for Leave</Text>
           <Text style={styles.applySubtitle}>Submit a new leave request</Text>
         </Pressable>
@@ -277,6 +281,10 @@ const styles = StyleSheet.create({
     borderColor: '#e5e7eb',
   },
   applyNowText: { color: '#111827', fontWeight: '700', marginLeft: 6, fontSize: 12 },
+  // utility
+  flexOne: { flex: 1 },
+  colRightGap: { marginRight: 6 },
+  colLeftGap: { marginLeft: 6 },
   listFooter: { height: 12 },
   emptyCard: { alignItems: 'flex-start' },
   emptyRow: { flexDirection: 'row', alignItems: 'center' },
@@ -406,14 +414,14 @@ const BottomApplyModal = React.memo(function BottomApplyModal({ visible, onClose
 
             {/* Dates */}
             <View style={styles.rowTwo}>
-              <View style={[styles.col, { marginRight: 6 }]}>
+              <View style={[styles.col, styles.colRightGap]}>
                 <Text style={styles.fieldLabel}>From date</Text>
                 <Pressable style={styles.inputPressable} onPress={() => setShowCal('from')} accessibilityLabel="Pick from date">
                   <Ionicons name="calendar-outline" size={16} color="#6b7280" />
                   <Text style={styles.inputText}>{fmt(fromDate)}</Text>
                 </Pressable>
               </View>
-              <View style={[styles.col, { marginLeft: 6 }]}>
+              <View style={[styles.col, styles.colLeftGap]}>
                 <Text style={styles.fieldLabel}>To date</Text>
                 <Pressable style={styles.inputPressable} onPress={() => setShowCal('to')} accessibilityLabel="Pick to date">
                   <Ionicons name="calendar-outline" size={16} color="#6b7280" />
