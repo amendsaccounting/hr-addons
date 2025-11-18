@@ -1,25 +1,18 @@
-import { Platform, PermissionsAndroid } from 'react-native';
-import Geolocation from 'react-native-geolocation-service';
 import Config from 'react-native-config';
-import { getCurrentLocation } from '../utils/location';
 
 type LogType = 'IN' | 'OUT';
 
-type FetchCheckinsArgs = {
-  employeeId: string;
-  from?: Date;
-  to?: Date;
-  limit?: number;
-  order?: 'asc' | 'desc';
+export type AttendanceCheckin = {
+  name: string;
+  employee: string;
+  log_type: LogType;
+  time: string; // ISO-like string (e.g., '2025-01-01 09:00:00')
+  location?: string;
 };
 
-export type EmployeeCheckinRow = {
-  name?: string;
-  employee: string;
-  log_type: LogType | string;
-  time: string;
-  device_id?: string;
-  location?: string;
+export type AttendanceState = {
+  isClockedIn: boolean;
+  lastLog?: AttendanceCheckin | null;
 };
 
 function pickEnv(...keys: string[]): string {
@@ -33,280 +26,131 @@ function pickEnv(...keys: string[]): string {
 const BASE_URL = (pickEnv('ERP_URL_RESOURCE', 'ERP_URL') || '').replace(/\/$/, '');
 const API_KEY = pickEnv('ERP_APIKEY', 'ERP_API_KEY');
 const API_SECRET = pickEnv('ERP_SECRET', 'ERP_API_SECRET');
-const METHOD_URL = (pickEnv('ERP_URL_METHOD', 'ERP_METHOD_URL') || '').replace(/\/$/, '');
 
-const headers: Record<string, string> = {
-  'Content-Type': 'application/json',
-  'Authorization': `token ${API_KEY}:${API_SECRET}`,
-};
-
-// Request foreground location permission (iOS + Android)
-export async function requestLocationPermission(): Promise<boolean> {
-  try {
-    if (Platform.OS === 'ios') {
-      const auth = await Geolocation.requestAuthorization('whenInUse');
-      return String(auth).toLowerCase() === 'granted';
-    }
-    if (Platform.OS === 'android') {
-      const result = await PermissionsAndroid.request(
-        PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION as any,
-        {
-          title: 'Location Permission',
-          message: 'Location permission is required to record attendance with your current location.',
-          buttonPositive: 'OK',
-          buttonNegative: 'Cancel',
-        },
-      );
-      return result === PermissionsAndroid.RESULTS.GRANTED;
-    }
-    return false;
-  } catch {
-    return false;
-  }
-}
-
-function toErpTimestamp(d: Date): string {
-  const pad = (n: number) => (n < 10 ? `0${n}` : String(n));
-  const yyyy = d.getFullYear();
-  const mm = pad(d.getMonth() + 1);
-  const dd = pad(d.getDate());
-  const hh = pad(d.getHours());
-  const mi = pad(d.getMinutes());
-  const ss = pad(d.getSeconds());
-  return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
-}
-
-function parseErpDateTime(input: any): Date | null {
-  if (!input || typeof input !== 'string') return null;
-  // Common ERP format: YYYY-MM-DD HH:mm:ss (no timezone)
-  const s = input.trim();
-  // Try ISO-like by inserting 'T'
-  let d = new Date(s.replace(' ', 'T'));
-  if (!isNaN(d.getTime())) return d;
-  // Manual parse as local time
-  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})(?:\.\d+)?$/);
-  if (m) {
-    const [_, yy, MM, dd, hh, mi, ss] = m;
-    const y = Number(yy), mo = Number(MM), day = Number(dd), H = Number(hh), M = Number(mi), S = Number(ss);
-    const local = new Date(y, (mo || 1) - 1, day || 1, H || 0, M || 0, S || 0, 0);
-    if (!isNaN(local.getTime())) return local;
-  }
-  return null;
-}
-
-async function reverseGeocode(latNum: number, lonNum: number): Promise<string> {
-  const lat = Number(latNum).toFixed(6);
-  const lon = Number(lonNum).toFixed(6);
-  const fallback = `${lat},${lon}`;
-  // Try Google Geocoding API if configured
-  try {
-    const gKey = pickEnv('GOOGLE_MAPS_API_KEY', 'GOOGLE_API_KEY');
-    if (gKey) {
-      const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${encodeURIComponent(lat + ',' + lon)}&key=${encodeURIComponent(gKey)}`;
-      const res = await fetch(url);
-      const json = await res.json().catch(() => null);
-      const addr = (json as any)?.results?.[0]?.formatted_address;
-      if (addr && typeof addr === 'string') return addr;
-    }
-  } catch {}
-  // Fallback to OpenStreetMap Nominatim
-  try {
-    const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`;
-    const res = await fetch(url, { headers: { 'Accept-Language': 'en', 'User-Agent': 'hr_addons/1.0' } as any });
-    const json = await res.json().catch(() => null);
-    const addr = (json as any)?.display_name;
-    if (addr && typeof addr === 'string') return addr;
-  } catch {}
-  return fallback;
-}
-
-export async function getLocationString(): Promise<string> {
-  try {
-    const { latitude, longitude } = await getCurrentLocation();
-    return await reverseGeocode(latitude, longitude);
-  } catch (err) {
-    throw new Error('Location is required');
-  }
-}
-
-// Create an Employee Checkin (IN/OUT)
-export async function checkInOutDoctype(employeeId: string, logType: LogType): Promise<EmployeeCheckinRow | null> {
+function getHeaders(): Record<string, string> {
   if (!BASE_URL || !API_KEY || !API_SECRET) {
-    throw new Error('ERP credentials or URL are not configured.');
+    throw new Error('ERP credentials or URL are not configured. Check .env and rebuild the app.');
   }
+  return {
+    'Content-Type': 'application/json',
+    'Authorization': `token ${API_KEY}:${API_SECRET}`,
+  };
+}
 
-  const doctype = encodeURIComponent('Employee Checkin');
-  const url = `${BASE_URL}/${doctype}`;
-  const time = toErpTimestamp(new Date());
-  const location = await getLocationString();
+function nowAsErpTimestamp(d = new Date()): string {
+  // ERPNext typically accepts 'YYYY-MM-DD HH:mm:ss'
+  return new Date(d.getTime() - d.getMilliseconds()) // drop ms
+    .toISOString()
+    .slice(0, 19)
+    .replace('T', ' ');
+}
 
-  const payload: EmployeeCheckinRow = {
-    employee: employeeId,
-    log_type: logType,
-    time,
-    // Use the fetched human-readable address as device_id and location
-    device_id: location,
-    location,
+export async function listCheckins(employee: string, limit: number = 50): Promise<AttendanceCheckin[]> {
+  const headers = getHeaders();
+  const filters = encodeURIComponent(JSON.stringify([["employee", "=", employee]]));
+  const fields = encodeURIComponent(JSON.stringify(["name","employee","log_type","time","location"]));
+  const order_by = encodeURIComponent('time desc');
+  const url = `${BASE_URL}/${encodeURIComponent('Employee Checkin')}?filters=${filters}&fields=${fields}&order_by=${order_by}&limit_page_length=${limit}`;
+
+  const res = await fetch(url, { headers });
+  const json = await res.json().catch(() => ({} as any));
+  const data = (json as any)?.data;
+  if (!Array.isArray(data)) return [];
+  return data as AttendanceCheckin[];
+}
+
+export async function getAttendanceState(employee: string): Promise<AttendanceState> {
+  const rows = await listCheckins(employee, 1);
+  const last = rows[0] || null;
+  return {
+    isClockedIn: (last?.log_type?.toUpperCase?.() as LogType) === 'IN',
+    lastLog: last ?? null,
+  };
+}
+
+export async function clockIn(params: { employee: string; time?: string; location?: string; deviceId?: string }): Promise<AttendanceCheckin | true> {
+  const headers = getHeaders();
+  const url = `${BASE_URL}/${encodeURIComponent('Employee Checkin')}`;
+  const body = {
+    employee: params.employee,
+    log_type: 'IN' as LogType,
+    time: params.time || nowAsErpTimestamp(),
+    device_id: params.deviceId || 'MobileApp',
+    location: params.location || '',
+  };
+  const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
+  const json = await res.json().catch(() => null as any);
+  if (res.ok) return (json as any)?.data ?? true;
+  throw new Error('Clock In failed');
+}
+
+export async function clockOut(params: { employee: string; time?: string; location?: string; deviceId?: string }): Promise<AttendanceCheckin | true> {
+  const headers = getHeaders();
+  const url = `${BASE_URL}/${encodeURIComponent('Employee Checkin')}`;
+  const body = {
+    employee: params.employee,
+    log_type: 'OUT' as LogType,
+    time: params.time || nowAsErpTimestamp(),
+    device_id: params.deviceId || 'MobileApp',
+    location: params.location || '',
+  };
+  const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
+  const json = await res.json().catch(() => null as any);
+  if (res.ok) return (json as any)?.data ?? true;
+  throw new Error('Clock Out failed');
+}
+
+export async function toggleClock(params: { employee: string; location?: string; deviceId?: string; time?: string }): Promise<{ action: 'IN' | 'OUT'; result: AttendanceCheckin | true; } | null> {
+  const state = await getAttendanceState(params.employee);
+  if (state.isClockedIn) {
+    const result = await clockOut(params);
+    return { action: 'OUT', result };
+  } else {
+    const result = await clockIn(params);
+    return { action: 'IN', result };
+  }
+}
+
+export function pairSessions(rows: AttendanceCheckin[]): Array<{
+  id: string;
+  date: string;
+  clockIn: string;
+  clockOut: string;
+  locationIn: string;
+  locationOut: string;
+}> {
+  const items = rows
+    .map(r => ({ ...r, dt: new Date(r.time) }))
+    .sort((a, b) => a.dt.getTime() - b.dt.getTime());
+  const out: any[] = [];
+  let open: any | null = null;
+  const fmt = (d: Date) => {
+    const h = d.getHours();
+    const m = d.getMinutes();
+    const hh = ((h % 12) || 12).toString().padStart(2, '0');
+    const mm = m.toString().padStart(2, '0');
+    const ap = h >= 12 ? 'PM' : 'AM';
+    return `${hh}:${mm} ${ap}`;
   };
 
-  try {
-    const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(payload) });
-    const json = await res.json().catch(() => null);
-    if (!res.ok) {
-      const msg = (json as any)?.message || (json as any)?.exc || 'Failed to create checkin';
-      throw new Error(typeof msg === 'string' ? msg : 'Failed to create checkin');
-    }
-    const data = (json as any)?.data ?? json;
-    return data as EmployeeCheckinRow;
-  } catch (err) {
-    throw err as Error;
-  }
-}
-
-// Fetch Employee Checkin rows for an employee within an optional time range
-export async function fetchEmployeeCheckins(args: FetchCheckinsArgs): Promise<EmployeeCheckinRow[]> {
-  const { employeeId, from, to, limit = 500, order = 'asc' } = args;
-
-  if (!BASE_URL || !API_KEY || !API_SECRET) {
-    throw new Error('ERP credentials or URL are not configured.');
-  }
-
-  const filters: any[] = [["employee", "=", employeeId]];
-  if (from) filters.push(["time", ">=", toErpTimestamp(from)]);
-  if (to) filters.push(["time", "<", toErpTimestamp(to)]);
-
-  const fields = ["name", "employee", "log_type", "time", "device_id", "location"];
-
-  const params = new URLSearchParams({
-    filters: JSON.stringify(filters),
-    fields: JSON.stringify(fields),
-    order_by: `time ${order}`,
-    limit_page_length: String(Math.max(1, Math.min(2000, limit))),
-  });
-
-  const doctype = encodeURIComponent('Employee Checkin');
-  const url = `${BASE_URL}/${doctype}?${params.toString()}`;
-
-  // Attempt 1: Resource endpoint
-  try {
-    const res = await fetch(url, { headers });
-    const json = await res.json().catch(() => ({} as any));
-    const data = (json as any)?.data;
-    if (Array.isArray(data)) return data as EmployeeCheckinRow[];
-  } catch {}
-
-  // Attempt 2: Method endpoint frappe.client.get_list
-  try {
-    if (!METHOD_URL) return [];
-    const methodParams = new URLSearchParams({
-      doctype: 'Employee Checkin',
-      fields: JSON.stringify(["name", "employee", "log_type", "time", "device_id", "location"]),
-      filters: JSON.stringify(filters),
-      order_by: `time ${order}`,
-      limit_page_length: String(Math.max(1, Math.min(2000, limit))),
-    });
-    const url2 = `${METHOD_URL}/frappe.client.get_list?${methodParams.toString()}`;
-    const res2 = await fetch(url2, { headers });
-    const json2 = await res2.json().catch(() => ({} as any));
-    const data2 = (json2 as any)?.message;
-    if (Array.isArray(data2)) return data2 as EmployeeCheckinRow[];
-  } catch {}
-
-  // Attempt 3: Method endpoint without filters (client-side filter)
-  try {
-    if (!METHOD_URL) return [];
-    const methodParams = new URLSearchParams({
-      doctype: 'Employee Checkin',
-      fields: JSON.stringify(["name", "employee", "log_type", "time", "device_id", "location"]),
-      order_by: `time ${order}`,
-      limit_page_length: String(Math.max(1, Math.min(2000, limit))),
-    });
-    const url3 = `${METHOD_URL}/frappe.client.get_list?${methodParams.toString()}`;
-    const res3 = await fetch(url3, { headers });
-    const json3 = await res3.json().catch(() => ({} as any));
-    const data3 = ((json3 as any)?.message || []) as any[];
-    return (data3 as EmployeeCheckinRow[]).filter(r => String((r as any)?.employee) === employeeId);
-  } catch {}
-
-  return [];
-}
-
-export type AttendanceIOPair = {
-  date: Date;
-  inTime: Date | null;
-  outTime: Date | null;
-  locationIn?: string | null;
-  locationOut?: string | null;
-};
-
-// Fetch paired IN/OUT history for an employee, optionally within a date range
-export const fetchAttendanceHistory = async (args: {
-  employeeId: string;
-  from?: Date;
-  to?: Date;
-  daysBack?: number; // used if from/to not provided
-  limit?: number;
-  order?: 'asc' | 'desc';
-}): Promise<AttendanceIOPair[]> => {
-  const { employeeId, from, to, daysBack = 14, limit, order } = args || ({} as any);
-  if (!employeeId || typeof employeeId !== 'string') return [];
-
-  const startOfDay = (d: Date) => { const x = new Date(d); x.setHours(0,0,0,0); return x; };
-  const addDays = (d: Date, n: number) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
-  const ymdKey = (d: Date) => `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`;
-
-  let effectiveFrom = from;
-  let effectiveTo = to;
-  if (!effectiveFrom || !effectiveTo) {
-    const today = new Date();
-    effectiveTo = effectiveTo || addDays(startOfDay(today), 1);
-    effectiveFrom = effectiveFrom || addDays(startOfDay(today), -daysBack);
-  }
-
-  // Pull raw checkin rows
-  let rows = await fetchEmployeeCheckins({ employeeId, from: effectiveFrom!, to: effectiveTo!, limit: limit ?? 2000, order: order ?? 'asc' });
-  console.log("rowssss=====>",rows);
-  
-  // Fallback: if empty within range, fetch latest without date filter
-  if (!rows || rows.length === 0) {
-    rows = await fetchEmployeeCheckins({ employeeId, limit: limit ?? 300, order: order ?? 'asc' } as any);
-  }
-
-  const items = (rows || [])
-    .map(r => {
-      const dt = parseErpDateTime((r as any).time);
-      return { ...r, dt } as any;
-    })
-    .filter(it => it.dt && !isNaN((it as any).dt.getTime?.() || NaN))
-    .sort((a, b) => (a as any).dt.getTime() - (b as any).dt.getTime());
-
-  const out: AttendanceIOPair[] = [];
-  let openIn: { dayKey: string; dt: Date; location?: string | null } | null = null;
-
-  for (const it of items as any[]) {
-    const dk = ymdKey(it.dt);
-    const loc = (it.location || it.device_id || null) as string | null;
-    const type = String(it.log_type).trim().toUpperCase();
-    if (type === 'IN') {
-      if (openIn) {
-        out.push({ date: startOfDay(openIn.dt), inTime: openIn.dt, outTime: null, locationIn: openIn.location || null, locationOut: null });
+  for (const it of items) {
+    const lt = String(it.log_type).toUpperCase();
+    if (lt === 'IN') {
+      if (open) {
+        out.push({ id: `${open.name}-open`, date: open.dt.toLocaleDateString(), clockIn: fmt(open.dt), clockOut: '', locationIn: open.location || '', locationOut: '' });
       }
-      openIn = { dayKey: dk, dt: it.dt, location: loc };
-    } else if (type === 'OUT') {
-      if (openIn && openIn.dayKey === dk && it.dt.getTime() > openIn.dt.getTime()) {
-        out.push({ date: startOfDay(it.dt), inTime: openIn.dt, outTime: it.dt, locationIn: openIn.location || null, locationOut: loc });
-        openIn = null;
+      open = it;
+    } else if (lt === 'OUT') {
+      if (open && it.dt.getTime() > open.dt.getTime()) {
+        out.push({ id: `${open.name}-${it.name}`, date: it.dt.toLocaleDateString(), clockIn: fmt(open.dt), clockOut: fmt(it.dt), locationIn: open.location || '', locationOut: it.location || '' });
+        open = null;
       } else {
-        // Unpaired OUT (no preceding IN or day mismatch) — record as standalone
-        out.push({ date: startOfDay(it.dt), inTime: null, outTime: it.dt, locationIn: null, locationOut: loc });
+        out.push({ id: `${it.name}`, date: it.dt.toLocaleDateString(), clockIn: '', clockOut: fmt(it.dt), locationIn: '', locationOut: it.location || '' });
       }
     }
   }
-
-  if (openIn) {
-    out.push({ date: startOfDay(openIn.dt), inTime: openIn.dt, outTime: null, locationIn: openIn.location || null, locationOut: null });
-    openIn = null;
+  if (open) {
+    out.push({ id: `${open.name}-open`, date: open.dt.toLocaleDateString(), clockIn: fmt(open.dt), clockOut: '', locationIn: open.location || '', locationOut: '' });
   }
-
-  return out;
-};
+  return out.slice().reverse();
+}
