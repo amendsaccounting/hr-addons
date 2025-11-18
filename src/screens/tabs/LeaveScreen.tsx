@@ -8,6 +8,9 @@ import {
   Animated,
   Modal,
   StatusBar,
+  TextInput,
+  Alert,
+  Platform,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -15,6 +18,7 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 
 (Ionicons as any)?.loadFont?.();
 import { computeLeaveBalances } from '../../services/leave';
+import DateTimePicker from '@react-native-community/datetimepicker';
 
 // Types and sample data kept outside to avoid redeclaration on re-renders
 type ReqItem = {
@@ -133,12 +137,16 @@ export default function LeaveScreen() {
         ListEmptyComponent={<EmptyRequests />}
         ListFooterComponent={ListFooter}
         showsVerticalScrollIndicator={false}
-        removeClippedSubviews
+        removeClippedSubviews={false}
         initialNumToRender={5}
         windowSize={10}
       />
 
-      <BottomApplyModal visible={applyVisible} onClose={closeApply} />
+      <BottomApplyModal
+        visible={applyVisible}
+        onClose={closeApply}
+        types={React.useMemo(() => Array.from(new Set(balances.map(b => b.label))).filter(Boolean), [balances])}
+      />
     </View>
   );
 }
@@ -165,7 +173,7 @@ const BalanceCard = React.memo(function BalanceCard({ label, valueText, progress
   );
 });
 
-const ContentHeader = React.memo(function ContentHeader({ balances, onApply }: { balances: LeaveBalanceItem[]; onApply?: () => void }) {
+function ContentHeader({ balances, onApply }: { balances: LeaveBalanceItem[]; onApply?: () => void }) {
   return (
     <View>
       <Text style={styles.sectionTitle}>Leave Balance</Text>
@@ -213,7 +221,7 @@ const ContentHeader = React.memo(function ContentHeader({ balances, onApply }: {
       <Text style={[styles.sectionTitle, { marginTop: 8 }]}>Leave Requests</Text>
     </View>
   );
-});
+}
 
 const RequestCard = React.memo(function RequestCard({
   title,
@@ -342,16 +350,66 @@ const styles = StyleSheet.create({
   modalBackdrop: { backgroundColor: 'transparent' },
   sheet: {
     backgroundColor: '#fff',
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
     paddingHorizontal: 16,
-    paddingTop: 10,
-    paddingBottom: 18,
+    paddingTop: 12,
+    paddingBottom: 22,
   },
   sheetHandle: { alignSelf: 'center', width: 42, height: 4, borderRadius: 2, backgroundColor: '#e5e7eb', marginBottom: 8 },
   sheetHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
   sheetTitle: { fontSize: 16, fontWeight: '700', color: '#111827' },
   sheetSub: { color: '#6b7280', fontSize: 12 },
+  fieldLabel: { color: '#111827', fontSize: 13, fontWeight: '600', marginBottom: 6, marginTop: 6 },
+  textInput: {
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 13,
+    color: '#111827',
+    backgroundColor: '#fff',
+  },
+  inputPressable: { justifyContent: 'center' },
+  inputText: { color: '#111827', fontSize: 13 },
+  inputPlaceholder: { color: '#9ca3af', fontSize: 13 },
+  fieldRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  fieldLeft: { flexDirection: 'row', alignItems: 'center' },
+  fieldValue: { marginLeft: 8 },
+  fieldChevron: { marginLeft: 8 },
+  helperText: { color: '#6b7280', fontSize: 12, marginTop: 8, marginBottom: 6 },
+  divider: { height: 1, backgroundColor: '#eef0f3', marginVertical: 8 },
+  row: { flexDirection: 'row', alignItems: 'flex-start', marginTop: 6 },
+  col: { flex: 1 },
+  dropdownPanel: {
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderRadius: 10,
+    backgroundColor: '#fff',
+    marginTop: 6,
+    overflow: 'hidden',
+  },
+  dropdownItem: { paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#e5e7eb' },
+  dropdownText: { color: '#111827', fontSize: 13 },
+  dropdownEmpty: { color: '#6b7280', fontSize: 13 },
+  actionsRow: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', marginTop: 14 },
+  btn: {
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginLeft: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  btnCancel: { backgroundColor: '#fff', borderColor: '#e5e7eb' },
+  btnPrimary: { backgroundColor: '#0b0b1b', borderColor: '#0b0b1b' },
+  btnText: { fontSize: 13, fontWeight: '700' },
+  btnCancelText: { color: '#111827' },
+  btnPrimaryText: { color: '#fff' },
+  btnBlock: { flex: 1, justifyContent: 'center' },
+  // Calendar styles
 });
 
 const ListFooter = React.memo(() => <View style={styles.listFooter} />);
@@ -367,13 +425,61 @@ const EmptyRequests = React.memo(() => (
 ));
 
 // Bottom sheet-style modal for applying leave
-const BottomApplyModal = React.memo(function BottomApplyModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+const BottomApplyModal = React.memo(function BottomApplyModal({ visible, onClose, types }: { visible: boolean; onClose: () => void; types?: string[] }) {
   const slide = React.useRef(new Animated.Value(0)).current;
   React.useEffect(() => {
     Animated.timing(slide, { toValue: visible ? 1 : 0, duration: 250, useNativeDriver: true }).start();
   }, [visible, slide]);
   const translateY = slide.interpolate({ inputRange: [0, 1], outputRange: [400, 0] });
   const backdropOpacity = slide.interpolate({ inputRange: [0, 1], outputRange: [0, 0.35] });
+
+  const [leaveType, setLeaveType] = React.useState('');
+  const [fromDate, setFromDate] = React.useState('');
+  const [toDate, setToDate] = React.useState('');
+  const [reason, setReason] = React.useState('');
+  const [showFromPicker, setShowFromPicker] = React.useState(false);
+  const [showToPicker, setShowToPicker] = React.useState(false);
+  const [showTypeMenu, setShowTypeMenu] = React.useState(false);
+
+  const fmt = (d: Date) => {
+    const pad = (n: number) => (n < 10 ? `0${n}` : String(n));
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  };
+  const todayStart = React.useMemo(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }, []);
+
+  const onCancel = React.useCallback(() => {
+    setLeaveType('');
+    setFromDate('');
+    setToDate('');
+    setReason('');
+    setShowFromPicker(false);
+    setShowToPicker(false);
+    setShowTypeMenu(false);
+    onClose();
+  }, [onClose]);
+
+  const onSubmit = React.useCallback(() => {
+    if (!leaveType || !fromDate || !toDate || !reason) {
+      Alert.alert('Incomplete', 'Please fill all fields.');
+      return;
+    }
+    const f = new Date(fromDate); f.setHours(0,0,0,0);
+    const t = new Date(toDate); t.setHours(0,0,0,0);
+    const now0 = new Date(); now0.setHours(0,0,0,0);
+    if (f < now0) { Alert.alert('Invalid date', 'From date cannot be in the past.'); return; }
+    if (t < now0) { Alert.alert('Invalid date', 'To date cannot be in the past.'); return; }
+    if (t < f) { Alert.alert('Invalid range', 'To date cannot be before From date.'); return; }
+    try { console.log('Submit Leave', { leaveType, fromDate, toDate, reason }); } catch {}
+    onClose();
+    setTimeout(() => {
+      setLeaveType(''); setFromDate(''); setToDate(''); setReason('');
+    }, 0);
+  }, [leaveType, fromDate, toDate, reason, onClose]);
+
 
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={onClose} statusBarTranslucent>
@@ -390,13 +496,161 @@ const BottomApplyModal = React.memo(function BottomApplyModal({ visible, onClose
             </Pressable>
           </View>
           <Text style={styles.sheetSub}>Fill the details to submit your leave request.</Text>
-          {/* Placeholder action; hook up to form/navigation if needed */}
-          <Pressable style={[styles.applyNowButton, { alignSelf: 'flex-end', marginTop: 12 }]} onPress={onClose}>
-            <Ionicons name="checkmark" size={16} color="#111827" />
-            <Text style={styles.applyNowText}>Submit</Text>
+          <View style={{ height: 12 }} />
+          <Text style={styles.fieldLabel}>Leave Type</Text>
+          <Pressable
+            onPress={() => setShowTypeMenu(v => !v)}
+            accessibilityRole="button"
+            style={[styles.textInput, styles.inputPressable, styles.fieldRow]}
+          >
+            <View style={styles.fieldLeft}>
+              <Ionicons name="layers-outline" size={16} color="#6b7280" />
+              <Text style={[leaveType ? styles.inputText : styles.inputPlaceholder, styles.fieldValue]}>
+                {leaveType || 'Select leave type'}
+              </Text>
+            </View>
+            <Ionicons style={styles.fieldChevron} name={showTypeMenu ? 'chevron-up' : 'chevron-down'} size={16} color="#6b7280" />
           </Pressable>
+          {showTypeMenu && (
+            <View style={styles.dropdownPanel}>
+              {(types && types.length > 0) ? (
+                types.map((t) => (
+                  <Pressable key={t} onPress={() => { setLeaveType(t); setShowTypeMenu(false); }} style={styles.dropdownItem}>
+                    <Text style={styles.dropdownText}>{t}</Text>
+                  </Pressable>
+                ))
+              ) : (
+                <View style={styles.dropdownItem}><Text style={styles.dropdownEmpty}>No leave types</Text></View>
+              )}
+            </View>
+          )}
+          <View style={styles.row}>
+            <View style={[styles.col, { marginRight: 8 }]}>
+              <Text style={styles.fieldLabel}>From</Text>
+              <Pressable
+                onPress={() => { setShowFromPicker(v => !v); if (showToPicker) setShowToPicker(false); setShowTypeMenu(false); }}
+                accessibilityRole="button"
+                style={[styles.textInput, styles.inputPressable, styles.fieldRow]}
+              >
+                <View style={styles.fieldLeft}>
+                  <Ionicons name="calendar-outline" size={16} color="#6b7280" />
+                  <Text style={[fromDate ? styles.inputText : styles.inputPlaceholder, styles.fieldValue]}>
+                    {fromDate || 'YYYY-MM-DD'}
+                  </Text>
+                </View>
+                <Ionicons style={styles.fieldChevron} name={showFromPicker ? 'chevron-up' : 'chevron-down'} size={16} color="#6b7280" />
+              </Pressable>
+              {showFromPicker && (
+                <DateTimePicker
+                  value={fromDate ? new Date(fromDate) : todayStart}
+                  mode="date"
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  minimumDate={todayStart}
+                  maximumDate={toDate ? new Date(toDate) : undefined}
+                  onChange={(_, selected) => {
+                    if (Platform.OS === 'android') setShowFromPicker(false);
+                    if (selected) {
+                      const picked = new Date(selected);
+                      picked.setHours(0, 0, 0, 0);
+                      if (picked < todayStart) {
+                        Alert.alert('Invalid date', 'From date cannot be in the past.');
+                        return;
+                      }
+                      const pickedStr = fmt(picked);
+                      setFromDate(pickedStr);
+                      if (toDate) {
+                        const to = new Date(toDate);
+                        to.setHours(0, 0, 0, 0);
+                        if (to < picked) {
+                          setToDate(pickedStr);
+                        }
+                      }
+                    }
+                  }}
+                />
+              )}
+            </View>
+            <View style={[styles.col, { marginLeft: 8 }]}>
+              <Text style={styles.fieldLabel}>To</Text>
+              <Pressable
+                onPress={() => { setShowToPicker(v => !v); if (showFromPicker) setShowFromPicker(false); setShowTypeMenu(false); }}
+                accessibilityRole="button"
+                style={[styles.textInput, styles.inputPressable, styles.fieldRow]}
+              >
+                <View style={styles.fieldLeft}>
+                  <Ionicons name="calendar-outline" size={16} color="#6b7280" />
+                  <Text style={[toDate ? styles.inputText : styles.inputPlaceholder, styles.fieldValue]}>
+                    {toDate || 'YYYY-MM-DD'}
+                  </Text>
+                </View>
+                <Ionicons style={styles.fieldChevron} name={showToPicker ? 'chevron-up' : 'chevron-down'} size={16} color="#6b7280" />
+              </Pressable>
+              {showToPicker && (
+                <DateTimePicker
+                  value={toDate ? new Date(toDate) : (fromDate ? new Date(fromDate) : todayStart)}
+                  mode="date"
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  minimumDate={fromDate ? new Date(fromDate) : todayStart}
+                  onChange={(_, selected) => {
+                    if (Platform.OS === 'android') setShowToPicker(false);
+                    if (selected) {
+                      const picked = new Date(selected);
+                      picked.setHours(0, 0, 0, 0);
+                      if (picked < todayStart) {
+                        Alert.alert('Invalid date', 'To date cannot be in the past.');
+                        return;
+                      }
+                      if (fromDate) {
+                        const from = new Date(fromDate);
+                        from.setHours(0, 0, 0, 0);
+                        if (picked < from) {
+                          Alert.alert('Invalid range', 'To date cannot be before From date.');
+                          setToDate(fmt(from));
+                          return;
+                        }
+                      }
+                      setToDate(fmt(picked));
+                    }
+                  }}
+                />
+              )}
+            </View>
+          </View>
+          <Text style={styles.helperText}>Same-day leave allowed. Past dates disabled automatically.</Text>
+          <View style={styles.divider} />
+          <Text style={styles.fieldLabel}>Reason</Text>
+          <TextInput
+            placeholder="Brief reason for leave"
+            placeholderTextColor="#9ca3af"
+            value={reason}
+            onChangeText={setReason}
+            style={[styles.textInput, { height: 90, textAlignVertical: 'top', paddingTop: 10 }]}
+            multiline
+            numberOfLines={4}
+          />
+
+          
+
+          <View style={styles.actionsRow}>
+            <Pressable style={[styles.btn, styles.btnCancel, styles.btnBlock]} onPress={onCancel} accessibilityLabel="Cancel">
+              <Ionicons name="close" size={16} color="#111827" />
+              <Text style={[styles.btnText, styles.btnCancelText, { marginLeft: 6 }]}>Cancel</Text>
+            </Pressable>
+            <Pressable style={[styles.btn, styles.btnPrimary, styles.btnBlock]} onPress={onSubmit} accessibilityLabel="Submit">
+              <Ionicons name="checkmark" size={16} color="#fff" />
+              <Text style={[styles.btnText, styles.btnPrimaryText, { marginLeft: 6 }]}>Submit</Text>
+            </Pressable>
+          </View>
         </Animated.View>
       </View>
     </Modal>
   );
 });
+
+// Custom inline calendar removed; using native DateTimePicker
+
+
+
+
+
+
