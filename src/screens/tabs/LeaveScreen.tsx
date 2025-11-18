@@ -212,4 +212,5 @@ const styles = StyleSheet.create({
   statusApproved: { backgroundColor: '#10b981' },
   statusPending: { backgroundColor: '#f97316' },
   statusRejected: { backgroundColor: '#ef4444' },
+  
 });
