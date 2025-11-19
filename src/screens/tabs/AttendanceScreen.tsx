@@ -20,6 +20,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Config from 'react-native-config';
 import { toErpLocalTimestamp } from '../../utils/date';
 import axios from 'axios';
+import { listCheckins } from '../../services/attendance';
 
 type HistoryItem = {
   id: string;
@@ -44,6 +45,10 @@ const AttendanceScreen = () => {
   const [loadingLocation, setLoadingLocation] = useState(false);
   const [isClockedIn, setIsClockedIn] = useState(false);
   const [recentHistory, setRecentHistory] = useState<HistoryItem[]>([]);
+  const [weekTotalMinutes, setWeekTotalMinutes] = useState<number>(0);
+  const [weekDailyMinutes, setWeekDailyMinutes] = useState<number[]>([0,0,0,0,0,0,0]); // Mon..Sun
+  const [weekDaysWorked, setWeekDaysWorked] = useState<number>(0);
+  const [weekDaysLate, setWeekDaysLate] = useState<number>(0);
   const [employeeId, setEmployeeId] = useState<string | null>(null);
   const [lastClockInTime, setLastClockInTime] = useState<string | null>(null);
   const [deviceId, setDeviceId] = useState<string | null>(null);
@@ -170,53 +175,116 @@ const AttendanceScreen = () => {
           }
         }
       }
-      if (!id || !ERP_BASE || !ERP_KEY || !ERP_SECRET) return;
+      if (!id) return;
 
-      const params: any = {
-        filters: JSON.stringify([["employee", "=", id]]),
-        fields: JSON.stringify(["name","employee","log_type","time","location"]),
-        order_by: 'time asc',
-        limit_page_length: '200',
-      };
-      const url = `${ERP_BASE}/${encodeURIComponent('Employee Checkin')}`;
-      const listRes = await axios.get(url, { params, headers: { Authorization: `token ${ERP_KEY}:${ERP_SECRET}` } });
-      const rows: any[] = (listRes as any)?.data?.data || [];
-      const items = rows.map(r => ({ ...r, dt: new Date(r.time) })).sort((a,b)=>a.dt.getTime()-b.dt.getTime());
-      const out: HistoryItem[] = [];
+      // Fetch raw checkins via shared service
+      const rows = await listCheckins(id, 500);
+
+      // Build chronological list with Date objects
+      const items = rows.map(r => ({ ...r, dt: new Date(r.time) }))
+        .filter(r => !isNaN(r.dt.getTime()))
+        .sort((a, b) => a.dt.getTime() - b.dt.getTime());
+
+      // Pair into sessions with start/end Dates
+      const sessions: Array<{ start: Date; end?: Date; locationIn?: string; locationOut?: string; nameIn?: string; nameOut?: string; }>= [];
       let open: any | null = null;
       for (const it of items) {
         const lt = String(it.log_type).toUpperCase();
         if (lt === 'IN') {
           if (open) {
-            out.push({ id: `${open.name}-open`, date: open.dt.toLocaleDateString(), clockIn: formatTime12(open.dt), clockOut: '', locationIn: open.location || '', locationOut: '' });
+            sessions.push({ start: open.dt, end: undefined, locationIn: open.location, nameIn: open.name });
           }
           open = it;
         } else if (lt === 'OUT') {
           if (open && it.dt.getTime() > open.dt.getTime()) {
-            out.push({ id: `${open.name}-${it.name}` , date: it.dt.toLocaleDateString(), clockIn: formatTime12(open.dt), clockOut: formatTime12(it.dt), locationIn: open.location || '', locationOut: it.location || '' });
+            sessions.push({ start: open.dt, end: it.dt, locationIn: open.location, locationOut: it.location, nameIn: open.name, nameOut: it.name });
             open = null;
           } else {
-            out.push({ id: `${it.name}`, date: it.dt.toLocaleDateString(), clockIn: '', clockOut: formatTime12(it.dt), locationIn: '', locationOut: it.location || '' });
+            sessions.push({ start: it.dt, end: it.dt, locationOut: it.location, nameOut: it.name });
           }
         }
       }
       if (open) {
-        out.push({ id: `${open.name}-open`, date: open.dt.toLocaleDateString(), clockIn: formatTime12(open.dt), clockOut: '', locationIn: open.location || '', locationOut: '' });
+        sessions.push({ start: open.dt, end: undefined, locationIn: open.location, nameIn: open.name });
       }
-      const finalList = out.slice().reverse().slice(0, 10);
-      setRecentHistory(finalList);
-      if (out.length > 0) {
-        const latest = out[out.length - 1]; // last chronological entry
-        const clockedIn = !!latest.clockIn && !latest.clockOut;
+
+      // Determine current clocked-in state from most recent session
+      if (sessions.length > 0) {
+        const last = sessions[sessions.length - 1];
+        const clockedIn = !last.end || last.end.getTime() === last.start.getTime();
         setIsClockedIn(clockedIn);
-        setLastClockInTime(clockedIn ? latest.clockIn : null);
-        // Persist resolved state from server
-        await persistState(clockedIn, clockedIn ? latest.clockIn : null);
+        setLastClockInTime(clockedIn ? formatTime12(last.start) : null);
+        await persistState(clockedIn, clockedIn ? formatTime12(last.start) : null);
       } else {
         setIsClockedIn(false);
         setLastClockInTime(null);
         await persistState(false, null);
       }
+
+      // Compute this week totals (Mon..Sun)
+      const now = new Date();
+      const day = (now.getDay() + 6) % 7; // 0=Mon..6=Sun
+      const weekStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      weekStart.setDate(weekStart.getDate() - day);
+      weekStart.setHours(0, 0, 0, 0);
+      const weekEnd = new Date(weekStart.getTime());
+      weekEnd.setDate(weekEnd.getDate() + 7);
+      const daily: number[] = [0,0,0,0,0,0,0];
+
+      const clamp = (t: number, a: number, b: number) => Math.min(Math.max(t, a), b);
+      for (const s of sessions) {
+        const sStart = s.start.getTime();
+        const sEnd = (s.end ? s.end : new Date()).getTime();
+        // Skip if entirely outside week
+        if (sEnd <= weekStart.getTime() || sStart >= weekEnd.getTime()) continue;
+        const startClamped = Math.max(sStart, weekStart.getTime());
+        const endClamped = Math.min(sEnd, weekEnd.getTime());
+        // Attribute to days
+        for (let i = 0; i < 7; i++) {
+          const dStart = new Date(weekStart.getTime()); dStart.setDate(weekStart.getDate() + i);
+          const dEnd = new Date(dStart.getTime()); dEnd.setDate(dStart.getDate() + 1);
+          const overlap = Math.max(0, Math.min(endClamped, dEnd.getTime()) - Math.max(startClamped, dStart.getTime()));
+          if (overlap > 0) daily[i] += Math.round(overlap / 60000); // minutes
+        }
+      }
+      setWeekDailyMinutes(daily);
+      const totalMin = daily.reduce((a, b) => a + b, 0);
+      setWeekTotalMinutes(totalMin);
+      setWeekDaysWorked(daily.filter(m => m > 0).length);
+
+      // Compute late days based on first IN per day vs threshold (default 09:15)
+      const thrH = Number((Config as any)?.ATT_LATE_HOUR) || 9;
+      const thrM = Number((Config as any)?.ATT_LATE_MINUTE) || 15;
+      const earliestInByDay: Record<string, Date> = {};
+      for (const it of items) {
+        const lt = String(it.log_type).toUpperCase();
+        if (lt !== 'IN') continue;
+        const t = it.dt.getTime();
+        if (t < weekStart.getTime() || t >= weekEnd.getTime()) continue;
+        const key = `${it.dt.getFullYear()}-${String(it.dt.getMonth()+1).padStart(2,'0')}-${String(it.dt.getDate()).padStart(2,'0')}`;
+        const prev = earliestInByDay[key];
+        if (!prev || t < prev.getTime()) earliestInByDay[key] = it.dt;
+      }
+      let lateDays = 0;
+      Object.keys(earliestInByDay).forEach(key => {
+        const [y,m,d] = key.split('-').map(n => parseInt(n, 10));
+        const threshold = new Date(y, (m-1), d, thrH, thrM, 0, 0);
+        if (earliestInByDay[key].getTime() > threshold.getTime()) lateDays += 1;
+      });
+      setWeekDaysLate(lateDays);
+
+      // Dummy recent history entries for UI under stats
+      const today = new Date();
+      const fmt = (h: number, m: number) => {
+        const d = new Date(today.getFullYear(), today.getMonth(), today.getDate(), h, m, 0, 0);
+        return formatTime12(d);
+      };
+      const dummy: HistoryItem[] = [
+        { id: 'dummy-1', date: today.toLocaleDateString(), clockIn: fmt(9, 0), clockOut: fmt(17, 30), locationIn: 'Office HQ', locationOut: 'Office HQ' },
+        { id: 'dummy-2', date: new Date(today.getTime() - 86400000).toLocaleDateString(), clockIn: fmt(9, 15), clockOut: fmt(18, 5), locationIn: 'Office HQ', locationOut: 'Office HQ' },
+        { id: 'dummy-3', date: new Date(today.getTime() - 2*86400000).toLocaleDateString(), clockIn: fmt(8, 55), clockOut: fmt(17, 45), locationIn: 'Client Site', locationOut: 'Client Site' },
+      ];
+      setRecentHistory(dummy);
     } catch (e) {
       // keep whatever is shown
     }
@@ -350,6 +418,12 @@ const AttendanceScreen = () => {
     }
   };
 
+  const formatHM = (minutes: number) => {
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    return `${h} hrs ${m} mins`;
+  };
+
   const renderHistoryItem = ({ item, index }: { item: HistoryItem; index: number }) => {
     const parseTime = (time: string) => {
       if (!time) return { hours: 0, minutes: 0 };
@@ -470,27 +544,28 @@ const AttendanceScreen = () => {
           )}
         </View>
 
-        {/* Recent History */}
-        <View style={styles.historySection}>
+        {/* This Week - Compact Counts */}
+        <View style={styles.smallStatsCard}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Recent History</Text>
-            <Ionicons name="time-outline" size={20} color="#666" />
+            <Text style={styles.sectionTitle}>This Week</Text>
+            <Ionicons name="bar-chart-outline" size={20} color="#666" />
           </View>
-          <FlatList
-            data={recentHistory}
-            keyExtractor={(item) => item.id}
-            renderItem={renderHistoryItem}
-            style={styles.historyList}
-            showsVerticalScrollIndicator={false}
-            ListEmptyComponent={
-              <View style={styles.emptyContainer}>
-                <Ionicons name="calendar-outline" size={60} color="#ccc" />
-                <Text style={styles.emptyTitle}>No attendance records</Text>
-                <Text style={styles.emptySubtitle}>Your attendance history will appear here</Text>
-              </View>
-            }
-          />
+          <View style={styles.statItemsRow}>
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Hours</Text>
+              <Text style={styles.statValue}>{(weekTotalMinutes/60).toFixed(2)}</Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Days</Text>
+              <Text style={styles.statValue}>{weekDaysWorked}</Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Late</Text>
+              <Text style={styles.statValue}>{weekDaysLate}</Text>
+            </View>
+          </View>
         </View>
+
       </View>
     </View>
   );
@@ -498,7 +573,7 @@ const AttendanceScreen = () => {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
-  wrapper: { flex: 1, padding: 16 },
+  wrapper: { flex: 1, padding: 10 },
   headerCard: {
     backgroundColor: '#090a1a',
     borderBottomLeftRadius: 16,
@@ -527,14 +602,14 @@ const styles = StyleSheet.create({
   clockCard: {
     backgroundColor: '#fff',
     borderRadius: 16,
-    padding: 20,
+    padding: 14,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 4,
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 12,
     borderWidth: 1,
     borderColor: '#f0f0f0',
   },
@@ -546,9 +621,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#f8f8f8',
-    padding: 12,
+    padding: 10,
     borderRadius: 12,
-    marginBottom: 20,
+    marginBottom: 12,
     width: '100%',
     borderWidth: 1,
     borderColor: '#e0e0e0',
@@ -559,11 +634,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 16,
-    paddingHorizontal: 32,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
     borderRadius: 12,
     width: '100%',
-    marginBottom: 16,
+    marginBottom: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
@@ -591,7 +666,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#fff',
     borderRadius: 16,
-    padding: 16,
+    padding: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
@@ -600,12 +675,33 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#f0f0f0',
   },
+  smallStatsCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: '#f0f0f0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 1,
+    marginBottom: 12,
+  },
+  statRow: {
+    paddingVertical: 6,
+    alignItems: 'center',
+  },
+  statLabel: { fontSize: 12, color: '#666', fontWeight: '600' },
+  statValue: { fontSize: 20, color: '#111', fontWeight: '800', marginTop: 2 },
+  statItemsRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  statItem: { flex: 1, alignItems: 'center', paddingVertical: 6 },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
-    paddingBottom: 12,
+    marginBottom: 10,
+    paddingBottom: 8,
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
   },
@@ -615,10 +711,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
+    padding: 12,
     backgroundColor: '#f8f8f8',
     borderRadius: 12,
-    marginBottom: 8,
+    marginBottom: 6,
     borderWidth: 1,
     borderColor: '#e8e8e8',
   },
