@@ -47,6 +47,7 @@ export default function LeaveScreen() {
   const [employeeId, setEmployeeId] = React.useState<string | null>(null);
   const [balances, setBalances] = React.useState<LeaveBalanceItem[]>([]);
   const [loadingBalances, setLoadingBalances] = React.useState(false);
+  const [loadingRequests, setLoadingRequests] = React.useState(false);
   const [applyVisible, setApplyVisible] = React.useState(false);
   const [refreshKey, setRefreshKey] = React.useState(0);
 
@@ -54,14 +55,17 @@ export default function LeaveScreen() {
   const closeApply = React.useCallback(() => setApplyVisible(false), []);
 
   const keyExtractor = React.useCallback((item: ReqItem) => item.id, []);
-  const renderItem = React.useCallback(({ item }: { item: ReqItem }) => (
-    <RequestCard
-      title={item.title}
-      subtitle={item.subtitle}
-      status={item.status}
-      dateRange={{ start: item.start, end: item.end }}
-    />
-  ), []);
+  const renderItem = React.useCallback(({ item }: { item: ReqItem }) => {
+    if (loadingRequests) return <SkeletonRequestCard />;
+    return (
+      <RequestCard
+        title={item.title}
+        subtitle={item.subtitle}
+        status={item.status}
+        dateRange={{ start: item.start, end: item.end }}
+      />
+    );
+  }, [loadingRequests]);
 
   // Load logged-in employee ID (fast local lookup similar to Attendance screen)
   React.useEffect(() => {
@@ -123,6 +127,7 @@ export default function LeaveScreen() {
     let mounted = true;
     (async () => {
       try {
+        setLoadingRequests(true);
         const items = await fetchLeaveHistory(employeeId, 100);
         if (!mounted) return;
         const fmt = (s: string) => new Date(s).toLocaleDateString(undefined, { month: 'short', day: '2-digit', year: 'numeric' });
@@ -138,6 +143,8 @@ export default function LeaveScreen() {
       } catch (err) {
         try { console.warn('Leave requests load failed', err); } catch {}
         if (mounted) setRequests([]);
+      } finally {
+        mounted && setLoadingRequests(false);
       }
     })();
     return () => { mounted = false; };
@@ -154,11 +161,11 @@ export default function LeaveScreen() {
       <FlatList
         style={styles.content}
         contentContainerStyle={styles.contentContainer}
-        data={requests}
+        data={loadingRequests ? Array.from({ length: 6 }, (_, i) => ({ id: `s-${i}`, title: '', subtitle: '', status: '', start: '', end: '' })) as any : requests}
         keyExtractor={keyExtractor}
-        ListHeaderComponent={<ContentHeader balances={balances} onApply={openApply} />}
+        ListHeaderComponent={<ContentHeader balances={balances} onApply={openApply} loading={loadingBalances} />}
         renderItem={renderItem}
-        ListEmptyComponent={<EmptyRequests />}
+        ListEmptyComponent={loadingRequests ? null : <EmptyRequests />}
         ListFooterComponent={ListFooter}
         showsVerticalScrollIndicator={false}
         removeClippedSubviews={false}
@@ -199,11 +206,25 @@ const BalanceCard = React.memo(function BalanceCard({ label, valueText, progress
   );
 });
 
-function ContentHeader({ balances, onApply }: { balances: LeaveBalanceItem[]; onApply?: () => void }) {
+function ContentHeader({ balances, onApply, loading }: { balances: LeaveBalanceItem[]; onApply?: () => void; loading?: boolean }) {
   return (
     <View>
       <Text style={styles.sectionTitle}>Leave Balance</Text>
-      {balances && balances.length > 0 ? (
+      {loading ? (
+        <>
+          {Array.from({ length: 3 }).map((_, idx) => (
+            <View key={`sk-balance-${idx}`} style={[styles.card, styles.skeletonCard]}>
+              <View style={styles.cardRow}>
+                <View style={[styles.skeletonBar, { width: 120, height: 12 }]} />
+                <View style={[styles.skeletonBar, { width: 48, height: 12 }]} />
+              </View>
+              <View style={[styles.progressTrack, { marginTop: 12 }]}>
+                <View style={[styles.skeletonBar, { height: 6, borderRadius: 6 }]} />
+              </View>
+            </View>
+          ))}
+        </>
+      ) : balances && balances.length > 0 ? (
         <>
           {balances.map((b, idx) => {
             const remaining = Math.max(0, (b.total || 0) - (b.used || 0));
@@ -282,6 +303,26 @@ const RequestCard = React.memo(function RequestCard({
   );
 });
 
+function SkeletonRequestCard() {
+  return (
+    <View style={[styles.card, styles.skeletonCard]}> 
+      <View style={styles.reqTopRow}>
+        <View>
+          <View style={[styles.skeletonBar, { width: 140, height: 12, marginBottom: 8 }]} />
+          <View style={[styles.skeletonBar, { width: 200, height: 10 }]} />
+        </View>
+        <View style={[styles.skeletonPill, { width: 70, height: 20 }]} />
+      </View>
+      <View style={[styles.reqDateRow, { marginTop: 12 }]}>
+        <View style={[styles.skeletonCircle, { marginRight: 6 }]} />
+        <View style={[styles.skeletonBar, { width: 100, height: 10 }]} />
+        <View style={[styles.skeletonBar, { width: 12, height: 10, marginHorizontal: 8 }]} />
+        <View style={[styles.skeletonBar, { width: 100, height: 10 }]} />
+      </View>
+    </View>
+  );
+}
+
 const STATUS_STYLES = {
   approved: { backgroundColor: '#10b98122', borderColor: '#10b981' },
   rejected: { backgroundColor: '#ef444422', borderColor: '#ef4444' },
@@ -297,6 +338,10 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#fff' },
   content: { flex: 1, marginTop: 8 },
   contentContainer: { paddingBottom: 32 },
+  skeletonBar: { backgroundColor: '#e5e7eb', borderRadius: 6 },
+  skeletonCircle: { width: 16, height: 16, borderRadius: 8, backgroundColor: '#e5e7eb' },
+  skeletonPill: { borderRadius: 999, backgroundColor: '#e5e7eb' },
+  skeletonCard: { backgroundColor: '#ffffff' },
 
   headerCard: {
     backgroundColor: '#090a1a',

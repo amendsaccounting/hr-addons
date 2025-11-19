@@ -45,6 +45,7 @@ const AttendanceScreen = () => {
   const [loadingLocation, setLoadingLocation] = useState(false);
   const [isClockedIn, setIsClockedIn] = useState(false);
   const [recentHistory, setRecentHistory] = useState<HistoryItem[]>([]);
+  const [historyLoading, setHistoryLoading] = useState<boolean>(false);
   const [weekTotalMinutes, setWeekTotalMinutes] = useState<number>(0);
   const [weekDailyMinutes, setWeekDailyMinutes] = useState<number[]>([0,0,0,0,0,0,0]); // Mon..Sun
   const [weekDaysWorked, setWeekDaysWorked] = useState<number>(0);
@@ -171,6 +172,7 @@ const AttendanceScreen = () => {
   };
 
   const loadRecentHistory = async () => {
+    setHistoryLoading(true);
     try {
       let id: string | null = employeeId;
       if (!id) {
@@ -295,6 +297,8 @@ const AttendanceScreen = () => {
       setRecentHistory(dummy);
     } catch (e) {
       // keep whatever is shown
+    } finally {
+      setHistoryLoading(false);
     }
   };
 
@@ -550,20 +554,37 @@ const AttendanceScreen = () => {
             <Text style={styles.sectionTitle}>This Week</Text>
             <Ionicons name="bar-chart-outline" size={20} color="#666" />
           </View>
-          <View style={styles.statItemsRow}>
-            <View style={styles.statItem}>
-              <Text style={styles.statLabel}>Hours</Text>
-              <Text style={styles.statValue}>{(weekTotalMinutes/60).toFixed(2)}</Text>
+          {historyLoading ? (
+            <View style={styles.statItemsRow}>
+              <View style={styles.statItem}>
+                <Text style={styles.statLabel}>Hours</Text>
+                <View style={[styles.skeletonBar, { width: 50, height: 18 }]} />
+              </View>
+              <View style={styles.statItem}>
+                <Text style={styles.statLabel}>Days</Text>
+                <View style={[styles.skeletonBar, { width: 36, height: 18 }]} />
+              </View>
+              <View style={styles.statItem}>
+                <Text style={styles.statLabel}>Late</Text>
+                <View style={[styles.skeletonBar, { width: 36, height: 18 }]} />
+              </View>
             </View>
-            <View style={styles.statItem}>
-              <Text style={styles.statLabel}>Days</Text>
-              <Text style={styles.statValue}>{weekDaysWorked}</Text>
+          ) : (
+            <View style={styles.statItemsRow}>
+              <View style={styles.statItem}>
+                <Text style={styles.statLabel}>Hours</Text>
+                <Text style={styles.statValue}>{(weekTotalMinutes/60).toFixed(2)}</Text>
+              </View>
+              <View style={styles.statItem}>
+                <Text style={styles.statLabel}>Days</Text>
+                <Text style={styles.statValue}>{weekDaysWorked}</Text>
+              </View>
+              <View style={styles.statItem}>
+                <Text style={styles.statLabel}>Late</Text>
+                <Text style={styles.statValue}>{weekDaysLate}</Text>
+              </View>
             </View>
-            <View style={styles.statItem}>
-              <Text style={styles.statLabel}>Late</Text>
-              <Text style={styles.statValue}>{weekDaysLate}</Text>
-            </View>
-          </View>
+          )}
         </View>
 
         {/* Recent History (Dummy) */}
@@ -573,24 +594,54 @@ const AttendanceScreen = () => {
             <Ionicons name="time-outline" size={20} color="#111" />
           </View>
           <View style={styles.recentAccent} />
-          <FlatList
-            data={recentHistory}
-            keyExtractor={(item) => item.id}
-            renderItem={renderHistoryItem}
-            style={styles.historyList}
-            contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + 48 }]}
-            scrollIndicatorInsets={{ bottom: insets.bottom + 16, top: 0 }}
-            ListFooterComponent={<View style={{ height: insets.bottom + 48 }} />}
-            showsVerticalScrollIndicator={true}
-            removeClippedSubviews={false}
-            ListEmptyComponent={
-              <View style={styles.emptyContainer}>
-                <Ionicons name="calendar-outline" size={60} color="#ccc" />
-                <Text style={styles.emptyTitle}>No attendance records</Text>
-                <Text style={styles.emptySubtitle}>Your attendance history will appear here</Text>
-              </View>
-            }
-          />
+          {historyLoading ? (
+            <View>
+              {Array.from({ length: 5 }).map((_, i) => (
+                <View key={`skeleton-${i}`} style={[styles.historyItem, { backgroundColor: '#fff' }]}> 
+                  <View style={styles.dateRow}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                      <View style={[styles.skeletonCircle]} />
+                      <View style={[styles.skeletonBar, { width: 120, height: 14, marginLeft: 6 }]} />
+                    </View>
+                    <View style={[styles.skeletonPill]} />
+                  </View>
+                  <View style={styles.tripletRow}>
+                    <View style={styles.tripletItem}>
+                      <View style={[styles.skeletonBar, { width: 24, height: 10, marginBottom: 6 }]} />
+                      <View style={[styles.skeletonBar, { width: 60, height: 18 }]} />
+                    </View>
+                    <View style={styles.tripletItem}>
+                      <View style={[styles.skeletonBar, { width: 28, height: 10, marginBottom: 6 }]} />
+                      <View style={[styles.skeletonBar, { width: 60, height: 18 }]} />
+                    </View>
+                    <View style={styles.tripletItem}>
+                      <View style={[styles.skeletonBar, { width: 42, height: 10, marginBottom: 6 }]} />
+                      <View style={[styles.skeletonBar, { width: 60, height: 18 }]} />
+                    </View>
+                  </View>
+                </View>
+              ))}
+            </View>
+          ) : (
+            <FlatList
+              data={recentHistory}
+              keyExtractor={(item) => item.id}
+              renderItem={renderHistoryItem}
+              style={styles.historyList}
+              contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + 48 }]}
+              scrollIndicatorInsets={{ bottom: insets.bottom + 16, top: 0 }}
+              ListFooterComponent={<View style={{ height: insets.bottom + 48 }} />}
+              showsVerticalScrollIndicator={true}
+              removeClippedSubviews={false}
+              ListEmptyComponent={
+                <View style={styles.emptyContainer}>
+                  <Ionicons name="calendar-outline" size={60} color="#ccc" />
+                  <Text style={styles.emptyTitle}>No attendance records</Text>
+                  <Text style={styles.emptySubtitle}>Your attendance history will appear here</Text>
+                </View>
+              }
+            />
+          )}
         </View>
       </View>
     </View>
@@ -792,6 +843,9 @@ const styles = StyleSheet.create({
   recentHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   recentTitle: { fontSize: 18, fontWeight: '800', color: '#111' },
   recentAccent: { height: 3, backgroundColor: '#111', borderRadius: 2, marginTop: 8, marginBottom: 8 },
+  skeletonBar: { backgroundColor: '#e5e7eb', borderRadius: 6 },
+  skeletonCircle: { width: 16, height: 16, borderRadius: 8, backgroundColor: '#e5e7eb' },
+  skeletonPill: { width: 48, height: 16, borderRadius: 999, backgroundColor: '#e5e7eb' },
 });
 
 export default AttendanceScreen;
