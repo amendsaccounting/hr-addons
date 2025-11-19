@@ -162,6 +162,14 @@ const AttendanceScreen = () => {
     return `${hh}:${mm} ${ap}`;
   };
 
+  const formatDisplayDate = (d: Date) => {
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const mon = months[d.getMonth()];
+    const day = d.getDate();
+    const year = d.getFullYear();
+    return `${mon} ${day}, ${year}`;
+  };
+
   const loadRecentHistory = async () => {
     try {
       let id: string | null = employeeId;
@@ -280,9 +288,9 @@ const AttendanceScreen = () => {
         return formatTime12(d);
       };
       const dummy: HistoryItem[] = [
-        { id: 'dummy-1', date: today.toLocaleDateString(), clockIn: fmt(9, 0), clockOut: fmt(17, 30), locationIn: 'Office HQ', locationOut: 'Office HQ' },
-        { id: 'dummy-2', date: new Date(today.getTime() - 86400000).toLocaleDateString(), clockIn: fmt(9, 15), clockOut: fmt(18, 5), locationIn: 'Office HQ', locationOut: 'Office HQ' },
-        { id: 'dummy-3', date: new Date(today.getTime() - 2*86400000).toLocaleDateString(), clockIn: fmt(8, 55), clockOut: fmt(17, 45), locationIn: 'Client Site', locationOut: 'Client Site' },
+        { id: 'dummy-1', date: formatDisplayDate(today), clockIn: fmt(9, 0), clockOut: fmt(17, 30), locationIn: 'Office HQ', locationOut: 'Office HQ' },
+        { id: 'dummy-2', date: formatDisplayDate(new Date(today.getTime() - 86400000)), clockIn: fmt(9, 15), clockOut: fmt(18, 5), locationIn: 'Office HQ', locationOut: 'Office HQ' },
+        { id: 'dummy-3', date: formatDisplayDate(new Date(today.getTime() - 2*86400000)), clockIn: fmt(8, 55), clockOut: fmt(17, 45), locationIn: 'Client Site', locationOut: 'Client Site' },
       ];
       setRecentHistory(dummy);
     } catch (e) {
@@ -447,37 +455,29 @@ const AttendanceScreen = () => {
 
     return (
       <View style={[styles.historyItem, index === 0 && styles.currentSessionItem]}>
-        <View style={styles.historyLeft}>
-          <View style={styles.dateRow}>
+        <View style={styles.dateRow}>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
             <Ionicons name="calendar-outline" size={16} color={index === 0 ? '#fff' : '#666'} />
             <Text style={[styles.historyDate, index === 0 && styles.currentSessionText]}>{item.date}</Text>
           </View>
-          <View style={styles.timeRow}>
-            {!!item.clockIn && (
-              <View style={styles.timeBlock}>
-                <Ionicons name="enter-outline" size={14} color={index === 0 ? '#fff' : '#000'} />
-                <Text style={[styles.historyTime, index === 0 && styles.currentSessionText]}>{item.clockIn}</Text>
-              </View>
-            )}
-            {!!item.clockOut && (
-              <View style={styles.timeBlock}>
-                <Ionicons name="exit-outline" size={14} color={index === 0 ? '#fff' : '#000'} />
-                <Text style={[styles.historyTime, index === 0 && styles.currentSessionText]}>{item.clockOut}</Text>
-              </View>
-            )}
-          </View>
+          {!item.clockOut && (
+            <View style={[styles.pill, index === 0 && styles.pillOnDark]}>
+              <Text style={[styles.pillText, index === 0 && styles.pillTextOnDark]}>OPEN</Text>
+            </View>
+          )}
         </View>
-        <View style={styles.historyRight}>
-          <View style={[styles.hoursBadge, index === 0 && styles.currentSessionHours]}>
-            <Text style={[styles.historyTotal, index === 0 && styles.currentSessionText]}>{totalHours} hrs</Text>
+        <View style={styles.tripletRow}>
+          <View style={styles.tripletItem}>
+            <Text style={[styles.inLabel, index === 0 && styles.inLabelOnDark]}>IN</Text>
+            <Text style={[styles.tripletValue, index === 0 && styles.currentSessionText]}>{item.clockIn || '--'}</Text>
           </View>
-          <View style={styles.locationRow}>
-            <Ionicons name="location-outline" size={12} color={index === 0 ? '#fff' : '#666'} />
-            <Text style={[styles.locationText, index === 0 && styles.currentSessionText]} numberOfLines={1}>In: {item.locationIn || '-'}</Text>
+          <View style={styles.tripletItem}>
+            <Text style={[styles.outLabel, index === 0 && styles.outLabelOnDark]}>OUT</Text>
+            <Text style={[styles.tripletValue, index === 0 && styles.currentSessionText]}>{item.clockOut || '--'}</Text>
           </View>
-          <View style={[styles.locationRow, { marginTop: 2 }]}>
-            <Ionicons name="location-outline" size={12} color={index === 0 ? '#fff' : '#666'} />
-            <Text style={[styles.locationText, index === 0 && styles.currentSessionText]} numberOfLines={1}>Out: {item.locationOut || '-'}</Text>
+          <View style={styles.tripletItem}>
+            <Text style={[styles.hoursLabel, index === 0 && styles.hoursLabelOnDark]}>HOURS</Text>
+            <Text style={[styles.tripletValue, index === 0 && styles.currentSessionText]}>{totalHours === '--' ? '--' : totalHours}</Text>
           </View>
         </View>
       </View>
@@ -566,6 +566,32 @@ const AttendanceScreen = () => {
           </View>
         </View>
 
+        {/* Recent History (Dummy) */}
+        <View style={[styles.historySection, styles.recentCard]}>
+          <View style={styles.recentHeaderRow}>
+            <Text style={styles.recentTitle}>Recent History</Text>
+            <Ionicons name="time-outline" size={20} color="#111" />
+          </View>
+          <View style={styles.recentAccent} />
+          <FlatList
+            data={recentHistory}
+            keyExtractor={(item) => item.id}
+            renderItem={renderHistoryItem}
+            style={styles.historyList}
+            contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + 48 }]}
+            scrollIndicatorInsets={{ bottom: insets.bottom + 16, top: 0 }}
+            ListFooterComponent={<View style={{ height: insets.bottom + 48 }} />}
+            showsVerticalScrollIndicator={true}
+            removeClippedSubviews={false}
+            ListEmptyComponent={
+              <View style={styles.emptyContainer}>
+                <Ionicons name="calendar-outline" size={60} color="#ccc" />
+                <Text style={styles.emptyTitle}>No attendance records</Text>
+                <Text style={styles.emptySubtitle}>Your attendance history will appear here</Text>
+              </View>
+            }
+          />
+        </View>
       </View>
     </View>
   );
@@ -602,21 +628,21 @@ const styles = StyleSheet.create({
   clockCard: {
     backgroundColor: '#fff',
     borderRadius: 16,
-    padding: 14,
+    padding: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 4,
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 8,
     borderWidth: 1,
     borderColor: '#f0f0f0',
   },
   clockHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
   clockTitle: { fontSize: 16, fontWeight: '600', color: '#333', marginLeft: 8 },
-  timeText: { fontSize: 48, fontWeight: 'bold', color: '#000', marginBottom: 4 },
-  dateText: { fontSize: 16, color: '#666', marginBottom: 20, textAlign: 'center', fontWeight: '500' },
+  timeText: { fontSize: 36, fontWeight: 'bold', color: '#000', marginBottom: 2 },
+  dateText: { fontSize: 14, color: '#666', marginBottom: 12, textAlign: 'center', fontWeight: '500' },
   locationSection: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -674,6 +700,7 @@ const styles = StyleSheet.create({
     elevation: 2,
     borderWidth: 1,
     borderColor: '#f0f0f0',
+    minHeight: 0,
   },
   smallStatsCard: {
     backgroundColor: '#fff',
@@ -706,11 +733,10 @@ const styles = StyleSheet.create({
     borderBottomColor: '#f0f0f0',
   },
   sectionTitle: { fontSize: 18, fontWeight: '700', color: '#000' },
-  historyList: { flex: 1 },
+  historyList: { flex: 1, minHeight: 0 },
+  listContent: { paddingTop: 6, paddingBottom: 24 },
   historyItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: 'column',
     padding: 12,
     backgroundColor: '#f8f8f8',
     borderRadius: 12,
@@ -721,11 +747,27 @@ const styles = StyleSheet.create({
   currentSessionItem: { backgroundColor: '#000', borderColor: '#000' },
   historyLeft: { flex: 1 },
   historyRight: { alignItems: 'flex-end' },
-  dateRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+  dateRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
   historyDate: { fontSize: 14, fontWeight: '600', color: '#333', marginLeft: 6 },
   timeRow: { flexDirection: 'row', gap: 16 },
   timeBlock: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   historyTime: { fontSize: 14, color: '#666', fontWeight: '500' },
+  inOutGrid: { flexDirection: 'row', gap: 16 },
+  inOutCol: { flex: 1 },
+  inOutTime: { fontSize: 16, fontWeight: '700', color: '#111' },
+  inLabel: { fontSize: 11, fontWeight: '800', color: '#059669', letterSpacing: 0.5 },
+  outLabel: { fontSize: 11, fontWeight: '800', color: '#dc2626', letterSpacing: 0.5 },
+  inLabelOnDark: { color: '#86efac' },
+  outLabelOnDark: { color: '#fca5a5' },
+  tripletRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 12 },
+  tripletItem: { flex: 1, alignItems: 'center' },
+  tripletValue: { fontSize: 16, fontWeight: '800', color: '#111', marginTop: 2 },
+  hoursLabel: { fontSize: 11, fontWeight: '800', color: '#334155', letterSpacing: 0.5 },
+  hoursLabelOnDark: { color: '#cbd5e1' },
+  pill: { marginLeft: 8, marginRight: 4, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 999, backgroundColor: '#fee2e2' },
+  pillText: { fontSize: 10, fontWeight: '800', color: '#991b1b', letterSpacing: 0.5 },
+  pillOnDark: { backgroundColor: 'rgba(255,255,255,0.15)' },
+  pillTextOnDark: { color: '#fff' },
   hoursBadge: { backgroundColor: '#fff', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, marginBottom: 8, borderWidth: 1, borderColor: '#e0e0e0' },
   currentSessionHours: { backgroundColor: 'rgba(255,255,255,0.1)', borderColor: 'rgba(255,255,255,0.3)' },
   historyTotal: { fontSize: 14, fontWeight: '700', color: '#000' },
@@ -734,6 +776,22 @@ const styles = StyleSheet.create({
   emptyContainer: { alignItems: 'center', justifyContent: 'center', paddingVertical: 40 },
   emptyTitle: { fontSize: 16, color: '#999', fontWeight: '600', marginTop: 12, marginBottom: 4 },
   emptySubtitle: { fontSize: 14, color: '#ccc', textAlign: 'center' },
+  recentCard: {
+    borderColor: '#e5e7eb',
+    borderWidth: 1,
+    borderRadius: 14,
+    backgroundColor: '#ffffff',
+    paddingTop: 12,
+    paddingBottom: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  recentHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  recentTitle: { fontSize: 18, fontWeight: '800', color: '#111' },
+  recentAccent: { height: 3, backgroundColor: '#111', borderRadius: 2, marginTop: 8, marginBottom: 8 },
 });
 
 export default AttendanceScreen;
