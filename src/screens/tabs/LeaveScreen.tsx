@@ -12,6 +12,8 @@ import {
   Alert,
   Platform,
   Linking,
+  KeyboardAvoidingView,
+  ScrollView,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -497,6 +499,7 @@ const EmptyRequests = React.memo(() => (
 
 // Bottom sheet-style modal for applying leave
 const BottomApplyModal = React.memo(function BottomApplyModal({ visible, onClose, types, employeeId, onApplied }: { visible: boolean; onClose: () => void; types?: string[]; employeeId?: string | null; onApplied?: () => void }) {
+  const insets = useSafeAreaInsets();
   const slide = React.useRef(new Animated.Value(0)).current;
   React.useEffect(() => {
     Animated.timing(slide, { toValue: visible ? 1 : 0, duration: 250, useNativeDriver: true }).start();
@@ -621,7 +624,9 @@ const BottomApplyModal = React.memo(function BottomApplyModal({ visible, onClose
         <Pressable style={[StyleSheet.absoluteFill, styles.modalBackdrop]} onPress={onClose}>
           <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: '#000', opacity: backdropOpacity }]} />
         </Pressable>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? (insets.top + 12) : 0} style={{ width: '100%' }}>
         <Animated.View style={[styles.sheet, { transform: [{ translateY }] }]}> 
+          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: insets.bottom + 8 }}>
           <View style={styles.sheetHandle} />
           <View style={styles.sheetHeaderRow}>
             <Text style={styles.sheetTitle}>Apply for Leave</Text>
@@ -775,7 +780,9 @@ const BottomApplyModal = React.memo(function BottomApplyModal({ visible, onClose
               <Text style={[styles.btnText, styles.btnPrimaryText, { marginLeft: 6 }]}>Submit</Text>
             </Pressable>
           </View>
+          </ScrollView>
         </Animated.View>
+        </KeyboardAvoidingView>
       </View>
     </Modal>
   );
