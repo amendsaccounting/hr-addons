@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Pressable, Linking, Platform, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Pressable, Linking, Platform, Alert, SectionList } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import LinearGradient from 'react-native-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -72,57 +72,71 @@ export default function LeadDetailScreen({ name, onBack }: { name: string; onBac
           </LinearGradient>
 
           <ScrollView contentContainerStyle={[styles.wrapper, { paddingBottom: insets.bottom + 24 }]} showsVerticalScrollIndicator={false}>
-          <Text style={styles.sectionTitle}>Contact</Text>
-          <View style={styles.card}>
-            <InfoRow label="Email" value={lead?.email_id} icon="mail-outline" onPress={() => emailTo(lead?.email_id)} />
-            <InfoRow label="Mobile" value={lead?.mobile_no} icon="call-outline" onPress={() => callNumber(lead?.mobile_no)} />
-            <InfoRow label="Phone" value={lead?.phone} icon="call-outline" onPress={() => callNumber(lead?.phone)} />
-          </View>
-
-          <Text style={styles.sectionTitle}>Company</Text>
-          <View style={styles.card}>
-            <InfoRow label="Company Name" value={lead?.company_name} icon="business-outline" />
-            <InfoRow label="Address" value={lead?.address} icon="home-outline" multiline onPress={() => openMap(lead?.address)} />
-          </View>
-
-          <Text style={styles.sectionTitle}>Details</Text>
-          <View style={styles.card}>
-            <InfoRow label="Status" value={lead?.status} icon="bookmark-outline" />
-            <InfoRow label="Source" value={lead?.source} icon="link-outline" />
-            <InfoRow label="Territory" value={lead?.territory} icon="location-outline" />
-            <InfoRow label="Lead Name" value={lead?.lead_name} icon="person-outline" />
-            <InfoRow label="Lead ID" value={lead?.name} icon="id-card-outline" />
-          </View>
-
-          {!!lead?.notes && (
-            <>
-              <Text style={styles.sectionTitle}>Notes</Text>
-              <View style={styles.card}>
-                <Text style={styles.notesText}>{lead?.notes}</Text>
-              </View>
-            </>
-          )}
-
           {(() => {
-            if (!lead) return null;
+            type RowDef = { label: string; value?: any; icon?: string; multiline?: boolean; onPress?: () => void };
+            type CardItem = { kind: 'rows'; rows: RowDef[] } | { kind: 'notes'; text: string };
+            type CardSection = { title: string; data: CardItem[] };
+
+            const sections: CardSection[] = [];
+            const contactRows: RowDef[] = [
+              { label: 'Email', value: lead?.email_id, icon: 'mail-outline', onPress: () => emailTo(lead?.email_id) },
+              { label: 'Mobile', value: lead?.mobile_no, icon: 'call-outline', onPress: () => callNumber(lead?.mobile_no) },
+              { label: 'Phone', value: lead?.phone, icon: 'call-outline', onPress: () => callNumber(lead?.phone) },
+            ].filter(r => r.value);
+            if (contactRows.length) sections.push({ title: 'Contact', data: [{ kind: 'rows', rows: contactRows }] });
+
+            const companyRows: RowDef[] = [
+              { label: 'Company Name', value: lead?.company_name, icon: 'business-outline' },
+              { label: 'Address', value: lead?.address, icon: 'home-outline', multiline: true, onPress: () => openMap(lead?.address) },
+            ].filter(r => r.value);
+            if (companyRows.length) sections.push({ title: 'Company', data: [{ kind: 'rows', rows: companyRows }] });
+
+            const detailRows: RowDef[] = [
+              { label: 'Status', value: lead?.status, icon: 'bookmark-outline' },
+              { label: 'Source', value: lead?.source, icon: 'link-outline' },
+              { label: 'Territory', value: lead?.territory, icon: 'location-outline' },
+              { label: 'Lead Name', value: lead?.lead_name, icon: 'person-outline' },
+              { label: 'Lead ID', value: lead?.name, icon: 'id-card-outline' },
+            ].filter(r => r.value);
+            if (detailRows.length) sections.push({ title: 'Details', data: [{ kind: 'rows', rows: detailRows }] });
+
+            if (lead?.notes) sections.push({ title: 'Notes', data: [{ kind: 'notes', text: String(lead.notes) }] });
+
             const shown = new Set<string>(['name','lead_name','company_name','email_id','mobile_no','phone','status','source','territory','address','notes']);
-            const extras = Object.keys(lead)
-              .filter(k => !shown.has(k) && !/^(__|_)*$/.test(k) && !['doctype','owner','creation','modified','modified_by','docstatus','idx'].includes(k))
-              .filter(k => {
-                const v: any = (lead as any)[k];
-                return v !== null && v !== undefined && String(v).trim().length > 0;
-              });
-            if (extras.length === 0) return null;
-            const toLabel = (s: string) => s.replace(/_/g,' ').replace(/\b\w/g, c => c.toUpperCase());
+            const extrasKeys = Object.keys(lead || {})
+              .filter(k => !shown.has(k) && !/^(__|_)/.test(k) && !['doctype','owner','creation','modified','modified_by','docstatus','idx'].includes(k))
+              .filter(k => { const v: any = (lead as any)[k]; return v !== null && v !== undefined && String(v).trim().length > 0; });
+            if (extrasKeys.length) {
+              const toLabel = (s: string) => s.replace(/_/g,' ').replace(/\b\w/g, c => c.toUpperCase());
+              const rows: RowDef[] = extrasKeys.map(k => ({ label: toLabel(k), value: String((lead as any)[k]) }));
+              sections.push({ title: 'Other Details', data: [{ kind: 'rows', rows }] });
+            }
+
             return (
-              <>
-                <Text style={styles.sectionTitle}>Other Details</Text>
-                <View style={styles.card}>
-                  {extras.map((k, i) => (
-                    <InfoRow key={k} label={toLabel(k)} value={String((lead as any)[k])} isLast={i === extras.length - 1} />
-                  ))}
-                </View>
-              </>
+              <SectionList
+                sections={sections}
+                keyExtractor={(item, index) => `${(item as any).kind}-${index}`}
+                renderSectionHeader={({ section }) => (
+                  <Text style={styles.sectionTitle}>{section.title}</Text>
+                )}
+                renderItem={({ item }) => (
+                  item.kind === 'rows' ? (
+                    <View style={styles.card}>
+                      {item.rows.map((r, i) => (
+                        <InfoRow key={`${r.label}-${i}`} label={r.label} value={r.value} icon={r.icon as any} multiline={r.multiline} isLast={i === item.rows.length - 1} onPress={r.onPress} />
+                      ))}
+                    </View>
+                  ) : (
+                    <View style={styles.card}><Text style={styles.notesText}>{item.text}</Text></View>
+                  )
+                )}
+                contentContainerStyle={[styles.wrapper, { paddingBottom: insets.bottom + 24 }]}
+                initialNumToRender={3}
+                windowSize={10}
+                removeClippedSubviews
+                stickySectionHeadersEnabled={false}
+                showsVerticalScrollIndicator={false}
+              />
             );
           })()}
         </ScrollView>
