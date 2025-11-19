@@ -250,11 +250,22 @@ const AttendanceScreen = () => {
         setIsClockedIn(clockedIn);
         setLastClockInTime(clockedIn ? formatTime12(last.start) : null);
         await persistState(clockedIn, clockedIn ? formatTime12(last.start) : null);
+        // Build recent history list from sessions (most recent first)
+        const asHistory: HistoryItem[] = sessions.slice().reverse().map((s, idx) => ({
+          id: `${s.nameIn || 'sess'}-${idx}`,
+          date: formatDisplayDate(s.start),
+          clockIn: formatTime12(s.start),
+          clockOut: s.end ? formatTime12(s.end) : '',
+          locationIn: s.locationIn || '',
+          locationOut: s.locationOut || '',
+        }));
+        setRecentHistory(asHistory);
       } else {
         // If we couldn't derive any sessions from the server (empty list),
         // do not override locally persisted state. This preserves the
         // red Clock Out button and "shift started" UI across app restarts
         // when server history is unavailable or empty.
+        // Keep any existing recentHistory (e.g., from previous state)
       }
 
       // Compute this week totals (Mon..Sun)
@@ -618,62 +629,7 @@ const AttendanceScreen = () => {
           )}
         </View>
 
-        {/* Recent History (Dummy) */}
-        <View style={[styles.historySection, styles.recentCard]}>
-          <View style={styles.recentHeaderRow}>
-            <Text style={styles.recentTitle}>Recent History</Text>
-            <Ionicons name="time-outline" size={20} color="#111" />
-          </View>
-          <View style={styles.recentAccent} />
-          {historyLoading ? (
-            <View>
-              {Array.from({ length: 5 }).map((_, i) => (
-                <View key={`skeleton-${i}`} style={[styles.historyItem, { backgroundColor: '#fff' }]}> 
-                  <View style={styles.dateRow}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                      <View style={[styles.skeletonCircle]} />
-                      <View style={[styles.skeletonBar, { width: 120, height: 14, marginLeft: 6 }]} />
-                    </View>
-                    <View style={[styles.skeletonPill]} />
-                  </View>
-                  <View style={styles.tripletRow}>
-                    <View style={styles.tripletItem}>
-                      <View style={[styles.skeletonBar, { width: 24, height: 10, marginBottom: 6 }]} />
-                      <View style={[styles.skeletonBar, { width: 60, height: 18 }]} />
-                    </View>
-                    <View style={styles.tripletItem}>
-                      <View style={[styles.skeletonBar, { width: 28, height: 10, marginBottom: 6 }]} />
-                      <View style={[styles.skeletonBar, { width: 60, height: 18 }]} />
-                    </View>
-                    <View style={styles.tripletItem}>
-                      <View style={[styles.skeletonBar, { width: 42, height: 10, marginBottom: 6 }]} />
-                      <View style={[styles.skeletonBar, { width: 60, height: 18 }]} />
-                    </View>
-                  </View>
-                </View>
-              ))}
-            </View>
-          ) : (
-            <FlatList
-              data={recentHistory}
-              keyExtractor={(item) => item.id}
-              renderItem={renderHistoryItem}
-              style={styles.historyList}
-              contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + 48 }]}
-              scrollIndicatorInsets={{ bottom: insets.bottom + 16, top: 0 }}
-              ListFooterComponent={<View style={{ height: insets.bottom + 48 }} />}
-              showsVerticalScrollIndicator={true}
-              removeClippedSubviews={false}
-              ListEmptyComponent={
-                <View style={styles.emptyContainer}>
-                  <Ionicons name="calendar-outline" size={60} color="#ccc" />
-                  <Text style={styles.emptyTitle}>No attendance records</Text>
-                  <Text style={styles.emptySubtitle}>Your attendance history will appear here</Text>
-                </View>
-              }
-            />
-          )}
-        </View>
+        {/* Recent History removed as per requirement */}
       </View>
     </View>
   );
@@ -817,6 +773,16 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 18, fontWeight: '700', color: '#000' },
   historyList: { flex: 1, minHeight: 0 },
   listContent: { paddingTop: 6, paddingBottom: 24 },
+  simpleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
+  simpleDate: { color: '#111', fontWeight: '600' },
+  simpleTime: { color: '#444', fontWeight: '600' },
+  recentContainer: { borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, overflow: 'hidden', backgroundColor: '#fff' },
+  recentItem: { paddingVertical: 14, paddingHorizontal: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#e5e7eb', backgroundColor: '#fff' },
+  recentTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  recentDate: { marginLeft: 6, color: '#111827', fontWeight: '700' },
+  recentDuration: { color: '#059669', fontWeight: '700' },
+  recentSubRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 },
+  recentSubText: { color: '#6b7280', fontWeight: '600' },
   historyItem: {
     flexDirection: 'column',
     padding: 12,
