@@ -67,7 +67,7 @@ export default function LoginScreen({ onSignedIn, onRegister }: Props) {
           <View style={styles.logoBox}>
             {IoniconsComp ? (<IoniconsComp name="business-outline" size={24} color="#030213" />) : (<Text style={{ fontSize: 24 }}>🏢</Text>)}
           </View>
-          <Text style={styles.appName}>ADDON-S HR</Text>
+          <Text style={styles.appName}>ADDON-S</Text>
           <Text style={styles.tagline}>Sign in to your account</Text>
         </View>
 
