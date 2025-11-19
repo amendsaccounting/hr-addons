@@ -18,6 +18,7 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import Geolocation from 'react-native-geolocation-service';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Config from 'react-native-config';
+import { toErpLocalTimestamp } from '../../utils/date';
 import axios from 'axios';
 
 type HistoryItem = {
@@ -313,7 +314,7 @@ const AttendanceScreen = () => {
       }
 
       const now = new Date();
-      const formattedTime = now.toISOString().slice(0, 19).replace('T', ' ');
+      const formattedTime = toErpLocalTimestamp(now);
       const empName = employeeId || employee?.name;
 
       const payload = {

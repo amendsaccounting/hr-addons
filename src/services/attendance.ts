@@ -1,4 +1,5 @@
 import Config from 'react-native-config';
+import { toErpLocalTimestamp } from '../utils/date';
 
 type LogType = 'IN' | 'OUT';
 
@@ -37,12 +38,9 @@ function getHeaders(): Record<string, string> {
   };
 }
 
+// Use local time, not UTC, to align with ERPNext server parsing
 function nowAsErpTimestamp(d = new Date()): string {
-  // ERPNext typically accepts 'YYYY-MM-DD HH:mm:ss'
-  return new Date(d.getTime() - d.getMilliseconds()) // drop ms
-    .toISOString()
-    .slice(0, 19)
-    .replace('T', ' ');
+  return toErpLocalTimestamp(new Date(d.getTime() - d.getMilliseconds()));
 }
 
 export async function listCheckins(employee: string, limit: number = 50): Promise<AttendanceCheckin[]> {
