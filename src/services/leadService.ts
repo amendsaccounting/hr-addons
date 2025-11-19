@@ -12,6 +12,8 @@ export type Lead = {
   source?: string; // e.g. 'Website', 'LinkedIn', etc.
   territory?: string;
   address?: string;
+  website?: string;
+  whatsapp?: string;
   notes?: string;
   [key: string]: any;
 };
@@ -37,6 +39,10 @@ function pickEnv(...keys: string[]): string {
 const BASE_URL = (pickEnv('ERP_URL_RESOURCE', 'ERP_URL') || '').replace(/\/$/, '');
 const API_KEY = pickEnv('ERP_APIKEY', 'ERP_API_KEY');
 const API_SECRET = pickEnv('ERP_SECRET', 'ERP_API_SECRET');
+// Optional defaults for location
+const DEFAULT_LOCATION_NAME = pickEnv('ERP_DEFAULT_LOCATION_NAME', 'ERP_LOCATION_DEFAULT_NAME');
+const DEFAULT_LOCATION_LABEL = pickEnv('ERP_DEFAULT_LOCATION_LABEL', 'ERP_LOCATION_DEFAULT_LABEL');
+const VALIDATE_LOCATION_LINK = isTruthy((Config as any)?.ERP_VALIDATE_LOCATION_LINK);
 
 function getHeaders(): Record<string, string> {
   if (!BASE_URL || !API_KEY || !API_SECRET) {
@@ -50,6 +56,11 @@ function getHeaders(): Record<string, string> {
 
 function enc(x: any) {
   return encodeURIComponent(typeof x === 'string' ? x : JSON.stringify(x));
+}
+
+function isTruthy(v: any): boolean {
+  const s = String(v ?? '').toLowerCase();
+  return s === '1' || s === 'true' || s === 'yes' || s === 'y' || s === 'on';
 }
 
 // Build simple AND filters array; for search we OR using frappe-style complex filters is cumbersome,
@@ -82,6 +93,127 @@ export async function listLeads(opts: ListOptions = {}): Promise<Lead[]> {
   const data = (json as any)?.data;
   if (!Array.isArray(data)) return [];
   return data as Lead[];
+}
+
+// List doc names for a given doctype (used for Link fields pickers)
+export async function listDocNames(doctype: string, limit = 200): Promise<string[]> {
+  const headers = getHeaders();
+  const dt = String(doctype || '').trim();
+  if (!dt) return [];
+  const url = `${BASE_URL}/${encodeURIComponent(dt)}?fields=${enc(['name'])}&limit_page_length=${limit}`;
+  const res = await fetch(url, { headers });
+  if (!res.ok) {
+    try { console.log('listDocNames HTTP', res.status, 'for', dt); } catch {}
+  }
+  const json = await res.json().catch(() => ({} as any));
+  const data = (json as any)?.data;
+  if (!Array.isArray(data)) return [];
+  return data.map((r: any) => r?.name).filter((n: any) => typeof n === 'string');
+}
+
+export type LocationOption = { name: string; label: string };
+
+async function fetchDocTypeMeta(dt: string): Promise<any | null> {
+  try {
+    const headers = getHeaders();
+    const url = `${BASE_URL}/DocType/${encodeURIComponent(dt)}`;
+    const res = await fetch(url, { headers });
+    const json = await res.json().catch(() => ({} as any));
+    return (json as any)?.data ?? json ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function resolveTitleField(dt: string): Promise<string> {
+  const meta = await fetchDocTypeMeta(dt);
+  if (meta && typeof meta.title_field === 'string' && meta.title_field) {
+    return meta.title_field as string;
+  }
+  return 'title';
+}
+
+async function resolveByTitle(dt: string, label: string): Promise<{ name: string; label: string } | null> {
+  const headers = getHeaders();
+  const titleField = await resolveTitleField(dt);
+  const fields = titleField && titleField !== 'title' ? ['name', titleField] : ['name', 'title'];
+  // 1) exact match
+  try {
+    const filtersEq = [[titleField, '=', label]] as any;
+    const urlEq = `${BASE_URL}/${encodeURIComponent(dt)}?filters=${enc(filtersEq)}&fields=${enc(fields)}&limit_page_length=1`;
+    const rEq = await fetch(urlEq, { headers });
+    const jjEq = await rEq.json().catch(() => ({} as any));
+    const rec = Array.isArray(jjEq?.data) && jjEq.data[0];
+    if (rec && rec.name) return { name: rec.name, label: (rec?.[titleField] || rec?.title || rec.name) };
+  } catch {}
+  // 2) LIKE search
+  try {
+    const filtersLike = [[titleField, 'like', `%${label}%`]] as any;
+    const urlLike = `${BASE_URL}/${encodeURIComponent(dt)}?filters=${enc(filtersLike)}&fields=${enc(fields)}&limit_page_length=10`;
+    const rLike = await fetch(urlLike, { headers });
+    const jjLike = await rLike.json().catch(() => ({} as any));
+    const list = Array.isArray(jjLike?.data) ? jjLike.data : [];
+    if (list.length === 1) return { name: list[0].name, label: (list[0]?.[titleField] || list[0]?.title || list[0].name) };
+    const ci = list.find((x: any) => String(x?.[titleField] || x?.title || '').toLowerCase() === label.toLowerCase());
+    if (ci) return { name: ci.name, label: (ci?.[titleField] || ci?.title || ci.name) };
+  } catch {}
+  return null;
+}
+
+async function listDocNameAndTitle(doctype: string, limit = 200): Promise<LocationOption[]> {
+  const headers = getHeaders();
+  const dt = String(doctype || '').trim();
+  if (!dt) return [];
+  const titleField = await resolveTitleField(dt);
+  const fields = titleField && titleField !== 'title' ? ['name', titleField] : ['name', 'title'];
+  const url = `${BASE_URL}/${encodeURIComponent(dt)}?fields=${enc(fields)}&limit_page_length=${limit}`;
+  const res = await fetch(url, { headers });
+  const json = await res.json().catch(() => ({} as any));
+  const data = (json as any)?.data;
+  if (!Array.isArray(data)) return [];
+  return data
+    .map((r: any) => ({ name: r?.name, label: (r?.[titleField] || r?.title || r?.name) }))
+    .filter((x: any) => x && x.name);
+}
+
+function getLocationDoctype(): string {
+  const dt = String((Config as any)?.ERP_LOCATION_DOCTYPE || '').trim();
+  return dt || 'Building & Location';
+}
+
+export async function listLocations(limit = 200): Promise<LocationOption[]> {
+  const primary = await resolveLocationDoctype();
+  const rows = await listDocNameAndTitle(primary, limit);
+  return rows || [];
+}
+
+let _resolvedLocationDoctype: string | null = null;
+async function resolveLocationDoctype(): Promise<string> {
+  if (_resolvedLocationDoctype) return _resolvedLocationDoctype;
+  const envDt = getLocationDoctype();
+  if (envDt && envDt !== 'Building & Location') {
+    _resolvedLocationDoctype = envDt;
+    return envDt;
+  }
+  // Try to auto-detect from DocType Lead custom field mapping
+  try {
+    const headers = getHeaders();
+    const url = `${BASE_URL}/DocType/Lead`;
+    const res = await fetch(url, { headers });
+    const json = await res.json().catch(() => ({} as any));
+    const doc = (json as any)?.data ?? json;
+    const fields = Array.isArray((doc as any)?.fields) ? (doc as any).fields : [];
+    const locFieldname = (FIELD_MAP as any)?.location;
+    if (locFieldname && fields.length) {
+      const f = fields.find((x: any) => x?.fieldname === locFieldname);
+      if (f && f.fieldtype === 'Link' && typeof f.options === 'string' && f.options) {
+        _resolvedLocationDoctype = f.options;
+        return f.options;
+      }
+    }
+  } catch {}
+  _resolvedLocationDoctype = 'Building & Location';
+  return _resolvedLocationDoctype;
 }
 
 // Fetch all leads by paging until exhaustion. Adds a safety cap to prevent runaway downloads.
@@ -121,9 +253,194 @@ export async function createLead(data: Partial<Lead>): Promise<Lead | null> {
   const headers = getHeaders();
   const url = `${BASE_URL}/Lead`;
   const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(data) });
-  const json = await res.json().catch(() => null as any);
-  if (!res.ok) return null;
+  let json: any = null;
+  try { json = await res.json(); } catch {}
+  try { console.log('createLead response status:', res.status, 'ok:', res.ok); } catch {}
+  if (!res.ok) {
+    try { console.log('createLead error body:', json || (await res.text())); } catch {}
+    const msg = (json && (json.message || json.exc || json.exception)) || `HTTP ${res.status}`;
+    throw new Error(String(msg));
+  }
   return ((json as any)?.data ?? json) as Lead;
+}
+
+// Input shape coming from Add Lead modal
+export type ModalLeadInput = {
+  // Lead Details
+  date?: string; // YYYY-MM-DD
+  lead_name?: string; // Name / Contact Person
+  gender?: 'Male' | 'Female' | string;
+  location?: string; // Building & Location
+  source?: string;
+  lead_owner?: string;
+  status?: string; // Lead/Open/Replied/Qualified/Converted
+  lead_type?: string; // custom
+  request_type?: string; // custom
+  service_type?: string; // custom
+  // Contact
+  mobile_no?: string; // Phone No
+  email_id?: string;
+  website?: string;
+  whatsapp?: string;
+  // Organisation
+  company_name?: string; // Organisation Name
+  territory?: string;
+  notes?: string;
+};
+
+type AttachmentFile = { uri: string; name?: string; type?: string };
+
+// Field mapping to ERPNext Lead doctype. Adjust keys on the right to your custom fieldnames.
+const FIELD_MAP: Record<string, string> = {
+  location: 'custom_building__location',
+  date: 'custom_date',
+  gender: 'custom_gender',
+  lead_owner: 'custom_lead_owner',
+  lead_type: 'custom_lead_type',
+  request_type: 'custom_request_type',
+  service_type: 'custom_service_type',
+  whatsapp: 'custom_whatsapp',
+  website: 'custom_website',
+  notes: 'custom_notes',
+};
+
+const ENABLE_CUSTOM_LEAD_FIELDS = isTruthy((Config as any)?.ERP_ENABLE_CUSTOM_LEAD_FIELDS);
+
+/**
+ * Prepare an ERPNext Lead payload from modal input.
+ * Safe to send directly to POST /Lead.
+ */
+export function prepareLeadPayload(input: ModalLeadInput): Partial<Lead> {
+  const out: any = {};
+  // Core/standard fields (keep to simple base fields to avoid child-table issues)
+  if (input.lead_name) out.lead_name = String(input.lead_name).trim();
+  if (input.company_name) out.company_name = String(input.company_name).trim();
+  if (input.email_id) out.email_id = String(input.email_id).trim();
+  if (input.mobile_no) out.mobile_no = String(input.mobile_no).trim();
+  if (input.status) {
+    const s = String(input.status).trim();
+    // Sanitize status to server-allowed values; map common synonyms
+    const allowed = new Set(['Lead','Open','Replied','Opportunity','Quotation','Lost Quotation','Interested','Converted','Do Not Contact']);
+    const map: Record<string, string> = { 'Qualified': 'Interested' };
+    const normalized = map[s] || s;
+    if (allowed.has(normalized)) out.status = normalized;
+    else out.status = 'Lead';
+  }
+  if (input.source) out.source = String(input.source).trim();
+  if (input.territory) out.territory = String(input.territory).trim();
+  // Always map mandatory custom fields when provided (location disabled)
+  if ((input as any).date) out[FIELD_MAP.date] = String((input as any).date).trim();
+  // Location is mandatory on your site; map when provided regardless of ENABLE_CUSTOM_LEAD_FIELDS
+  if ((input as any).location && FIELD_MAP.location) {
+    out[FIELD_MAP.location] = String((input as any).location).trim();
+  }
+  // Skip sending 'notes' directly — on some sites it's a child table; map via custom if enabled
+
+  // Custom mappings
+  if (ENABLE_CUSTOM_LEAD_FIELDS) {
+    (['gender','lead_owner','lead_type','request_type','service_type','whatsapp','website','notes'] as const).forEach((k) => {
+      const v = (input as any)[k];
+      const target = FIELD_MAP[k];
+      if (v != null && target) out[target] = v;
+    });
+  }
+
+  return out as Partial<Lead>;
+}
+
+/**
+ * Create an ERPNext Lead from the modal fields and optionally upload attachments.
+ * Returns the created Lead (or null on failure).
+ */
+export async function createLeadFromModal(input: ModalLeadInput, attachments?: AttachmentFile[]): Promise<Lead | null> {
+  const payload = prepareLeadPayload(input);
+  try { console.log('createLeadFromModal payload:', payload); } catch {}
+  // Validate Link fields proactively to avoid server-side link errors (location disabled)
+  const linkMap: Record<string, string> = {
+    source: 'Lead Source',
+    territory: 'Territory',
+  };
+  // Helper to check link existence via GET /api/resource/Doctype/Name
+  async function linkExists(doctype: string, name: string): Promise<boolean> {
+    try {
+      const headers = getHeaders();
+      const url = `${BASE_URL}/${encodeURIComponent(doctype)}/${encodeURIComponent(name)}`;
+      const res = await fetch(url, { headers });
+      if (res.ok) return true;
+      // If permissions block reading the target doctype, avoid false negatives here
+      if (res.status === 401 || res.status === 403) return true;
+      return false;
+    } catch {
+      return false;
+    }
+  }
+  // Optional links: if invalid, drop them to allow lead creation
+  for (const k of ['source', 'territory'] as const) {
+    if ((payload as any)[k]) {
+      const ok = await linkExists(linkMap[k], String((payload as any)[k]));
+      if (!ok) {
+        try { console.log(`Dropping invalid ${k}:`, (payload as any)[k]); } catch {}
+        delete (payload as any)[k];
+      }
+    }
+  }
+  // Optional: validate/resolve Location link (disabled unless ERP_VALIDATE_LOCATION_LINK=true)
+  if (VALIDATE_LOCATION_LINK) {
+    try {
+      const locField = FIELD_MAP.location;
+      // Apply environment defaults if no location provided
+      if (!((payload as any)[locField])) {
+        if (DEFAULT_LOCATION_NAME) {
+          (payload as any)[locField] = DEFAULT_LOCATION_NAME;
+        } else if (DEFAULT_LOCATION_LABEL) {
+          (payload as any)[locField] = DEFAULT_LOCATION_LABEL;
+        }
+      }
+      const raw = (payload as any)[locField];
+      if (raw) {
+        const dt = await resolveLocationDoctype();
+        const nameVal = String(raw);
+        const ok = await linkExists(dt, nameVal);
+        if (!ok) {
+          // Try resolving within primary doctype
+          let rec = await resolveByTitle(dt, nameVal);
+          // If still not found, try common fallbacks (when we can't fetch meta/options)
+          if (!rec) {
+            const fallbacksRaw = pickEnv('ERP_LOCATION_FALLBACKS') || '';
+            const fallbacks = (fallbacksRaw ? fallbacksRaw.split(',') : ['Building and Location', 'Location']).map(s => s.trim()).filter(Boolean);
+            for (const alt of fallbacks) {
+              rec = await resolveByTitle(alt, nameVal);
+              if (rec) break;
+            }
+          }
+          if (rec && rec.name) (payload as any)[locField] = rec.name;
+          else throw new Error(`Selected location not found: ${nameVal}`);
+        }
+      }
+    } catch (e) {
+      // Surface a readable error to caller
+      throw e instanceof Error ? e : new Error('Invalid Building & Location');
+    }
+  } else {
+    // No validation: only apply env defaults if location is absent
+    const locField = FIELD_MAP.location;
+    if (!((payload as any)[locField])) {
+      if (DEFAULT_LOCATION_NAME) (payload as any)[locField] = DEFAULT_LOCATION_NAME;
+      else if (DEFAULT_LOCATION_LABEL) (payload as any)[locField] = DEFAULT_LOCATION_LABEL;
+    }
+  }
+  let created: Lead | null = null;
+  created = await createLead(payload);
+  try { console.log('createLeadFromModal created:', created); } catch {}
+  try {
+    if ((created as any)?.name && attachments && attachments.length) {
+      const results = await Promise.allSettled(attachments.map((f) => uploadLeadAttachment((created as any).name, f)));
+      try { console.log('createLeadFromModal attachment results:', results.map(r => (r as any).status)); } catch {}
+    }
+  } catch {
+    // Ignore attachment failures here; upstream can decide to notify or retry
+  }
+  return created;
 }
 
 export async function updateLead(name: string, updated: Partial<Lead>): Promise<Lead | null> {

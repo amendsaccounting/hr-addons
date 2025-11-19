@@ -1,15 +1,16 @@
 import React, { useEffect, useMemo, useState, useCallback, useRef, memo } from 'react';
 import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, FlatList, Alert, RefreshControl, Modal, KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard } from 'react-native';
 import DocumentPicker from 'react-native-document-picker';
+import DatePicker from 'react-native-date-picker';
 import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { listAllLeads, deleteLead, createLead, type Lead } from '../../services/leadService';
-import { uploadLeadAttachment } from '../../services/leadService';
+import { listAllLeads, deleteLead, createLeadFromModal, listLocations, type Lead, type LocationOption } from '../../services/leadService';
 
 export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string) => void }) {
   (Ionicons as any)?.loadFont?.();
   const insets = useSafeAreaInsets();
+  const DEFAULT_LOCATION_LABEL = 'Deira';
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -20,23 +21,45 @@ export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string)
   const [addVisible, setAddVisible] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
+    // Lead Details
+    date: '',
     lead_name: '',
-    company_name: '',
-    email_id: '',
-    mobile_no: '',
-    location: '',
+    gender: '',
+    location: '', // Building & Location
     source: '',
+    lead_owner: '',
     status: 'Lead',
+    lead_type: '',
+    request_type: '',
+    service_type: '',
+    // Contact
+    mobile_no: '', // Phone No
+    email_id: '',
+    website: '',
+    whatsapp: '',
+    // Organisation
+    company_name: '',
     territory: '',
     notes: '',
   });
   const [attachments, setAttachments] = useState<Array<{ uri: string; name?: string; type?: string }>>([]);
   const [statusPickerVisible, setStatusPickerVisible] = useState(false);
+  // Building & Location temporarily disabled
+  const [locationPickerVisible, setLocationPickerVisible] = useState(false);
+  const [locationOptions, setLocationOptions] = useState<LocationOption[]>([]);
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
+
+  const formatDate = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
 
   console.log("leadsssdata====>",leads);
   
 
-  const statusChips = useMemo(() => ['All', 'Lead', 'Open', 'Replied', 'Qualified', 'Converted'], []);
+  const statusChips = useMemo(() => ['All', 'Lead', 'Open', 'Replied', 'Opportunity', 'Quotation', 'Lost Quotation', 'Interested', 'Converted', 'Do Not Contact'], []);
 
   const load = useCallback(async (opts?: { showSpinner?: boolean }) => {
     const reqId = ++requestIdRef.current;
@@ -64,6 +87,28 @@ export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string)
     }, 400);
     return () => clearTimeout(searchDebounceRef.current);
   }, [query, load]);
+
+  // Load Building & Location options when the modal opens
+  useEffect(() => {
+    let cancelled = false;
+    async function fetchLocations() {
+      try {
+        if (addVisible) {
+          const opts = await listLocations(200);
+          if (!cancelled) {
+            setLocationOptions(opts || []);
+            const match = Array.isArray(opts) ? opts.find(o => String(o.label).toLowerCase() === DEFAULT_LOCATION_LABEL.toLowerCase()) : null;
+            if (match) setForm(prev => ({ ...(prev as any), location: match.name }));
+            else setForm(prev => ({ ...(prev as any), location: DEFAULT_LOCATION_LABEL }));
+          }
+        }
+      } catch {
+        if (!cancelled) setLocationOptions([]);
+      }
+    }
+    fetchLocations();
+    return () => { cancelled = true; };
+  }, [addVisible]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -136,7 +181,7 @@ export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string)
                 )
               )}
             </View>
-              <Pressable style={styles.addBtn} accessibilityRole="button" onPress={() => setAddVisible(true)}>
+              <Pressable style={styles.addBtn} accessibilityRole="button" onPress={() => { setForm(prev => ({ ...(prev as any), location: DEFAULT_LOCATION_LABEL })); setAddVisible(true); }}>
                 <Ionicons name="add" size={18} color="#fff" />
               </Pressable>
           </View>
@@ -207,26 +252,116 @@ export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string)
       <Modal visible={addVisible} transparent animationType="fade" onRequestClose={() => setAddVisible(false)}>
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
           <View style={styles.modalBackdrop}>
-            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalWrap}>
+            <KeyboardAvoidingView
+              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+              keyboardVerticalOffset={insets.top + 12}
+              style={styles.modalWrap}
+            >
               <View style={styles.modalCard}>
                 <View style={styles.modalHeader}>
-                  <Text style={styles.modalTitle}>Add Lead</Text>
+                  <View style={styles.modalHeaderText}>
+                    <Text style={styles.modalTitle}>Add New Sales Lead</Text>
+                    <Text style={styles.modalSubtitle}>Add a new sales prospect or opportunity</Text>
+                  </View>
                   <Pressable accessibilityRole="button" onPress={() => setAddVisible(false)}>
-                    <Ionicons name="close" size={20} color="#fff" />
+                    <Ionicons name="close" size={20} color="#111827" />
                   </Pressable>
                 </View>
-                <ScrollView style={styles.modalBodyScroll} contentContainerStyle={styles.modalBody} showsVerticalScrollIndicator={false}>
+                <ScrollView
+                  style={styles.modalBodyScroll}
+                  contentContainerStyle={styles.modalBody}
+                  showsVerticalScrollIndicator={false}
+                  keyboardShouldPersistTaps="handled"
+                >
+                  {/* Lead Details */}
+                  <Text style={styles.sectionTitle}>Lead Details</Text>
+                  <Text style={styles.inputLabel}>Date</Text>
+                  <Pressable accessibilityRole="button" onPress={() => setDatePickerOpen(true)} style={styles.selectBox}>
+                    <Text style={styles.selectText}>{(form as any).date || 'Select date'}</Text>
+                    <Ionicons name="calendar-outline" size={18} color="#6b7280" />
+                  </Pressable>
                   <LabeledInput
-                    label="Company Name"
-                    placeholder="e.g. Acme Inc"
-                    value={form.company_name}
-                    onChangeText={(v: string) => setForm({ ...form, company_name: v })}
-                  />
-                  <LabeledInput
-                    label="Contact Person"
+                    label="Name"
                     placeholder="e.g. John Smith"
                     value={form.lead_name}
                     onChangeText={(v: string) => setForm({ ...form, lead_name: v })}
+                  />
+                  <Text style={styles.inputLabel}>Gender</Text>
+                  <View style={styles.toggleRow}>
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={() => setForm({ ...(form as any), gender: 'Male' })}
+                      style={[styles.toggleBtn, (form as any).gender === 'Male' && styles.toggleBtnActive]}
+                    >
+                      <Text style={[styles.toggleBtnText, (form as any).gender === 'Male' && styles.toggleBtnTextActive]}>Male</Text>
+                    </Pressable>
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={() => setForm({ ...(form as any), gender: 'Female' })}
+                      style={[styles.toggleBtn, (form as any).gender === 'Female' && styles.toggleBtnActive]}
+                    >
+                      <Text style={[styles.toggleBtnText, (form as any).gender === 'Female' && styles.toggleBtnTextActive]}>Female</Text>
+                    </Pressable>
+                  </View>
+                  {/* Building & Location (static) */}
+                  <Text style={styles.inputLabel}>Building & Location</Text>
+                  <View style={styles.selectBox}>
+                    <Text style={styles.selectText}>{(locationOptions.find(o => o.name === form.location)?.label) || DEFAULT_LOCATION_LABEL}</Text>
+                    <Ionicons name="lock-closed-outline" size={18} color="#6b7280" />
+                  </View>
+                  <LabeledInput
+                    label="Source"
+                    placeholder="Website / LinkedIn / Referral"
+                    value={form.source}
+                    onChangeText={(v: string) => setForm({ ...form, source: v })}
+                  />
+                  <LabeledInput
+                    label="Lead Owner"
+                    placeholder="e.g. jane@company.com"
+                    value={(form as any).lead_owner}
+                    onChangeText={(v: string) => setForm({ ...(form as any), lead_owner: v })}
+                  />
+                  <Text style={styles.inputLabel}>Status</Text>
+                  <Pressable accessibilityRole="button" onPress={() => setStatusPickerVisible(true)} style={styles.selectBox}>
+                    <Text style={styles.selectText}>{form.status}</Text>
+                    <Ionicons name="chevron-down" size={18} color="#6b7280" />
+                  </Pressable>
+                  {statusPickerVisible && (
+                    <View style={styles.dropdownPanel}>
+                      {['Lead','Open','Replied','Opportunity','Quotation','Lost Quotation','Interested','Converted','Do Not Contact'].map(s => (
+                        <Pressable key={s} style={styles.selectOption} onPress={() => { setForm({ ...form, status: s }); setStatusPickerVisible(false); }}>
+                          <Text style={styles.selectOptionText}>{s}</Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  )}
+                  <LabeledInput
+                    label="Lead Type"
+                    placeholder="e.g. Cold / Warm / Hot"
+                    value={(form as any).lead_type}
+                    onChangeText={(v: string) => setForm({ ...(form as any), lead_type: v })}
+                  />
+                  <LabeledInput
+                    label="Request Type"
+                    placeholder="e.g. Demo / Quote / Support"
+                    value={(form as any).request_type}
+                    onChangeText={(v: string) => setForm({ ...(form as any), request_type: v })}
+                  />
+                  <LabeledInput
+                    label="Service Type"
+                    placeholder="e.g. Installation / AMC"
+                    value={(form as any).service_type}
+                    onChangeText={(v: string) => setForm({ ...(form as any), service_type: v })}
+                  />
+
+                  {/* Contact */}
+                  <Text style={styles.sectionTitle}>Contact</Text>
+                  <LabeledInput
+                    label="Phone No"
+                    placeholder="+1 555-123-4567"
+                    keyboardType="phone-pad"
+                    value={form.mobile_no}
+                    onChangeText={(v: string) => setForm({ ...form, mobile_no: v })}
                   />
                   <LabeledInput
                     label="Email"
@@ -237,48 +372,37 @@ export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string)
                     onChangeText={(v: string) => setForm({ ...form, email_id: v })}
                   />
                   <LabeledInput
-                    label="Phone"
-                    placeholder="+1 555-123-4567"
+                    label="Website"
+                    placeholder="https://example.com"
+                    autoCapitalize="none"
+                    value={(form as any).website}
+                    onChangeText={(v: string) => setForm({ ...(form as any), website: v })}
+                  />
+                  <LabeledInput
+                    label="WhatsApp"
+                    placeholder="WhatsApp number"
                     keyboardType="phone-pad"
-                    value={form.mobile_no}
-                    onChangeText={(v: string) => setForm({ ...form, mobile_no: v })}
+                    value={(form as any).whatsapp}
+                    onChangeText={(v: string) => setForm({ ...(form as any), whatsapp: v })}
+                  />
+
+                  {/* Organisation */}
+                  <Text style={styles.sectionTitle}>Organisation</Text>
+                  <LabeledInput
+                    label="Organisation Name"
+                    placeholder="e.g. Acme Inc"
+                    value={form.company_name}
+                    onChangeText={(v: string) => setForm({ ...form, company_name: v })}
                   />
                   <LabeledInput
-                    label="Location"
-                    placeholder="e.g. New York, NY"
-                    value={form.location}
-                    onChangeText={(v: string) => setForm({ ...form, location: v })}
-                  />
-                  <LabeledInput
-                    label="Deal Value"
-                    placeholder="e.g. 50000"
-                    keyboardType="numeric"
-                    value={(form as any).deal_value}
-                    onChangeText={(v: string) => setForm({ ...(form as any), deal_value: v })}
-                  />
-                  <Text style={styles.inputLabel}>Status</Text>
-                  <Pressable accessibilityRole="button" onPress={() => setStatusPickerVisible(true)} style={styles.selectBox}>
-                    <Text style={styles.selectText}>{form.status}</Text>
-                    <Ionicons name="chevron-down" size={18} color="#6b7280" />
-                  </Pressable>
-                  {statusPickerVisible && (
-                    <View style={styles.dropdownPanel}>
-                      {['Lead','Open','Replied','Qualified','Converted'].map(s => (
-                        <Pressable key={s} style={styles.selectOption} onPress={() => { setForm({ ...form, status: s }); setStatusPickerVisible(false); }}>
-                          <Text style={styles.selectOptionText}>{s}</Text>
-                        </Pressable>
-                      ))}
-                    </View>
-                  )}
-                  <LabeledInput
-                    label="Lead Source"
-                    placeholder="Website / LinkedIn"
-                    value={form.source}
-                    onChangeText={(v: string) => setForm({ ...form, source: v })}
+                    label="Territory"
+                    placeholder="e.g. North America"
+                    value={form.territory}
+                    onChangeText={(v: string) => setForm({ ...form, territory: v })}
                   />
 
                   <LabeledInput
-                    label="Notes (Optional)"
+                    label="Notes"
                     placeholder="Add any notes here"
                     value={form.notes}
                     onChangeText={(v: string) => setForm({ ...form, notes: v })}
@@ -286,7 +410,7 @@ export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string)
                     multiline
                   />
 
-                  <Text style={styles.inputLabel}>Attachments</Text>
+                  <Text style={styles.sectionTitle}>Attachments</Text>
                   <View style={styles.attachRow}>
                     <Pressable style={[styles.attachBtn, styles.attachPrimary]} onPress={async () => {
                       const res = await launchImageLibrary({ mediaType: 'photo', selectionLimit: 10 });
@@ -335,6 +459,17 @@ export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string)
                     </View>
                   )}
                 </ScrollView>
+                <DatePicker
+                  modal
+                  mode="date"
+                  open={datePickerOpen}
+                  date={(form as any).date ? new Date((form as any).date) : new Date()}
+                  onConfirm={(d: Date) => {
+                    setDatePickerOpen(false);
+                    setForm({ ...(form as any), date: formatDate(d) });
+                  }}
+                  onCancel={() => setDatePickerOpen(false)}
+                />
                 <View style={styles.modalFooter}>
                   <Pressable style={[styles.modalBtn, styles.modalBtnSecondary]} onPress={() => setAddVisible(false)}>
                     <Text style={[styles.modalBtnText, styles.modalBtnTextSecondary]}>Cancel</Text>
@@ -344,35 +479,45 @@ export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string)
                       Alert.alert('Add Lead', 'Please enter Lead Name or Company');
                       return;
                     }
+                    if (!(form as any).date) {
+                      Alert.alert('Add Lead', 'Please select Date');
+                      return;
+                    }
+                    // Building & Location is set statically to Deira
                     setSaving(true);
                     try {
-                      const payload: any = {
-                        company_name: form.company_name,
-                        lead_name: form.lead_name,
-                        email_id: form.email_id,
-                        mobile_no: form.mobile_no,
-                        status: form.status,
-                        source: form.source,
-                        address: form.location,
-                      };
-                      if ((form as any).deal_value) (payload as any).custom_deal_value = (form as any).deal_value;
-                      if (form.notes) payload.notes = form.notes;
-                      const created = await createLead(payload);
+                      try { console.log('AddLead submit form:', form, 'attachments:', attachments?.length || 0); } catch {}
+                      const created = await createLeadFromModal(form as any, attachments);
+                      try { console.log('AddLead response:', created); } catch {}
                       if (created) {
-                        // Upload attachments in parallel
-                        if ((created as any)?.name && attachments.length) {
-                          await Promise.allSettled(
-                            attachments.map(f => uploadLeadAttachment((created as any).name, f))
-                          );
-                        }
                         setAddVisible(false);
-                        setForm({ company_name: '', lead_name: '', email_id: '', mobile_no: '', location: '', deal_value: '', status: 'Lead', source: '', notes: '' });
+                        setForm({
+                          date: '',
+                          lead_name: '',
+                          gender: '',
+                          location: 'Diera',
+                          source: '',
+                          lead_owner: '',
+                          status: 'Lead',
+                          lead_type: '',
+                          request_type: '',
+                          service_type: '',
+                          mobile_no: '',
+                          email_id: '',
+                          website: '',
+                          whatsapp: '',
+                          company_name: '',
+                          territory: '',
+                          notes: '',
+                        });
                         setAttachments([]);
                         await load({ showSpinner: true });
                       } else {
+                        try { console.log('AddLead failed to create'); } catch {}
                         Alert.alert('Add Lead', 'Unable to create lead');
                       }
                     } catch (e: any) {
+                      try { console.log('AddLead error:', e); } catch {}
                       Alert.alert('Add Lead', e?.message || 'Unable to create lead');
                     } finally {
                       setSaving(false);
@@ -481,13 +626,16 @@ const styles = StyleSheet.create({
   rowText: { color: '#374151' },
 
   // Modal styles
-  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 16 },
-  modalWrap: { width: '100%', alignItems: 'center' },
-  modalCard: { backgroundColor: '#fff', borderRadius: 16, overflow: 'hidden', width: '96%', maxWidth: 520, elevation: 8, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 16, shadowOffset: { width: 0, height: 8 } },
-  modalHeader: { backgroundColor: '#0b0b1b', paddingHorizontal: 16, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  modalTitle: { color: '#fff', fontWeight: '700' },
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'flex-end', alignItems: 'stretch' },
+  modalWrap: { width: '100%', alignItems: 'stretch', justifyContent: 'flex-end' },
+  modalCard: { backgroundColor: '#fff', borderTopLeftRadius: 16, borderTopRightRadius: 16, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, overflow: 'hidden', width: '100%', elevation: 8, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 16, shadowOffset: { width: 0, height: -4 } },
+  modalHeader: { backgroundColor: '#fff', paddingHorizontal: 16, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#e5e7eb' },
+  modalTitle: { color: '#111827', fontWeight: '700' },
+  modalSubtitle: { color: '#6b7280', marginTop: 4, fontSize: 12 },
+  modalHeaderText: { flex: 1 },
   modalBodyScroll: { maxHeight: 520 },
   modalBody: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 16 },
+  sectionTitle: { color: '#111827', fontWeight: '800', marginTop: 8, marginBottom: 6 },
   inputLabel: { color: '#6b7280', fontSize: 12, marginBottom: 6 },
   input: { borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, color: '#111827', backgroundColor: '#fff' },
   modalChipsRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 8 },
@@ -502,6 +650,11 @@ const styles = StyleSheet.create({
   selectOption: { paddingVertical: 12, paddingHorizontal: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#e5e7eb' },
   selectOptionText: { color: '#111827' },
   dropdownPanel: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, overflow: 'hidden', marginTop: 6 },
+  toggleRow: { flexDirection: 'row', gap: 8, marginBottom: 10 },
+  toggleBtn: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 10, borderWidth: 1, borderColor: '#e5e7eb', backgroundColor: '#fff' },
+  toggleBtnActive: { backgroundColor: '#0b0b1b', borderColor: '#0b0b1b' },
+  toggleBtnText: { color: '#111827', fontWeight: '700' },
+  toggleBtnTextActive: { color: '#fff' },
   attachRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
   attachBtn: { flexDirection: 'row', alignItems: 'center', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10 },
   attachPrimary: { backgroundColor: '#0b0b1b' },
