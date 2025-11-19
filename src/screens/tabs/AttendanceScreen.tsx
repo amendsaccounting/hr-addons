@@ -57,6 +57,9 @@ const AttendanceScreen = () => {
   const STORAGE_IS_IN = 'attendance:isClockedIn';
   const STORAGE_LAST_IN_TIME = 'attendance:lastClockInTime';
   const STORAGE_DEVICE_ID = 'attendance:deviceId';
+  const STORAGE_IN_LOCATION_TEXT = 'attendance:inLocationText';
+  const STORAGE_IN_LOCATION_LAT = 'attendance:inLocationLat';
+  const STORAGE_IN_LOCATION_LON = 'attendance:inLocationLon';
 
   const persistState = async (inState: boolean, inTime: string | null) => {
     try {
@@ -65,6 +68,24 @@ const AttendanceScreen = () => {
         [STORAGE_LAST_IN_TIME, inTime || ''],
       ];
       await AsyncStorage.multiSet(ops);
+    } catch {}
+  };
+
+  const persistInLocation = async (loc: FetchedLocation | null) => {
+    try {
+      if (loc) {
+        await AsyncStorage.multiSet([
+          [STORAGE_IN_LOCATION_TEXT, loc.address || ''],
+          [STORAGE_IN_LOCATION_LAT, String(loc.latitude ?? '')],
+          [STORAGE_IN_LOCATION_LON, String(loc.longitude ?? '')],
+        ]);
+      } else {
+        await AsyncStorage.multiSet([
+          [STORAGE_IN_LOCATION_TEXT, ''],
+          [STORAGE_IN_LOCATION_LAT, ''],
+          [STORAGE_IN_LOCATION_LON, ''],
+        ]);
+      }
     } catch {}
   };
 
@@ -86,12 +107,16 @@ const AttendanceScreen = () => {
 
   const loadPersistedState = async () => {
     try {
-      const rows = await AsyncStorage.multiGet([STORAGE_IS_IN, STORAGE_LAST_IN_TIME]);
+      const rows = await AsyncStorage.multiGet([STORAGE_IS_IN, STORAGE_LAST_IN_TIME, STORAGE_IN_LOCATION_TEXT, STORAGE_IN_LOCATION_LAT, STORAGE_IN_LOCATION_LON]);
       const isInRaw = rows.find(r => r[0] === STORAGE_IS_IN)?.[1] || '0';
       const lastIn = rows.find(r => r[0] === STORAGE_LAST_IN_TIME)?.[1] || '';
       const isIn = isInRaw === '1';
       setIsClockedIn(isIn);
       setLastClockInTime(lastIn || null);
+      if (isIn) {
+        const savedLoc = rows.find(r => r[0] === STORAGE_IN_LOCATION_TEXT)?.[1] || '';
+        if (savedLoc) setLocationText(savedLoc);
+      }
     } catch {}
   };
 
@@ -226,9 +251,10 @@ const AttendanceScreen = () => {
         setLastClockInTime(clockedIn ? formatTime12(last.start) : null);
         await persistState(clockedIn, clockedIn ? formatTime12(last.start) : null);
       } else {
-        setIsClockedIn(false);
-        setLastClockInTime(null);
-        await persistState(false, null);
+        // If we couldn't derive any sessions from the server (empty list),
+        // do not override locally persisted state. This preserves the
+        // red Clock Out button and "shift started" UI across app restarts
+        // when server history is unavailable or empty.
       }
 
       // Compute this week totals (Mon..Sun)
@@ -382,7 +408,6 @@ const AttendanceScreen = () => {
 
       setLoadingLocation(true);
       const loc = await requestLocation();
-      setLocationText(loc.address);
 
       // Enforce exact human-readable address to store in ERP's location field
       if (!loc.address || loc.address === 'Location unavailable' || /^Lat\s/i.test(loc.address)) {
@@ -413,12 +438,18 @@ const AttendanceScreen = () => {
       if (isClockedIn) {
         setIsClockedIn(false);
         setLastClockInTime(null);
+        await persistInLocation(null);
         await persistState(false, null);
+        // After clock out, clear the displayed location
+        setLocationText('Location not fetched');
       } else {
         setIsClockedIn(true);
         const newIn = formatTime12(now);
         setLastClockInTime(newIn);
+        await persistInLocation(loc);
         await persistState(true, newIn);
+        // After clock in, show the captured location
+        setLocationText(loc.address);
       }
       await loadRecentHistory();
       Alert.alert('Success', `You have clocked ${isClockedIn ? 'out' : 'in'} successfully!`);
@@ -539,7 +570,7 @@ const AttendanceScreen = () => {
           {/* Status */}
           <View style={styles.statusIndicator}>
             <View style={[styles.statusDot, isClockedIn ? styles.statusActive : styles.statusInactive]} />
-            <Text style={styles.statusText}>{isClockedIn ? 'Currently Clocked In' : 'Ready to Clock In'}</Text>
+            <Text style={styles.statusText}>{isClockedIn ? 'Shift has started' : 'Ready to Clock In'}</Text>
           </View>
 
           {/* Clocked-in message */}
