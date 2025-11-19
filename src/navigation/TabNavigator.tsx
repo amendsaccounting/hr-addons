@@ -6,6 +6,7 @@ import DashboardScreen from '../screens/tabs/DashboardScreen';
 import AttendanceScreen from '../screens/tabs/AttendanceScreen';
 import LeaveScreen from '../screens/tabs/LeaveScreen';
 import LeadScreen from '../screens/tabs/LeadScreen';
+import LeadDetailScreen from '../screens/tabs/LeadDetailScreen';
 import ExpenseScreen from '../screens/tabs/ExpenseScreen';
 import ProfileScreen from '../screens/tabs/ProfileScreen';
 export type TabName = 'Dashboard' | 'Attendance' | 'Leave' | 'Leads' | 'Expense';
@@ -14,6 +15,7 @@ export default function TabNavigator({ initialTab = 'Dashboard' as TabName }: { 
   const [activeTab, setActiveTab] = useState<TabName>(initialTab);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const drawerAnim = React.useRef(new Animated.Value(0)).current;
+  const [leadDetailName, setLeadDetailName] = useState<string | null>(null);
 
   const openDrawer = () => {
     setDrawerOpen(true);
@@ -31,7 +33,11 @@ export default function TabNavigator({ initialTab = 'Dashboard' as TabName }: { 
         {activeTab === 'Dashboard' && <DashboardScreen onOpenMenu={openDrawer} />}
         {activeTab === 'Attendance' && <AttendanceScreen />}
         {activeTab === 'Leave' && <LeaveScreen />}
-        {activeTab === 'Leads' && <LeadScreen />}
+        {activeTab === 'Leads' && (
+          leadDetailName
+            ? <LeadDetailScreen name={leadDetailName} onBack={() => setLeadDetailName(null)} />
+            : <LeadScreen onOpenLead={(name) => setLeadDetailName(name)} />
+        )}
         {activeTab === 'Expense' && <ExpenseScreen />}
       </View>
       <BottomTabBar activeTab={activeTab} onChange={setActiveTab} />

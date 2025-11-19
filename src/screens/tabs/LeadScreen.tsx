@@ -7,7 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { listAllLeads, deleteLead, createLead, type Lead } from '../../services/leadService';
 import { uploadLeadAttachment } from '../../services/leadService';
 
-export default function LeadScreen() {
+export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string) => void }) {
   (Ionicons as any)?.loadFont?.();
   const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(false);
@@ -136,9 +136,9 @@ export default function LeadScreen() {
                 )
               )}
             </View>
-            <Pressable style={styles.addBtn} accessibilityRole="button" onPress={() => setAddVisible(true)}>
-              <Ionicons name="add" size={18} color="#fff" />
-            </Pressable>
+              <Pressable style={styles.addBtn} accessibilityRole="button" onPress={() => setAddVisible(true)}>
+                <Ionicons name="add" size={18} color="#fff" />
+              </Pressable>
           </View>
           <ScrollView
             horizontal
@@ -164,7 +164,7 @@ export default function LeadScreen() {
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
             contentContainerStyle={styles.container}
             renderItem={({ item }) => (
-              <View style={styles.leadCard}>
+              <Pressable style={styles.leadCard} onPress={() => onOpenLead && onOpenLead(item.name)}>
                 <View style={styles.leadTop}>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.leadCompany}>{item.company_name || item.lead_name || '—'}</Text>
@@ -192,7 +192,7 @@ export default function LeadScreen() {
                   {!!item.mobile_no && <Row icon="call-outline" text={item.mobile_no} />}
                   {!!item.territory && <Row icon="location-outline" text={item.territory} />}
                 </View>
-              </View>
+              </Pressable>
             )}
             ListEmptyComponent={!loading ? (
               <View style={{ alignItems: 'center', paddingVertical: 40 }}>
@@ -511,4 +511,16 @@ const styles = StyleSheet.create({
   attachList: { marginTop: 6 },
   attachItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 6, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#e5e7eb' },
   attachName: { flex: 1, color: '#374151', marginHorizontal: 8 },
+  // Lead Detail styles
+  detailScreen: { flex: 1, backgroundColor: '#fff' },
+  detailHeader: { paddingHorizontal: 12, paddingBottom: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#e5e7eb' },
+  backBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 18, backgroundColor: '#f3f4f6' },
+  detailTitle: { fontSize: 16, fontWeight: '700', color: '#111827' },
+  detailCard: { backgroundColor: '#fff', borderRadius: 12, borderWidth: 1, borderColor: '#e5e7eb', padding: 12 },
+  detailName: { fontSize: 16, fontWeight: '800', color: '#111827' },
+  detailSub: { fontSize: 13, color: '#6b7280', marginTop: 2 },
+  detailChips: { flexDirection: 'row', marginTop: 10, gap: 8 },
+  notesBox: { marginTop: 16, backgroundColor: '#f9fafb', borderRadius: 8, padding: 10, borderWidth: 1, borderColor: '#eef0f3' },
+  notesTitle: { fontSize: 12, fontWeight: '700', color: '#374151', marginBottom: 4 },
+  notesText: { fontSize: 12, color: '#4b5563' },
 });
