@@ -1,213 +1,315 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Pressable, Linking, Platform, Alert, SectionList } from 'react-native';
-import Ionicons from 'react-native-vector-icons/Ionicons';
-import LinearGradient from 'react-native-linear-gradient';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, StatusBar } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { getLead, type Lead } from '../../services/leadService';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 
 (Ionicons as any)?.loadFont?.();
 
-export default function LeadDetailScreen({ name, onBack }: { name: string; onBack?: () => void }) {
+// Static-only screen matching the provided screenshot
+export default function LeadDetailScreen({ onBack }: { name?: string; onBack?: () => void }) {
   const insets = useSafeAreaInsets();
-  const [loading, setLoading] = React.useState(true);
-  const [lead, setLead] = React.useState<Lead | null>(null);
-
-  React.useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        setLoading(true);
-        const l = await getLead(name);
-        if (mounted) setLead(l);
-      } finally {
-        mounted && setLoading(false);
-      }
-    })();
-    return () => { mounted = false; };
-  }, [name]);
+  const [tab, setTab] = useState<'Details' | 'Notes' | 'Activity'>('Details');
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState({
+    phone: '554423299',
+    mobile: '554423299',
+    website: 'omnisworldwide.com',
+    source: 'Frappe Lead',
+    dateAdded: '2025-11-20',
+    assignedTo: 'rajeev@addon-s.com',
+    location: 'United Arab Emirates',
+  });
+  const lead = {
+    name: 'CRM-LEAD-2025-02791',
+    owner: 'support@amendsgroup.com',
+    creation: '2025-11-20 10:12:34.185666',
+    modified: '2025-11-20 10:12:34.225334',
+    modified_by: 'support@amendsgroup.com',
+    docstatus: 0,
+    idx: 0,
+    naming_series: 'CRM-LEAD-.YYYY.-',
+    custom_date: '2025-11-20',
+    salutation: 'Mr',
+    annual_revenue: 0,
+    blog_subscriber: 0,
+    company: 'Addon-S L.L.C',
+    company_name: 'Omnis World Wide Trading LLC',
+    country: 'United Arab Emirates',
+    custom_building__location: 'Omnis World Wide Trading LLC',
+    custom_follow_up_details: 'Converted to Order',
+    disabled: 0,
+    doctype: 'Lead',
+    first_name: 'Akarsh',
+    gender: 'Male',
+    language: 'en',
+    lead_name: 'Mr Akarsh',
+    lead_owner: 'rajeev@addon-s.com',
+    mobile_no: '554423299',
+    no_of_employees: '1-10',
+    notes: [],
+    phone: '554423299',
+    qualification_status: 'Unqualified',
+    request_type: '',
+    source: 'Frappe Lead',
+    status: 'Lead',
+    territory: 'Rest Of The World',
+    title: 'Omnis World Wide Trading LLC',
+    type: '',
+    unsubscribed: 0,
+    website: 'omnisworldwide.com',
+  };
 
   return (
     <View style={styles.screen}>
-      {loading ? (
-        <View style={{ padding: 16 }}>
-          <ActivityIndicator />
+      <StatusBar barStyle="light-content" backgroundColor="#111827" />
+      <LeadHeroHeader
+        onBack={onBack}
+        insetsTop={insets.top}
+        editing={editing}
+        onEdit={() => setEditing(true)}
+        onCancel={() => setEditing(false)}
+        onSave={() => setEditing(false)}
+      />
+
+      <ScrollView contentContainerStyle={{ paddingBottom: 120 }}>
+        {/* spacer under hero card */}
+        <View style={{ height: 8 }} />
+
+        {/* Quick Actions */}
+        <View style={styles.actionsRow}>
+          <ActionButton label="Call" icon="call" primary />
+          <ActionButton label="Message" icon="chatbubble" />
+          <ActionButton label="Website" icon="globe-outline" />
         </View>
-      ) : (
-        <>
-          <LinearGradient colors={["#0b0b1b", "#1f243d"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.heroCard, { paddingTop: insets.top + 12 }]}> 
 
-            <View style={styles.heroTopRow}>
-              <Pressable accessibilityRole="button" onPress={onBack} style={styles.backBtnDark}>
-                <Ionicons name="arrow-back" size={20} color="#fff" />
-              </Pressable>
-              <Text style={styles.heroTitle}>Lead Details</Text>
-              <View style={{ width: 36 }} />
-            </View>
-            <View style={styles.heroInfoRow}>
-              <View style={styles.avatarLg}>
-                <Text style={styles.avatarLgText}>{(lead?.company_name || lead?.lead_name || 'L').slice(0,1).toUpperCase()}</Text>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.heroName} numberOfLines={1}>{lead?.company_name || lead?.lead_name || 'Lead'}</Text>
-                {!!lead?.lead_name && <Text style={styles.heroSub} numberOfLines={1}>{lead?.lead_name}</Text>}
-                <View style={styles.heroChips}>
-                  {!!lead?.status && (
-                    <View style={[styles.badge, { backgroundColor: '#e7f0ff' }]}>
-                      <Text style={[styles.badgeText, { color: '#0b6dff' }]}>{lead.status}</Text>
-                    </View>
-                  )}
-                  {!!lead?.source && (
-                    <View style={[styles.badge, { backgroundColor: '#fff' }, styles.linkBadge]}>
-                      <Text style={[styles.badgeText, { color: '#111827' }]}>{lead.source}</Text>
-                    </View>
-                  )}
-                </View>
-              </View>
-            </View>
-            <View style={styles.quickActions}>
-              <QuickAction icon="call" label="Call" onPress={() => callNumber(lead?.mobile_no || lead?.phone)} />
-              <QuickAction icon="mail" label="Email" onPress={() => emailTo(lead?.email_id)} />
-              <QuickAction icon="navigate" label="Map" onPress={() => openMap(lead?.address)} />
-            </View>
-          </LinearGradient>
-
-          <ScrollView contentContainerStyle={[styles.wrapper, { paddingBottom: insets.bottom + 24 }]} showsVerticalScrollIndicator={false}>
-          {(() => {
-            type RowDef = { label: string; value?: any; icon?: string; multiline?: boolean; onPress?: () => void };
-            type CardItem = { kind: 'rows'; rows: RowDef[] } | { kind: 'notes'; text: string };
-            type CardSection = { title: string; data: CardItem[] };
-
-            const sections: CardSection[] = [];
-            const contactRows: RowDef[] = [
-              { label: 'Email', value: lead?.email_id, icon: 'mail-outline', onPress: () => emailTo(lead?.email_id) },
-              { label: 'Mobile', value: lead?.mobile_no, icon: 'call-outline', onPress: () => callNumber(lead?.mobile_no) },
-              { label: 'Phone', value: lead?.phone, icon: 'call-outline', onPress: () => callNumber(lead?.phone) },
-            ].filter(r => r.value);
-            if (contactRows.length) sections.push({ title: 'Contact', data: [{ kind: 'rows', rows: contactRows }] });
-
-            const companyRows: RowDef[] = [
-              { label: 'Company Name', value: lead?.company_name, icon: 'business-outline' },
-              { label: 'Address', value: lead?.address, icon: 'home-outline', multiline: true, onPress: () => openMap(lead?.address) },
-            ].filter(r => r.value);
-            if (companyRows.length) sections.push({ title: 'Company', data: [{ kind: 'rows', rows: companyRows }] });
-
-            const detailRows: RowDef[] = [
-              { label: 'Status', value: lead?.status, icon: 'bookmark-outline' },
-              { label: 'Source', value: lead?.source, icon: 'link-outline' },
-              { label: 'Territory', value: lead?.territory, icon: 'location-outline' },
-              { label: 'Lead Name', value: lead?.lead_name, icon: 'person-outline' },
-              { label: 'Lead ID', value: lead?.name, icon: 'id-card-outline' },
-            ].filter(r => r.value);
-            if (detailRows.length) sections.push({ title: 'Details', data: [{ kind: 'rows', rows: detailRows }] });
-
-            if (lead?.notes) sections.push({ title: 'Notes', data: [{ kind: 'notes', text: String(lead.notes) }] });
-
-            const shown = new Set<string>(['name','lead_name','company_name','email_id','mobile_no','phone','status','source','territory','address','notes']);
-            const extrasKeys = Object.keys(lead || {})
-              .filter(k => !shown.has(k) && !/^(__|_)/.test(k) && !['doctype','owner','creation','modified','modified_by','docstatus','idx'].includes(k))
-              .filter(k => { const v: any = (lead as any)[k]; return v !== null && v !== undefined && String(v).trim().length > 0; });
-            if (extrasKeys.length) {
-              const toLabel = (s: string) => s.replace(/_/g,' ').replace(/\b\w/g, c => c.toUpperCase());
-              const rows: RowDef[] = extrasKeys.map(k => ({ label: toLabel(k), value: String((lead as any)[k]) }));
-              sections.push({ title: 'Other Details', data: [{ kind: 'rows', rows }] });
-            }
-
+        {/* Tabs */}
+        <View style={styles.tabs}>
+          {(['Details', 'Notes', 'Activity'] as const).map(t => {
+            const active = tab === t;
             return (
-              <SectionList
-                sections={sections}
-                keyExtractor={(item, index) => `${(item as any).kind}-${index}`}
-                renderSectionHeader={({ section }) => (
-                  <Text style={styles.sectionTitle}>{section.title}</Text>
-                )}
-                renderItem={({ item }) => (
-                  item.kind === 'rows' ? (
-                    <View style={styles.card}>
-                      {item.rows.map((r, i) => (
-                        <InfoRow key={`${r.label}-${i}`} label={r.label} value={r.value} icon={r.icon as any} multiline={r.multiline} isLast={i === item.rows.length - 1} onPress={r.onPress} />
-                      ))}
-                    </View>
-                  ) : (
-                    <View style={styles.card}><Text style={styles.notesText}>{item.text}</Text></View>
-                  )
-                )}
-                contentContainerStyle={[styles.wrapper, { paddingBottom: insets.bottom + 24 }]}
-                initialNumToRender={3}
-                windowSize={10}
-                removeClippedSubviews
-                stickySectionHeadersEnabled={false}
-                showsVerticalScrollIndicator={false}
-              />
+              <Pressable key={t} onPress={() => setTab(t)} style={[styles.tabItem]}> 
+                <Text style={[styles.tabText, active && styles.tabTextActive]}>{t}</Text>
+                {active && <View style={styles.tabUnderline} />}
+              </Pressable>
             );
-          })()}
-        </ScrollView>
-        </>
+          })}
+        </View>
+
+        {/* Cards (Details only, static) */}
+        {tab === 'Details' && (
+          <>
+            <Card>
+              <CardTitle>Contact Information</CardTitle>
+              <EditableField label="Mobile Number" value={form.mobile} editing={editing} onChangeText={(t) => setForm((p) => ({ ...p, mobile: t }))} />
+              <Divider />
+              <EditableField label="Phone Number" value={form.phone} editing={editing} onChangeText={(t) => setForm((p) => ({ ...p, phone: t }))} />
+              <Divider />
+              <EditableField label="Website" value={form.website} editing={editing} onChangeText={(t) => setForm((p) => ({ ...p, website: t }))} />
+            </Card>
+
+            <Card>
+              <CardTitle>Lead Details</CardTitle>
+              <EditableField label="Lead Name" value={lead.lead_name} editing={false} />
+              <Divider />
+              <EditableField label="Salutation" value={lead.salutation} editing={false} />
+              <Divider />
+              <EditableField label="First Name" value={lead.first_name} editing={false} />
+              <Divider />
+              <EditableField label="Status" value={lead.status} editing={false} />
+              <Divider />
+              <EditableField label="Lead Source" value={lead.source} editing={false} />
+              <Divider />
+              <EditableField label="Qualification Status" value={lead.qualification_status} editing={false} />
+              <Divider />
+              <EditableField label="Lead Owner" value={lead.lead_owner} editing={false} />
+              <Divider />
+              <EditableField label="Territory" value={lead.territory} editing={false} />
+              <Divider />
+              <EditableField label="Company Name" value={lead.company_name} editing={false} />
+              <Divider />
+              <EditableField label="Company" value={lead.company} editing={false} />
+              <Divider />
+              <EditableField label="Title" value={lead.title} editing={false} />
+              <Divider />
+              <EditableField label="Country" value={lead.country} editing={false} />
+              <Divider />
+              <EditableField label="Location" value={lead.custom_building__location} editing={false} />
+              <Divider />
+              <EditableField label="Language" value={lead.language} editing={false} />
+              <Divider />
+              <EditableField label="Request Type" value={lead.request_type || '-'} editing={false} />
+              <Divider />
+              <EditableField label="Type" value={lead.type || '-'} editing={false} />
+              <Divider />
+              <EditableField label="No. of Employees" value={lead.no_of_employees} editing={false} />
+              <Divider />
+              <EditableField label="Website" value={lead.website} editing={false} />
+            </Card>
+
+            <Card>
+              <CardTitle>System Info</CardTitle>
+              <EditableField label="Name" value={lead.name} editing={false} />
+              <Divider />
+              <EditableField label="Naming Series" value={lead.naming_series} editing={false} />
+              <Divider />
+              <EditableField label="Custom Date" value={lead.custom_date} editing={false} />
+              <Divider />
+              <EditableField label="Owner" value={lead.owner} editing={false} />
+              <Divider />
+              <EditableField label="Creation" value={lead.creation} editing={false} />
+              <Divider />
+              <EditableField label="Modified" value={lead.modified} editing={false} />
+              <Divider />
+              <EditableField label="Modified By" value={lead.modified_by} editing={false} />
+              <Divider />
+              <EditableField label="DocType" value={lead.doctype} editing={false} />
+              <Divider />
+              <EditableField label="DocStatus" value={String(lead.docstatus)} editing={false} />
+              <Divider />
+              <EditableField label="Index" value={String(lead.idx)} editing={false} />
+              <Divider />
+              <EditableField label="Disabled" value={String(lead.disabled)} editing={false} />
+              <Divider />
+              <EditableField label="Blog Subscriber" value={String(lead.blog_subscriber)} editing={false} />
+              <Divider />
+              <EditableField label="Unsubscribed" value={String(lead.unsubscribed)} editing={false} />
+              <Divider />
+              <EditableField label="Annual Revenue" value={String(lead.annual_revenue)} editing={false} />
+            </Card>
+
+            <Card>
+              <CardTitle>Notes / Follow-up</CardTitle>
+              <EditableField label="Follow Up" value={lead.custom_follow_up_details} editing={false} />
+            </Card>
+          </>
+        )}
+      </ScrollView>
+
+      {/* Floating Add Button */}
+      <Pressable style={[styles.fab, { bottom: 24 + insets.bottom }]}>
+        <Ionicons name="add" size={24} color="#fff" />
+      </Pressable>
+    </View>
+  );
+}
+
+function LeadHeroHeader({ onBack, insetsTop, editing, onEdit, onCancel, onSave }: { onBack?: () => void; insetsTop: number; editing?: boolean; onEdit?: () => void; onCancel?: () => void; onSave?: () => void }) {
+  return (
+    <View style={styles.heroWrap}>
+      <View style={[styles.heroTop, { paddingTop: insetsTop + 10 }]}>        
+        <Pressable onPress={onBack} hitSlop={10} style={styles.iconBtn}>
+          <Ionicons name="chevron-back" size={22} color="#ffffff" />
+        </Pressable>
+        <Text style={styles.heroTopTitle}>Lead Details</Text>
+        {editing ? (
+          <View style={{ flexDirection: 'row' }}>
+            <Pressable hitSlop={10} style={styles.iconBtn} onPress={onCancel}>
+              <Ionicons name="close" size={20} color="#ffffff" />
+            </Pressable>
+            <Pressable hitSlop={10} style={styles.iconBtn} onPress={onSave}>
+              <Ionicons name="checkmark" size={22} color="#22c55e" />
+            </Pressable>
+          </View>
+        ) : (
+          <View style={{ flexDirection: 'row' }}>
+            <Pressable hitSlop={10} style={styles.iconBtn} onPress={onEdit}>
+              <Ionicons name="create-outline" size={20} color="#ffffff" />
+            </Pressable>
+            <Pressable hitSlop={10} style={styles.iconBtn}>
+              <Ionicons name="ellipsis-vertical" size={18} color="#ffffff" />
+            </Pressable>
+          </View>
+        )}
+      </View>
+      <View style={styles.heroCard}>
+        <View style={styles.avatarLg}>
+          <Ionicons name="person" color="#ffffff" size={28} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.name}>Mr Akarsh</Text>
+          <Text style={styles.role}>Omnis World Wide Trading LLC • United Arab Emirates</Text>
+          <View style={{ marginTop: 8 }}>
+            <View style={styles.statusChip}><Text style={styles.statusChipText}>Lead</Text></View>
+          </View>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+/* UI Helpers */
+
+function ActionButton({ label, icon, primary }: { label: string; icon: string; primary?: boolean }) {
+  return (
+    <Pressable style={[styles.actionBtn, primary ? styles.actionBtnPrimary : styles.actionBtnGhost]}>
+      <Ionicons name={icon as any} size={16} color={primary ? '#ffffff' : '#111827'} />
+      <Text style={[styles.actionBtnText, primary ? { color: '#fff' } : { color: '#111827' }]}>{label}</Text>
+    </Pressable>
+  );
+}
+
+function Card({ children }: { children: React.ReactNode }) {
+  return <View style={styles.card}>{children}</View>;
+}
+
+function CardTitle({ children }: { children: React.ReactNode }) {
+  return <Text style={styles.cardTitle}>{children}</Text>;
+}
+
+function EditableField({ label, value, editing, onChangeText }: { label: string; value: string; editing?: boolean; onChangeText?: (t: string) => void }) {
+  return (
+    <View style={{ paddingVertical: 10 }}>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      {editing ? (
+        <TextInput
+          value={value}
+          onChangeText={onChangeText}
+          placeholder={label}
+          style={styles.input}
+        />
+      ) : (
+        <Text style={styles.fieldValue}>{value}</Text>
       )}
     </View>
   );
 }
 
-function InfoRow({ label, value, icon, multiline, isLast, onPress }: { label: string; value?: string | number | null; icon?: string; multiline?: boolean; isLast?: boolean; onPress?: () => void }) {
-  if (!value && value !== 0) return null;
-  const Inner = (
-    <View style={[styles.infoRow, !isLast && styles.infoRowBorder]}>
-      <View style={styles.infoLeft}>
-        {!!icon && <Ionicons name={icon as any} size={14} color="#6b7280" style={{ width: 18, marginRight: 6 }} />}
-        <Text style={styles.infoLabel}>{label}</Text>
-      </View>
-      <Text style={[styles.infoValue, multiline && { flex: 1 }]} numberOfLines={multiline ? 0 : 1}>{String(value)}</Text>
-    </View>
-  );
-  if (onPress) return <Pressable onPress={onPress}>{Inner}</Pressable>;
-  return Inner;
+function Divider() {
+  return <View style={styles.divider} />;
 }
 
-function callNumber(num?: string | null) {
-  if (!num) return Alert.alert('Call', 'No phone number available');
-  Linking.openURL(`tel:${String(num).trim()}`).catch(() => Alert.alert('Call', 'Unable to open dialer'));
-}
-function emailTo(addr?: string | null) {
-  if (!addr) return Alert.alert('Email', 'No email address available');
-  Linking.openURL(`mailto:${String(addr).trim()}`).catch(() => Alert.alert('Email', 'Unable to open mail app'));
-}
-function openMap(address?: string | null) {
-  if (!address) return Alert.alert('Map', 'No address available');
-  const q = encodeURIComponent(address);
-  const url = Platform.OS === 'ios' ? `http://maps.apple.com/?q=${q}` : `geo:0,0?q=${q}`;
-  Linking.openURL(url).catch(() => Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${q}`));
-}
-
-function QuickAction({ icon, label, onPress }: { icon: string; label: string; onPress?: () => void }) {
-  return (
-    <Pressable onPress={onPress} style={styles.quickBtn}>
-      <Ionicons name={`${icon}-outline` as any} size={16} color="#fff" />
-      <Text style={styles.quickLabel}>{label}</Text>
-    </Pressable>
-  );
-}
-
+/* Styles */
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#fff' },
-  wrapper: { paddingHorizontal: 12, paddingBottom: 12, paddingTop: 0 },
-  heroCard: { borderRadius: 0, paddingHorizontal: 12, paddingVertical: 12 },
-  heroTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  backBtnDark: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.15)' },
-  heroTitle: { fontSize: 16, fontWeight: '700', color: '#fff' },
-  heroInfoRow: { flexDirection: 'row', alignItems: 'center', marginTop: 12 },
-  avatarLg: { width: 56, height: 56, borderRadius: 28, backgroundColor: '#111827', alignItems: 'center', justifyContent: 'center', marginRight: 12, borderWidth: 2, borderColor: 'rgba(255,255,255,0.2)' },
-  avatarLgText: { color: '#fff', fontWeight: '800', fontSize: 18 },
-  heroName: { color: '#fff', fontSize: 18, fontWeight: '800' },
-  heroSub: { color: '#cbd5e1', fontSize: 12, marginTop: 2 },
-  heroChips: { flexDirection: 'row', gap: 8, marginTop: 8 },
-  quickActions: { flexDirection: 'row', gap: 10, marginTop: 12 },
-  quickBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 0, backgroundColor: 'rgba(255,255,255,0.18)' },
-  quickLabel: { color: '#fff', fontWeight: '700', fontSize: 12 },
+  screen: { flex: 1, backgroundColor: '#F8FAFC' },
+  iconBtn: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
+  heroWrap: { backgroundColor: '#ffffff' },
+  heroTop: { backgroundColor: '#111827', paddingHorizontal: 12, paddingBottom: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  heroTopTitle: { color: '#ffffff', fontWeight: '700' },
+  heroCard: { marginHorizontal: 12, marginTop: -28, backgroundColor: '#ffffff', borderRadius: 14, padding: 14, borderWidth: 1, borderColor: '#E5E7EB', flexDirection: 'row', alignItems: 'center', elevation: 3, shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 6, shadowOffset: { width: 0, height: 4 } },
+  avatarLg: { width: 56, height: 56, borderRadius: 28, backgroundColor: '#9CA3AF', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  name: { fontSize: 18, fontWeight: '700', color: '#111827' },
+  role: { marginTop: 4, color: '#6B7280', lineHeight: 18 },
+  statusChip: { alignSelf: 'flex-start', backgroundColor: '#E0F2FE', paddingVertical: 4, paddingHorizontal: 8, borderRadius: 999 },
+  statusChipText: { color: '#0369A1', fontSize: 12, fontWeight: '600' },
 
-  card: { backgroundColor: '#fff', borderRadius: 12, borderWidth: 1, borderColor: '#e5e7eb', padding: 12 },
-  sectionTitle: { marginTop: 12, marginBottom: 6, marginLeft: 2, fontSize: 12, fontWeight: '700', color: '#111827' },
-  infoRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10 },
-  infoRowBorder: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#eef0f3' },
-  infoLeft: { flexDirection: 'row', alignItems: 'center' },
-  infoLabel: { color: '#6b7280', fontSize: 12 },
-  infoValue: { color: '#111827', fontSize: 13, marginLeft: 10, maxWidth: '60%', textAlign: 'right' },
-  notesText: { fontSize: 12, color: '#4b5563' },
+  actionsRow: { flexDirection: 'row', gap: 12, paddingHorizontal: 16, marginTop: 12 },
+  actionBtn: { flex: 1, flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'center', paddingVertical: 10, borderRadius: 10, borderWidth: 1, borderColor: '#E5E7EB' },
+  actionBtnPrimary: { backgroundColor: '#2563EB', borderColor: '#2563EB' },
+  actionBtnGhost: { backgroundColor: '#ffffff' },
+  actionBtnText: { fontWeight: '600' },
+
+  tabs: { flexDirection: 'row', backgroundColor: '#F3F4F6', paddingHorizontal: 12, paddingTop: 14, paddingBottom: 8 },
+  tabItem: { flex: 1, alignItems: 'center' },
+  tabText: { color: '#6B7280', fontWeight: '600' },
+  tabTextActive: { color: '#111827' },
+  tabUnderline: { marginTop: 6, height: 2, width: 56, backgroundColor: '#2563EB', borderRadius: 2 },
+
+  card: { backgroundColor: '#ffffff', marginHorizontal: 12, marginTop: 12, borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#E5E7EB' },
+  cardTitle: { fontWeight: '700', color: '#111827', marginBottom: 8 },
+  fieldLabel: { fontSize: 12, color: '#6B7280', marginBottom: 4 },
+  fieldValue: { color: '#111827' },
+  input: { borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 8, paddingVertical: 8, paddingHorizontal: 10, color: '#111827', backgroundColor: '#FFFFFF' },
+  divider: { height: 1, backgroundColor: '#EFF2F5', marginVertical: 4 },
+
+  fab: { position: 'absolute', right: 20, width: 48, height: 48, borderRadius: 24, backgroundColor: '#2563EB', alignItems: 'center', justifyContent: 'center', elevation: 3 },
 });
