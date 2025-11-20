@@ -73,6 +73,15 @@ function isTruthy(v: any): boolean {
   return s === '1' || s === 'true' || s === 'yes' || s === 'y' || s === 'on';
 }
 
+function debugLog(...args: any[]) {
+  try {
+    if (isTruthy((Config as any)?.ERP_DEBUG)) {
+      // eslint-disable-next-line no-console
+      console.log('[ERP]', ...args);
+    }
+  } catch {}
+}
+
 // Build simple AND filters array; for search we OR using frappe-style complex filters is cumbersome,
 // so we try a pragmatic approach: prefer lead_name LIKE, else email_id LIKE if search contains '@'.
 function buildFilters(opts: ListOptions) {
@@ -192,14 +201,33 @@ async function listDocNameAndTitle(doctype: string, limit = 200): Promise<Locati
   if (!dt) return [];
   const titleField = await resolveTitleField(dt);
   const fields = titleField && titleField !== 'title' ? ['name', titleField] : ['name', 'title'];
-  const url = `${BASE_URL}/${encodeURIComponent(dt)}?fields=${enc(fields)}&limit_page_length=${limit}`;
-  const res = await fetch(url, { headers });
-  const json = await res.json().catch(() => ({} as any));
-  const data = (json as any)?.data;
-  if (!Array.isArray(data)) return [];
-  return data
-    .map((r: any) => ({ name: r?.name, label: (r?.[titleField] || r?.title || r?.name) }))
-    .filter((x: any) => x && x.name);
+  // Try resource API first
+  try {
+    const url = `${BASE_URL}/${encodeURIComponent(dt)}?fields=${enc(fields)}&limit_page_length=${limit}`;
+    const res = await fetch(url, { headers });
+    const json = await res.json().catch(() => ({} as any));
+    const data = (json as any)?.data;
+    if (Array.isArray(data) && data.length) {
+      debugLog('list', dt, 'resource', 'rows:', data.length);
+      return data
+        .map((r: any) => ({ name: r?.name, label: (r?.[titleField] || r?.title || r?.name) }))
+        .filter((x: any) => x && x.name);
+    }
+  } catch {}
+  // Fallback to method API (some deployments restrict resource listing or custom doctypes)
+  try {
+    const url2 = `${METHOD_BASE}/frappe.client.get_list?doctype=${enc(dt)}&fields=${enc(fields)}&limit_page_length=${limit}`;
+    const res2 = await fetch(url2, { headers });
+    const json2 = await res2.json().catch(() => ({} as any));
+    const data2 = (json2 as any)?.message ?? (json2 as any)?.data;
+    if (Array.isArray(data2) && data2.length) {
+      debugLog('list', dt, 'method', 'rows:', data2.length);
+      return data2
+        .map((r: any) => ({ name: r?.name, label: (r?.[titleField] || r?.title || r?.name) }))
+        .filter((x: any) => x && x.name);
+    }
+  } catch {}
+  return [];
 }
 
 function getLocationDoctype(): string {
@@ -209,8 +237,76 @@ function getLocationDoctype(): string {
 
 export async function listLocations(limit = 200): Promise<LocationOption[]> {
   const primary = await resolveLocationDoctype();
-  const rows = await listDocNameAndTitle(primary, limit);
+  debugLog('listLocations primary doctype:', primary);
+  let rows = await listDocNameAndTitle(primary, limit);
+  if (!rows || rows.length === 0) {
+    // Fallbacks for common doctypes used on various ERPNext setups
+    const fallbacks = [
+      primary === 'Building & Location' ? 'Location' : 'Building & Location',
+      'Location',
+    ].filter((v, i, a) => !!v && a.indexOf(v) === i);
+    for (const dt of fallbacks) {
+      try {
+        debugLog('listLocations fallback doctype:', dt);
+        const alt = await listDocNameAndTitle(dt, limit);
+        if (alt && alt.length) { rows = alt; break; }
+      } catch {}
+    }
+  }
   return rows || [];
+}
+
+// List Territories (non-group)
+export async function listTerritories(limit = 200): Promise<LocationOption[]> {
+  const headers = getHeaders();
+  const fields = ['name', 'territory_name', 'is_group'];
+  const filters = [['is_group', '=', 0]] as any;
+  const url = `${BASE_URL}/Territory?fields=${enc(fields)}&filters=${enc(filters)}&limit_page_length=${limit}`;
+  const res = await fetch(url, { headers });
+  const json = await res.json().catch(() => ({} as any));
+  const data = (json as any)?.data;
+  if (!Array.isArray(data)) return [];
+  return data.map((r: any) => ({ name: r?.name, label: r?.territory_name || r?.name })).filter((x: any) => x && x.name);
+}
+
+// Fetch Select options for a Lead field (including custom-mapped fields)
+export async function getLeadSelectOptions(field: 'service_type' | 'request_type' | 'lead_type' | 'source'): Promise<string[]> {
+  const meta = await fetchDocTypeMeta('Lead');
+  if (!meta || !Array.isArray((meta as any).fields)) return [];
+  const enableCustom = isTruthy((Config as any)?.ERP_ENABLE_CUSTOM_LEAD_FIELDS);
+  const map: Record<string, string> = {
+    service_type: enableCustom ? FIELD_MAP.service_type : 'service_type',
+    request_type: enableCustom ? FIELD_MAP.request_type : 'request_type',
+    lead_type: enableCustom ? FIELD_MAP.lead_type : 'lead_type',
+    source: 'source',
+  } as any;
+  const target = map[field] || field;
+  const df = (meta as any).fields.find((f: any) => String(f?.fieldname) === String(target));
+  if (!df) return [];
+  const ftype = String(df?.fieldtype);
+  if (ftype === 'Select') {
+    const raw = String(df?.options || '').trim();
+    if (!raw) return [];
+    const parts = raw.split('\n').map((s: string) => s.trim()).filter(Boolean);
+    return parts;
+  }
+  if (ftype === 'Link' && typeof df?.options === 'string' && df.options) {
+    // For Link fields, list names from the target doctype
+    try {
+      const rows = await listDocNameAndTitle(df.options, 200);
+      if (Array.isArray(rows) && rows.length) return rows.map((r) => r.name).filter(Boolean);
+    } catch {}
+    // Fallbacks for common doctypes
+    const fallbacks = [df.options, 'Lead Source', 'Source'].filter((v, i, a) => !!v && a.indexOf(v) === i);
+    for (const dt of fallbacks) {
+      try {
+        const rows = await listDocNameAndTitle(dt, 200);
+        if (Array.isArray(rows) && rows.length) return rows.map((r) => r.name).filter(Boolean);
+      } catch {}
+    }
+    return [];
+  }
+  return [];
 }
 
 let _resolvedLocationDoctype: string | null = null;
@@ -219,6 +315,7 @@ async function resolveLocationDoctype(): Promise<string> {
   const envDt = getLocationDoctype();
   if (envDt && envDt !== 'Building & Location') {
     _resolvedLocationDoctype = envDt;
+    debugLog('resolveLocationDoctype via env', envDt);
     return envDt;
   }
   // Try to auto-detect from DocType Lead custom field mapping
@@ -234,11 +331,13 @@ async function resolveLocationDoctype(): Promise<string> {
       const f = fields.find((x: any) => x?.fieldname === locFieldname);
       if (f && f.fieldtype === 'Link' && typeof f.options === 'string' && f.options) {
         _resolvedLocationDoctype = f.options;
+        debugLog('resolveLocationDoctype via Lead meta field', locFieldname, '->', f.options);
         return f.options;
       }
     }
   } catch {}
   _resolvedLocationDoctype = 'Building & Location';
+  debugLog('resolveLocationDoctype defaulting to', _resolvedLocationDoctype);
   return _resolvedLocationDoctype;
 }
 

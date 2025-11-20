@@ -51,10 +51,8 @@ export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string)
   const [statusPickerVisible, setStatusPickerVisible] = useState(false);
   const [locationPickerVisible, setLocationPickerVisible] = useState(false);
   const [locationOptions, setLocationOptions] = useState<LocationOption[]>([]);
-  const [locationSearch, setLocationSearch] = useState('');
   const [locationLoading, setLocationLoading] = useState(false);
-  const [locationManualMode, setLocationManualMode] = useState(false);
-  const [locationManualText, setLocationManualText] = useState('');
+  const [locationSearch, setLocationSearch] = useState('');
   const [territoryPickerVisible, setTerritoryPickerVisible] = useState(false);
   const [territoryOptions, setTerritoryOptions] = useState<LocationOption[]>([]);
   const [territorySearch, setTerritorySearch] = useState('');
@@ -64,8 +62,6 @@ export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string)
   const [requestTypeOptions, setRequestTypeOptions] = useState<string[]>([]);
   const [leadTypePickerVisible, setLeadTypePickerVisible] = useState(false);
   const [leadTypeOptions, setLeadTypeOptions] = useState<string[]>([]);
-  const [sourcePickerVisible, setSourcePickerVisible] = useState(false);
-  const [sourceOptions, setSourceOptions] = useState<string[]>([]);
   const [datePickerOpen, setDatePickerOpen] = useState(false);
 
   const refreshCount = useCallback(async () => {
@@ -104,61 +100,6 @@ export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string)
     }
   }, [query, status]);
 
-  // Fetch locations when dropdown opens
-  useEffect(() => {
-    let cancelled = false;
-    async function run() {
-      try {
-        if (locationPickerVisible) {
-          setLocationLoading(true);
-          const opts = await listLocations(200);
-          if (!cancelled) setLocationOptions(opts || []);
-        }
-      } catch {
-        if (!cancelled) setLocationOptions([]);
-      } finally {
-        if (!cancelled) setLocationLoading(false);
-      }
-    }
-    run();
-    return () => { cancelled = true; };
-  }, [locationPickerVisible]);
-
-  // Fetch territories when dropdown opens
-  useEffect(() => {
-    let cancelled = false;
-    async function run() {
-      try {
-        if (territoryPickerVisible) {
-          const opts = await listTerritories(200);
-          if (!cancelled) setTerritoryOptions(opts || []);
-        }
-      } catch {
-        if (!cancelled) setTerritoryOptions([]);
-      }
-    }
-    run();
-    return () => { cancelled = true; };
-  }, [territoryPickerVisible]);
-
-  // Fetch select options on open
-  useEffect(() => {
-    if (!leadTypePickerVisible) return;
-    getLeadSelectOptions('lead_type').then(setLeadTypeOptions).catch(() => setLeadTypeOptions([]));
-  }, [leadTypePickerVisible]);
-  useEffect(() => {
-    if (!requestTypePickerVisible) return;
-    getLeadSelectOptions('request_type').then(setRequestTypeOptions).catch(() => setRequestTypeOptions([]));
-  }, [requestTypePickerVisible]);
-  useEffect(() => {
-    if (!serviceTypePickerVisible) return;
-    getLeadSelectOptions('service_type').then(setServiceTypeOptions).catch(() => setServiceTypeOptions([]));
-  }, [serviceTypePickerVisible]);
-  useEffect(() => {
-    if (!sourcePickerVisible) return;
-    getLeadSelectOptions('source').then(setSourceOptions).catch(() => setSourceOptions([]));
-  }, [sourcePickerVisible]);
-
   useEffect(() => {
     setPage(1); setHasMore(true);
     loadPage(1, { showSpinner: true, append: false });
@@ -184,16 +125,48 @@ export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string)
     async function fetchLocations() {
       try {
         if (locationPickerVisible) {
+          setLocationLoading(true);
           const opts = await listLocations(200);
           if (!cancelled) setLocationOptions(opts || []);
         }
       } catch {
         if (!cancelled) setLocationOptions([]);
+      } finally {
+        if (!cancelled) setLocationLoading(false);
       }
     }
     fetchLocations();
     return () => { cancelled = true; };
   }, [locationPickerVisible]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function fetchTerr() {
+      try {
+        if (territoryPickerVisible) {
+          const opts = await listTerritories(200);
+          if (!cancelled) setTerritoryOptions(opts || []);
+        }
+      } catch {
+        if (!cancelled) setTerritoryOptions([]);
+      }
+    }
+    fetchTerr();
+    return () => { cancelled = true; };
+  }, [territoryPickerVisible]);
+
+  useEffect(() => {
+    if (!serviceTypePickerVisible) return;
+    getLeadSelectOptions('service_type').then(setServiceTypeOptions).catch(() => setServiceTypeOptions([]));
+  }, [serviceTypePickerVisible]);
+  useEffect(() => {
+    if (!requestTypePickerVisible) return;
+    getLeadSelectOptions('request_type').then(setRequestTypeOptions).catch(() => setRequestTypeOptions([]));
+  }, [requestTypePickerVisible]);
+  useEffect(() => {
+    if (!leadTypePickerVisible) return;
+    getLeadSelectOptions('lead_type').then(setLeadTypeOptions).catch(() => setLeadTypeOptions([]));
+  }, [leadTypePickerVisible]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -409,7 +382,7 @@ export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string)
                   </View>
                   {/* Building & Location */}
                   <Text style={styles.inputLabel}>Building & Location</Text>
-                  <Pressable accessibilityRole="button" onPress={() => { setLocationSearch(''); setLocationManualMode(false); setLocationManualText(''); setLocationPickerVisible(true); }} style={styles.selectBox}>
+                  <Pressable accessibilityRole="button" onPress={() => { setLocationSearch(''); setLocationPickerVisible(true); }} style={styles.selectBox}>
                     <Text style={styles.selectText}>{(locationOptions.find(o => o.name === form.location)?.label) || (form.location ? form.location : 'Select location')}</Text>
                     <Ionicons name="chevron-down" size={18} color="#6b7280" />
                   </Pressable>
@@ -428,8 +401,8 @@ export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string)
                           <Ionicons name="close" size={18} color="#6b7280" />
                         </Pressable>
                       </View>
-                      <View style={{ maxHeight: 260 }}>
-                        {!locationManualMode && locationOptions
+                      <View style={{ maxHeight: 220 }}>
+                        {locationOptions
                           .filter(o => !locationSearch || String(o.label || o.name).toLowerCase().includes(locationSearch.toLowerCase()))
                           .map((o) => (
                             <Pressable key={o.name} style={styles.selectOption} onPress={() => { setForm(prev => ({ ...(prev as any), location: o.name })); setLocationPickerVisible(false); }}>
@@ -437,77 +410,21 @@ export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string)
                               {form.location === o.name && <Ionicons name="checkmark" size={16} color="#111827" />}
                             </Pressable>
                           ))}
-                        {!locationManualMode && (
-                          <Pressable style={[styles.selectOption, { backgroundColor: '#fafafa' }]} onPress={() => { setLocationManualMode(true); setLocationManualText(form.location || ''); }}>
-                            <Text style={[styles.selectOptionText, { color: '#0b6dff', fontWeight: '700' }]}>Enter manually…</Text>
-                          </Pressable>
-                        )}
-                        {locationManualMode && (
-                          <View style={{ paddingHorizontal: 12, paddingVertical: 10 }}>
-                            <Text style={{ color: '#6b7280', marginBottom: 6 }}>Enter location name</Text>
-                            <TextInput
-                              placeholder="Type location"
-                              placeholderTextColor="#9ca3af"
-                              style={styles.input}
-                              value={locationManualText}
-                              onChangeText={setLocationManualText}
-                            />
-                            <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 10 }}>
-                              <Pressable style={[styles.modalBtn, styles.modalBtnSecondary]} onPress={() => { setLocationManualMode(false); }}>
-                                <Text style={styles.modalBtnTextSecondary}>Cancel</Text>
-                              </Pressable>
-                              <Pressable
-                                style={[styles.modalBtn, styles.modalBtnPrimary]}
-                                onPress={() => {
-                                  const name = (locationManualText || '').trim();
-                                  if (!name) return;
-                                  setForm(prev => ({ ...(prev as any), location: name }));
-                                  setLocationPickerVisible(false);
-                                  setLocationManualMode(false);
-                                }}
-                              >
-                                <Text style={styles.modalBtnText}>Save</Text>
-                              </Pressable>
-                            </View>
-                          </View>
-                        )}
                         {locationOptions.length === 0 && (
                           <View style={{ padding: 12, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                             {locationLoading ? <ActivityIndicator /> : null}
-                            <Text style={{ color: '#6b7280', marginRight: 10 }}>
-                              {locationLoading ? 'Loading locations...' : 'No locations found'}
-                            </Text>
-                            {!locationLoading && !locationManualMode && (
-                              <Pressable accessibilityRole="button" onPress={async () => { setLocationLoading(true); const opts = await listLocations(200).catch(() => [] as any[]); setLocationOptions((opts as any) || []); setLocationLoading(false); }}>
-                                <Text style={{ color: '#0b6dff', fontWeight: '700' }}>Retry</Text>
-                              </Pressable>
-                            )}
+                            <Text style={{ color: '#6b7280' }}>{locationLoading ? 'Loading locations...' : 'No locations found'}</Text>
                           </View>
                         )}
                       </View>
                     </View>
                   )}
-                  {/* Source */}
-                  <Text style={styles.inputLabel}>Source</Text>
-                  <Pressable accessibilityRole="button" onPress={() => setSourcePickerVisible(true)} style={styles.selectBox}>
-                    <Text style={styles.selectText}>{form.source || 'Select source'}</Text>
-                    <Ionicons name="chevron-down" size={18} color="#6b7280" />
-                  </Pressable>
-                  {sourcePickerVisible && (
-                    <View style={styles.dropdownPanel}>
-                      {(sourceOptions || []).map((opt) => (
-                        <Pressable key={opt} style={styles.selectOption} onPress={() => { setForm({ ...form, source: opt }); setSourcePickerVisible(false); }}>
-                          <Text style={styles.selectOptionText}>{opt}</Text>
-                          {form.source === opt && <Ionicons name="checkmark" size={16} color="#111827" />}
-                        </Pressable>
-                      ))}
-                      {(!sourceOptions || sourceOptions.length === 0) && (
-                        <View style={{ padding: 12 }}>
-                          <Text style={{ color: '#6b7280' }}>No options</Text>
-                        </View>
-                      )}
-                    </View>
-                  )}
+                  <LabeledInput
+                    label="Source"
+                    placeholder="Website / LinkedIn / Referral"
+                    value={form.source}
+                    onChangeText={(v: string) => setForm({ ...form, source: v })}
+                  />
                   <LabeledInput
                     label="Lead Owner"
                     placeholder="e.g. jane@company.com"
@@ -528,109 +445,24 @@ export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string)
                       ))}
                     </View>
                   )}
-                  {/* Territory */}
-                  <Text style={styles.inputLabel}>Territory</Text>
-                  <Pressable accessibilityRole="button" onPress={() => { setTerritorySearch(''); setTerritoryPickerVisible(true); }} style={styles.selectBox}>
-                    <Text style={styles.selectText}>{territoryOptions.find(o => o.name === form.territory)?.label || form.territory || 'Select territory'}</Text>
-                    <Ionicons name="chevron-down" size={18} color="#6b7280" />
-                  </Pressable>
-                  {territoryPickerVisible && (
-                    <View style={styles.dropdownPanel}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingTop: 10 }}>
-                        <Ionicons name="search" size={16} color="#6b7280" style={{ marginRight: 8 }} />
-                        <TextInput
-                          placeholder="Search territory..."
-                          placeholderTextColor="#9ca3af"
-                          style={[styles.searchInput, { flex: 1, paddingVertical: 6, borderWidth: 0 }]}
-                          value={territorySearch}
-                          onChangeText={setTerritorySearch}
-                        />
-                        <Pressable accessibilityRole="button" onPress={() => setTerritoryPickerVisible(false)}>
-                          <Ionicons name="close" size={18} color="#6b7280" />
-                        </Pressable>
-                      </View>
-                      <View style={{ maxHeight: 220 }}>
-                        {territoryOptions
-                          .filter(o => !territorySearch || String(o.label || o.name).toLowerCase().includes(territorySearch.toLowerCase()))
-                          .map((o) => (
-                            <Pressable key={o.name} style={styles.selectOption} onPress={() => { setForm(prev => ({ ...(prev as any), territory: o.name })); setTerritoryPickerVisible(false); }}>
-                              <Text style={styles.selectOptionText}>{o.label || o.name}</Text>
-                              {form.territory === o.name && <Ionicons name="checkmark" size={16} color="#111827" />}
-                            </Pressable>
-                          ))}
-                        {territoryOptions.length === 0 && (
-                          <View style={{ padding: 12 }}>
-                            <Text style={{ color: '#6b7280' }}>No territories found</Text>
-                          </View>
-                        )}
-                      </View>
-                    </View>
-                  )}
-                  {/* Lead Type */}
-                  <Text style={styles.inputLabel}>Lead Type</Text>
-                  <Pressable accessibilityRole="button" onPress={() => setLeadTypePickerVisible(true)} style={styles.selectBox}>
-                    <Text style={styles.selectText}>{(form as any).lead_type || 'Select'}</Text>
-                    <Ionicons name="chevron-down" size={18} color="#6b7280" />
-                  </Pressable>
-                  {leadTypePickerVisible && (
-                    <View style={styles.dropdownPanel}>
-                      {(leadTypeOptions || []).map((opt) => (
-                        <Pressable key={opt} style={styles.selectOption} onPress={() => { setForm(prev => ({ ...(prev as any), lead_type: opt })); setLeadTypePickerVisible(false); }}>
-                          <Text style={styles.selectOptionText}>{opt}</Text>
-                          {(form as any).lead_type === opt && <Ionicons name="checkmark" size={16} color="#111827" />}
-                        </Pressable>
-                      ))}
-                      {(!leadTypeOptions || leadTypeOptions.length === 0) && (
-                        <View style={{ padding: 12 }}>
-                          <Text style={{ color: '#6b7280' }}>No options</Text>
-                        </View>
-                      )}
-                    </View>
-                  )}
-
-                  {/* Request Type */}
-                  <Text style={styles.inputLabel}>Request Type</Text>
-                  <Pressable accessibilityRole="button" onPress={() => setRequestTypePickerVisible(true)} style={styles.selectBox}>
-                    <Text style={styles.selectText}>{(form as any).request_type || 'Select'}</Text>
-                    <Ionicons name="chevron-down" size={18} color="#6b7280" />
-                  </Pressable>
-                  {requestTypePickerVisible && (
-                    <View style={styles.dropdownPanel}>
-                      {(requestTypeOptions || []).map((opt) => (
-                        <Pressable key={opt} style={styles.selectOption} onPress={() => { setForm(prev => ({ ...(prev as any), request_type: opt })); setRequestTypePickerVisible(false); }}>
-                          <Text style={styles.selectOptionText}>{opt}</Text>
-                          {(form as any).request_type === opt && <Ionicons name="checkmark" size={16} color="#111827" />}
-                        </Pressable>
-                      ))}
-                      {(!requestTypeOptions || requestTypeOptions.length === 0) && (
-                        <View style={{ padding: 12 }}>
-                          <Text style={{ color: '#6b7280' }}>No options</Text>
-                        </View>
-                      )}
-                    </View>
-                  )}
-
-                  {/* Service Type */}
-                  <Text style={styles.inputLabel}>Service Type</Text>
-                  <Pressable accessibilityRole="button" onPress={() => setServiceTypePickerVisible(true)} style={styles.selectBox}>
-                    <Text style={styles.selectText}>{(form as any).service_type || 'Select'}</Text>
-                    <Ionicons name="chevron-down" size={18} color="#6b7280" />
-                  </Pressable>
-                  {serviceTypePickerVisible && (
-                    <View style={styles.dropdownPanel}>
-                      {(serviceTypeOptions || []).map((opt) => (
-                        <Pressable key={opt} style={styles.selectOption} onPress={() => { setForm(prev => ({ ...(prev as any), service_type: opt })); setServiceTypePickerVisible(false); }}>
-                          <Text style={styles.selectOptionText}>{opt}</Text>
-                          {(form as any).service_type === opt && <Ionicons name="checkmark" size={16} color="#111827" />}
-                        </Pressable>
-                      ))}
-                      {(!serviceTypeOptions || serviceTypeOptions.length === 0) && (
-                        <View style={{ padding: 12 }}>
-                          <Text style={{ color: '#6b7280' }}>No options</Text>
-                        </View>
-                      )}
-                    </View>
-                  )}
+                  <LabeledInput
+                    label="Lead Type"
+                    placeholder="e.g. Cold / Warm / Hot"
+                    value={(form as any).lead_type}
+                    onChangeText={(v: string) => setForm({ ...(form as any), lead_type: v })}
+                  />
+                  <LabeledInput
+                    label="Request Type"
+                    placeholder="e.g. Demo / Quote / Support"
+                    value={(form as any).request_type}
+                    onChangeText={(v: string) => setForm({ ...(form as any), request_type: v })}
+                  />
+                  <LabeledInput
+                    label="Service Type"
+                    placeholder="e.g. Installation / AMC"
+                    value={(form as any).service_type}
+                    onChangeText={(v: string) => setForm({ ...(form as any), service_type: v })}
+                  />
 
                   {/* Contact */}
                   <Text style={styles.sectionTitle}>Contact</Text>
@@ -956,3 +788,108 @@ const styles = StyleSheet.create({
   notesTitle: { fontSize: 12, fontWeight: '700', color: '#374151', marginBottom: 4 },
   notesText: { fontSize: 12, color: '#4b5563' },
 });
+                  {/* Territory */}
+                  <Text style={styles.inputLabel}>Territory</Text>
+                  <Pressable accessibilityRole="button" onPress={() => { setTerritorySearch(''); setTerritoryPickerVisible(true); }} style={styles.selectBox}>
+                    <Text style={styles.selectText}>{territoryOptions.find(o => o.name === form.territory)?.label || form.territory || 'Select territory'}</Text>
+                    <Ionicons name="chevron-down" size={18} color="#6b7280" />
+                  </Pressable>
+                  {territoryPickerVisible && (
+                    <View style={styles.dropdownPanel}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingTop: 10 }}>
+                        <Ionicons name="search" size={16} color="#6b7280" style={{ marginRight: 8 }} />
+                        <TextInput
+                          placeholder="Search territory..."
+                          placeholderTextColor="#9ca3af"
+                          style={[styles.searchInput, { flex: 1, paddingVertical: 6, borderWidth: 0 }]}
+                          value={territorySearch}
+                          onChangeText={setTerritorySearch}
+                        />
+                        <Pressable accessibilityRole="button" onPress={() => setTerritoryPickerVisible(false)}>
+                          <Ionicons name="close" size={18} color="#6b7280" />
+                        </Pressable>
+                      </View>
+                      <View style={{ maxHeight: 220 }}>
+                        {territoryOptions
+                          .filter(o => !territorySearch || String(o.label || o.name).toLowerCase().includes(territorySearch.toLowerCase()))
+                          .map((o) => (
+                            <Pressable key={o.name} style={styles.selectOption} onPress={() => { setForm(prev => ({ ...(prev as any), territory: o.name })); setTerritoryPickerVisible(false); }}>
+                              <Text style={styles.selectOptionText}>{o.label || o.name}</Text>
+                              {form.territory === o.name && <Ionicons name="checkmark" size={16} color="#111827" />}
+                            </Pressable>
+                          ))}
+                        {territoryOptions.length === 0 && (
+                          <View style={{ padding: 12 }}>
+                            <Text style={{ color: '#6b7280' }}>No territories found</Text>
+                          </View>
+                        )}
+                      </View>
+                    </View>
+                  )}
+
+                  {/* Lead Type */}
+                  <Text style={styles.inputLabel}>Lead Type</Text>
+                  <Pressable accessibilityRole="button" onPress={() => setLeadTypePickerVisible(true)} style={styles.selectBox}>
+                    <Text style={styles.selectText}>{(form as any).lead_type || 'Select'}</Text>
+                    <Ionicons name="chevron-down" size={18} color="#6b7280" />
+                  </Pressable>
+                  {leadTypePickerVisible && (
+                    <View style={styles.dropdownPanel}>
+                      {(leadTypeOptions || []).map((opt) => (
+                        <Pressable key={opt} style={styles.selectOption} onPress={() => { setForm(prev => ({ ...(prev as any), lead_type: opt })); setLeadTypePickerVisible(false); }}>
+                          <Text style={styles.selectOptionText}>{opt}</Text>
+                          {(form as any).lead_type === opt && <Ionicons name="checkmark" size={16} color="#111827" />}
+                        </Pressable>
+                      ))}
+                      {(!leadTypeOptions || leadTypeOptions.length === 0) && (
+                        <View style={{ padding: 12 }}>
+                          <Text style={{ color: '#6b7280' }}>No options</Text>
+                        </View>
+                      )}
+                    </View>
+                  )}
+
+                  {/* Request Type */}
+                  <Text style={styles.inputLabel}>Request Type</Text>
+                  <Pressable accessibilityRole="button" onPress={() => setRequestTypePickerVisible(true)} style={styles.selectBox}>
+                    <Text style={styles.selectText}>{(form as any).request_type || 'Select'}</Text>
+                    <Ionicons name="chevron-down" size={18} color="#6b7280" />
+                  </Pressable>
+                  {requestTypePickerVisible && (
+                    <View style={styles.dropdownPanel}>
+                      {(requestTypeOptions || []).map((opt) => (
+                        <Pressable key={opt} style={styles.selectOption} onPress={() => { setForm(prev => ({ ...(prev as any), request_type: opt })); setRequestTypePickerVisible(false); }}>
+                          <Text style={styles.selectOptionText}>{opt}</Text>
+                          {(form as any).request_type === opt && <Ionicons name="checkmark" size={16} color="#111827" />}
+                        </Pressable>
+                      ))}
+                      {(!requestTypeOptions || requestTypeOptions.length === 0) && (
+                        <View style={{ padding: 12 }}>
+                          <Text style={{ color: '#6b7280' }}>No options</Text>
+                        </View>
+                      )}
+                    </View>
+                  )}
+
+                  {/* Service Type */}
+                  <Text style={styles.inputLabel}>Service Type</Text>
+                  <Pressable accessibilityRole="button" onPress={() => setServiceTypePickerVisible(true)} style={styles.selectBox}>
+                    <Text style={styles.selectText}>{(form as any).service_type || 'Select'}</Text>
+                    <Ionicons name="chevron-down" size={18} color="#6b7280" />
+                  </Pressable>
+                  {serviceTypePickerVisible && (
+                    <View style={styles.dropdownPanel}>
+                      {(serviceTypeOptions || []).map((opt) => (
+                        <Pressable key={opt} style={styles.selectOption} onPress={() => { setForm(prev => ({ ...(prev as any), service_type: opt })); setServiceTypePickerVisible(false); }}>
+                          <Text style={styles.selectOptionText}>{opt}</Text>
+                          {(form as any).service_type === opt && <Ionicons name="checkmark" size={16} color="#111827" />}
+                        </Pressable>
+                      ))}
+                      {(!serviceTypeOptions || serviceTypeOptions.length === 0) && (
+                        <View style={{ padding: 12 }}>
+                          <Text style={{ color: '#6b7280' }}>No options</Text>
+                        </View>
+                      )}
+                    </View>
+                  )}
+

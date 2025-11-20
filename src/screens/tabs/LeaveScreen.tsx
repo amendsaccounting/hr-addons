@@ -383,7 +383,7 @@ const styles = StyleSheet.create({
   badgeText: { fontSize: 11, fontWeight: '700', color: '#111827' },
 
   reqDateRow: { flexDirection: 'row', alignItems: 'center', marginTop: 12 },
-  reqDateText: { color: '#6b7280', fontSize: 12 },
+  reqDateText: { color: '#6b7280', fontSize: 12,marginHorizontal:5 },
   arrowIcon: { marginHorizontal: 6 },
   applyWrapper: {
     marginHorizontal: 12,
