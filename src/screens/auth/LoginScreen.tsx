@@ -61,7 +61,6 @@ export default function LoginScreen({ onSignedIn, onRegister }: Props) {
       ) : (
         <View style={[StyleSheet.absoluteFillObject, { backgroundColor: '#0c0f1e' }]} />
       )}
-
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={[styles.header, { paddingTop: insets.top + 28 }]}>
           <View style={styles.logoBox}>
