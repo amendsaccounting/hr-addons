@@ -35,7 +35,7 @@ export default function LoginScreen({ onSignedIn, onRegister }: Props) {
     console.log("user===>",user);
     
     if (!user) {
-      Alert.alert('Not Found', 'Email does not exist.');
+      setEmailError('Email does not exist.');
       return;
     }
     await AsyncStorage.setItem('userEmail', user.email);

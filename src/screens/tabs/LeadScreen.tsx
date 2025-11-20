@@ -104,6 +104,25 @@ export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string)
     }
   }, [query, status]);
 
+  // Prefetch Building & Location options when the Add Lead modal opens
+  useEffect(() => {
+    let cancelled = false;
+    async function run() {
+      if (!addVisible) return;
+      try {
+        setLocationLoading(true);
+        const opts = await listLocations(200);
+        if (!cancelled) setLocationOptions(opts || []);
+      } catch {
+        if (!cancelled) setLocationOptions([]);
+      } finally {
+        if (!cancelled) setLocationLoading(false);
+      }
+    }
+    run();
+    return () => { cancelled = true; };
+  }, [addVisible]);
+
   // Fetch locations when dropdown opens
   useEffect(() => {
     let cancelled = false;
