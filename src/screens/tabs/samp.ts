@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, Pressable, Alert, Modal, TextInput, StatusBar, SectionList, Platform, Animated } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { todayStart, adjustFromOnPick, adjustToOnPick, validateRange } from '../../utils/date';
@@ -57,8 +57,8 @@ const RequestItem: React.FC<{ type: string; desc: string; from: string; to: stri
 ));
 
 const SkeletonBalanceCard: React.FC = React.memo(() => {
-  const pulse = React.useRef(new Animated.Value(0.3)).current;
-  React.useEffect(() => {
+  const pulse = useRef(new Animated.Value(0.3)).current;
+  useEffect(() => {
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(pulse, { toValue: 1, duration: 700, useNativeDriver: true }),
@@ -82,8 +82,8 @@ const SkeletonBalanceCard: React.FC = React.memo(() => {
 
 // Skeleton for Leave Requests while history loads
 const SkeletonRequestCard: React.FC = React.memo(() => {
-  const pulse = React.useRef(new Animated.Value(0.3)).current;
-  React.useEffect(() => {
+  const pulse = useRef(new Animated.Value(0.3)).current;
+  useEffect(() => {
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(pulse, { toValue: 1, duration: 700, useNativeDriver: true }),
@@ -112,7 +112,7 @@ export default function LeaveScreen() {
 
   const [employeeId, setEmployeeId] = React.useState<string | null>(null);
   const [allocations, setAllocations] = React.useState<LeaveAllocation[]>([]);
-  const [loadingAlloc, setLoadingAlloc] = React.useState(false);
+  const [loadingAlloc, setLoadingAlloc] = useState(false);
   const [usedByType, setUsedByType] = React.useState<Record<string, number>>({});
   const leaveTypes = React.useMemo(
     () => Array.from(new Set(allocations.map(a => a.leave_type))).filter(Boolean),
@@ -121,17 +121,17 @@ export default function LeaveScreen() {
 
   const [requests, setRequests] = React.useState<Array<{ id: string; type: string; desc: string; from: string; to: string; days: number; status: string }>>([]);
 
-  const [showApplyModal, setShowApplyModal] = React.useState(false);
+  const [showApplyModal, setShowApplyModal] = useState(false);
   const [leaveType, setLeaveType] = React.useState<string>('');
   const [fromDate, setFromDate] = React.useState<string>('');
   const [toDate, setToDate] = React.useState<string>('');
   const [reason, setReason] = React.useState<string>('');
-  const [submitting, setSubmitting] = React.useState(false);
-  const [showFromPicker, setShowFromPicker] = React.useState(false);
-  const [showToPicker, setShowToPicker] = React.useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [showFromPicker, setShowFromPicker] = useState(false);
+  const [showToPicker, setShowToPicker] = useState(false);
   const today = React.useMemo(() => todayStart(), []);
 
-  React.useEffect(() => {
+  useEffect(() => {
     let mounted = true;
     (async () => {
       try {
@@ -142,7 +142,7 @@ export default function LeaveScreen() {
     return () => { mounted = false; };
   }, []);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (!employeeId) return;
     let mounted = true;
     (async () => {
@@ -505,4 +505,5 @@ const styles = StyleSheet.create({
   statusPending: { backgroundColor: '#f97316' },
   statusRejected: { backgroundColor: '#ef4444' },
 });
+
 

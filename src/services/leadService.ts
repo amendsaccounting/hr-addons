@@ -37,6 +37,16 @@ function pickEnv(...keys: string[]): string {
 }
 
 const BASE_URL = (pickEnv('ERP_URL_RESOURCE', 'ERP_URL') || '').replace(/\/$/, '');
+// Derive method base: prefer replacing /api/resource with /api/method; else append appropriately
+function getMethodBase(resourceBase: string): string {
+  if (!resourceBase) return '/api/method';
+  const replaced = resourceBase.replace(/\/api\/resource\/?$/i, '/api/method');
+  if (replaced !== resourceBase) return replaced;
+  // If base already ends with /api, append /method; else append /api/method
+  if (/\/api\/?$/i.test(resourceBase)) return `${resourceBase.replace(/\/$/, '')}/method`;
+  return `${resourceBase}/api/method`;
+}
+const METHOD_BASE = getMethodBase(BASE_URL);
 const API_KEY = pickEnv('ERP_APIKEY', 'ERP_API_KEY');
 const API_SECRET = pickEnv('ERP_SECRET', 'ERP_API_SECRET');
 // Optional defaults for location
@@ -73,7 +83,7 @@ function buildFilters(opts: ListOptions) {
     const q = `%${opts.search}%`;
     if (opts.search.includes('@')) filters.push(['email_id', 'like', q]);
     else if (/\d/.test(opts.search)) filters.push(['mobile_no', 'like', q]);
-    else filters.push(['lead_name', 'like', q]);
+    else filters.push(['company_name', 'like', q]);
   }
   return filters;
 }
@@ -93,6 +103,22 @@ export async function listLeads(opts: ListOptions = {}): Promise<Lead[]> {
   const data = (json as any)?.data;
   if (!Array.isArray(data)) return [];
   return data as Lead[];
+}
+
+// Return total count for current filters (matches listLeads filters)
+export async function countLeads(opts: ListOptions = {}): Promise<number> {
+  const headers = getHeaders();
+  const filters = buildFilters(opts);
+  const url = `${METHOD_BASE}/frappe.client.get_count?doctype=${enc('Lead')}&filters=${enc(filters)}`;
+  try {
+    const res = await fetch(url, { headers });
+    const json = await res.json().catch(() => ({} as any));
+    const count = (json as any)?.message ?? (json as any)?.data ?? 0;
+    const n = Number(count);
+    return Number.isFinite(n) ? n : 0;
+  } catch {
+    return 0;
+  }
 }
 
 // List doc names for a given doctype (used for Link fields pickers)

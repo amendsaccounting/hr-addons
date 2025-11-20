@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Pressable, Linking, Platform, Alert, SectionList, Modal, TextInput, KeyboardAvoidingView, TouchableWithoutFeedback, Keyboard } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import LinearGradient from 'react-native-linear-gradient';
@@ -9,11 +9,11 @@ import { getLead, updateLead, prepareLeadPayload, type Lead } from '../../servic
 
 export default function LeadDetailScreen({ name, onBack }: { name: string; onBack?: () => void }) {
   const insets = useSafeAreaInsets();
-  const [loading, setLoading] = React.useState(true);
-  const [lead, setLead] = React.useState<Lead | null>(null);
-  const [editVisible, setEditVisible] = React.useState(false);
-  const [saving, setSaving] = React.useState(false);
-  const [form, setForm] = React.useState({
+  const [loading, setLoading] = useState(true);
+  const [lead, setLead] = useState<Lead | null>(null);
+  const [editVisible, setEditVisible] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
     lead_name: '',
     company_name: '',
     email_id: '',
@@ -28,7 +28,7 @@ export default function LeadDetailScreen({ name, onBack }: { name: string; onBac
   console.log("lead=====>",lead);
   
 
-  React.useEffect(() => {
+  useEffect(() => {
     let mounted = true;
     (async () => {
       try {

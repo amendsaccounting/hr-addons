@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -108,12 +108,12 @@ const LogoutButton = React.memo(function LogoutButton({ onPress }: { onPress: ()
 export default function ProfileScreen() {
   (Ionicons as any)?.loadFont?.();
 
-  const [profile, setProfile] = React.useState<ProfileData>({});
+  const [profile, setProfile] = useState<ProfileData>({});
 
   console.log("profile====>",profile);
   
 
-  React.useEffect(() => {
+  useEffect(() => {
     (async () => {
       try {
         const raw = await AsyncStorage.getItem('employeeData');

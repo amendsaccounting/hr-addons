@@ -5,7 +5,7 @@ import DatePicker from 'react-native-date-picker';
 import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { listAllLeads, deleteLead, createLeadFromModal, listLocations, type Lead, type LocationOption } from '../../services/leadService';
+import { listAllLeads, listLeads, countLeads, deleteLead, createLeadFromModal, listLocations, type Lead, type LocationOption } from '../../services/leadService';
 
 export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string) => void }) {
   (Ionicons as any)?.loadFont?.();
@@ -18,8 +18,13 @@ export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string)
   const [status, setStatus] = useState<string>('All');
   const searchDebounceRef = useRef<any>(null);
   const requestIdRef = useRef(0);
+  const PAGE_SIZE = 15;
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [addVisible, setAddVisible] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [totalCount, setTotalCount] = useState(0);
   const [form, setForm] = useState({
     // Lead Details
     date: '',
@@ -49,6 +54,13 @@ export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string)
   const [locationOptions, setLocationOptions] = useState<LocationOption[]>([]);
   const [datePickerOpen, setDatePickerOpen] = useState(false);
 
+  const refreshCount = useCallback(async () => {
+    try {
+      const c = await countLeads({ search: query || undefined, status: status === 'All' ? undefined : status });
+      setTotalCount(Number(c) || 0);
+    } catch { setTotalCount(0); }
+  }, [query, status]);
+
   const formatDate = (d: Date) => {
     const y = d.getFullYear();
     const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -61,12 +73,16 @@ export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string)
 
   const statusChips = useMemo(() => ['All', 'Lead', 'Open', 'Replied', 'Opportunity', 'Quotation', 'Lost Quotation', 'Interested', 'Converted', 'Do Not Contact'], []);
 
-  const load = useCallback(async (opts?: { showSpinner?: boolean }) => {
+  const loadPage = useCallback(async (pageToLoad: number, opts?: { append?: boolean; showSpinner?: boolean }) => {
     const reqId = ++requestIdRef.current;
     if (opts?.showSpinner) setLoading(true);
     try {
-      const rows = await listAllLeads({ search: query || undefined, status: status === 'All' ? undefined : status, pageSize: 200, hardCap: 20000 });
-      if (requestIdRef.current === reqId) setLeads(rows);
+      const rows = await listLeads({ search: query || undefined, status: status === 'All' ? undefined : status, page: pageToLoad, limit: PAGE_SIZE });
+      if (requestIdRef.current !== reqId) return; // ignore stale
+      setHasMore((rows?.length || 0) === PAGE_SIZE);
+      setPage(pageToLoad);
+      if (opts?.append) setLeads((prev) => [...prev, ...(rows || [])]);
+      else setLeads(rows || []);
     } catch (e: any) {
       if (requestIdRef.current === reqId) Alert.alert('Leads', e?.message || 'Failed to load leads');
     } finally {
@@ -75,7 +91,9 @@ export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string)
   }, [query, status]);
 
   useEffect(() => {
-    load({ showSpinner: true });
+    setPage(1); setHasMore(true);
+    loadPage(1, { showSpinner: true, append: false });
+    refreshCount();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status]);
 
@@ -83,10 +101,12 @@ export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string)
   useEffect(() => {
     if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
     searchDebounceRef.current = setTimeout(() => {
-      load({ showSpinner: true });
+      setPage(1); setHasMore(true);
+      loadPage(1, { showSpinner: true, append: false });
+      refreshCount();
     }, 400);
     return () => clearTimeout(searchDebounceRef.current);
-  }, [query, load]);
+  }, [query, loadPage, refreshCount]);
 
   // Load Building & Location options when the modal opens
   useEffect(() => {
@@ -112,9 +132,11 @@ export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string)
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await load();
+    setPage(1); setHasMore(true);
+    await loadPage(1, { append: false, showSpinner: true });
+    refreshCount();
     setRefreshing(false);
-  }, [load]);
+  }, [loadPage, refreshCount]);
 
   const onDelete = useCallback(async (name: string) => {
     Alert.alert('Delete Lead', 'Are you sure you want to delete this lead?', [
@@ -122,20 +144,20 @@ export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string)
       { text: 'Delete', style: 'destructive', onPress: async () => {
         try {
           const ok = await deleteLead(name);
-          if (ok) await load();
+          if (ok) { setPage(1); setHasMore(true); await loadPage(1, { showSpinner: true, append: false }); refreshCount(); }
           else Alert.alert('Leads', 'Unable to delete lead');
         } catch {
           Alert.alert('Leads', 'Unable to delete lead');
         }
       } },
     ]);
-  }, [load]);
+  }, [loadPage, refreshCount]);
 
   const metrics = useMemo(() => ([
-    { key: 'total', label: 'Total Leads', value: String(leads.length) },
+    { key: 'total', label: 'Total Leads', value: String(totalCount) },
     { key: 'pipeline', label: 'Pipeline Value', value: '-' },
     { key: 'won', label: 'Won', value: '-' },
-  ]), [leads.length]);
+  ]), [totalCount]);
 
   return (
     <View style={styles.screen}>
@@ -168,7 +190,7 @@ export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string)
                 style={styles.searchInput}
                 value={query}
                 onChangeText={setQuery}
-                onSubmitEditing={() => load({ showSpinner: true })}
+                onSubmitEditing={() => { setPage(1); setHasMore(true); loadPage(1, { showSpinner: true, append: false }); }}
                 returnKeyType="search"
               />
               {loading ? (
@@ -208,6 +230,23 @@ export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string)
             keyExtractor={(item) => item.name}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
             contentContainerStyle={styles.container}
+            onEndReachedThreshold={0.6}
+            onEndReached={async () => {
+              if (loading || loadingMore || !hasMore) return;
+              setLoadingMore(true);
+              try { await loadPage(page + 1, { append: true }); }
+              finally { setLoadingMore(false); }
+            }}
+            ListFooterComponent={loadingMore ? (
+              <View style={{ paddingVertical: 16 }}>
+                <ActivityIndicator />
+              </View>
+            ) : null}
+            initialNumToRender={15}
+            windowSize={10}
+            maxToRenderPerBatch={10}
+            updateCellsBatchingPeriod={50}
+            removeClippedSubviews
             renderItem={({ item }) => (
               <Pressable style={styles.leadCard} onPress={() => onOpenLead && onOpenLead(item.name)}>
                 <View style={styles.leadTop}>
@@ -511,7 +550,8 @@ export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string)
                           notes: '',
                         });
                         setAttachments([]);
-                        await load({ showSpinner: true });
+                        setPage(1); setHasMore(true);
+                        await loadPage(1, { showSpinner: true, append: false });
                       } else {
                         try { console.log('AddLead failed to create'); } catch {}
                         Alert.alert('Add Lead', 'Unable to create lead');

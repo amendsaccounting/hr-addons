@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -70,7 +70,7 @@ export default function LeaveScreen() {
   }, [loadingRequests]);
 
   // Load logged-in employee ID (fast local lookup similar to Attendance screen)
-  React.useEffect(() => {
+  useEffect(() => {
     (async () => {
       try {
         const [id, raw] = await AsyncStorage
@@ -99,7 +99,7 @@ export default function LeaveScreen() {
   }, []);
 
   // Fetch leave balances from ERP using Leave Allocation and usage
-  React.useEffect(() => {
+  useEffect(() => {
     if (!employeeId) return;
     let mounted = true;
     (async () => {
@@ -124,7 +124,7 @@ export default function LeaveScreen() {
   }, [employeeId, refreshKey]);
 
   // Fetch leave applications for requests list (latest first)
-  React.useEffect(() => {
+  useEffect(() => {
     if (!employeeId) return;
     let mounted = true;
     (async () => {
@@ -189,7 +189,7 @@ export default function LeaveScreen() {
 const BalanceCard = React.memo(function BalanceCard({ label, valueText, progress }: { label: string; valueText: string; progress: number }) {
   const clamped = Math.max(0, Math.min(1, progress || 0));
   const width = React.useRef(new Animated.Value(0)).current;
-  React.useEffect(() => {
+  useEffect(() => {
     Animated.timing(width, { toValue: clamped, duration: 450, useNativeDriver: false }).start();
   }, [clamped, width]);
 
@@ -501,7 +501,7 @@ const EmptyRequests = React.memo(() => (
 const BottomApplyModal = React.memo(function BottomApplyModal({ visible, onClose, types, employeeId, onApplied }: { visible: boolean; onClose: () => void; types?: string[]; employeeId?: string | null; onApplied?: () => void }) {
   const insets = useSafeAreaInsets();
   const slide = React.useRef(new Animated.Value(0)).current;
-  React.useEffect(() => {
+  useEffect(() => {
     Animated.timing(slide, { toValue: visible ? 1 : 0, duration: 250, useNativeDriver: true }).start();
   }, [visible, slide]);
   const translateY = slide.interpolate({ inputRange: [0, 1], outputRange: [400, 0] });
