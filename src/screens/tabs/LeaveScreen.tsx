@@ -14,6 +14,7 @@ import {
   Linking,
   KeyboardAvoidingView,
   ScrollView,
+  Image,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -165,9 +166,9 @@ export default function LeaveScreen() {
         contentContainerStyle={styles.contentContainer}
         data={loadingRequests ? Array.from({ length: 6 }, (_, i) => ({ id: `s-${i}`, title: '', subtitle: '', status: '', start: '', end: '' })) as any : requests}
         keyExtractor={keyExtractor}
-        ListHeaderComponent={<ContentHeader balances={balances} onApply={openApply} loading={loadingBalances} />}
+        ListHeaderComponent={<ContentHeader balances={balances} onApply={openApply} loading={loadingBalances} isEmptyRequests={!loadingRequests && (requests?.length || 0) === 0} />}
         renderItem={renderItem}
-        ListEmptyComponent={loadingRequests ? null : <EmptyRequests />}
+        ListEmptyComponent={null}
         ListFooterComponent={ListFooter}
         showsVerticalScrollIndicator={false}
         removeClippedSubviews={false}
@@ -208,7 +209,7 @@ const BalanceCard = React.memo(function BalanceCard({ label, valueText, progress
   );
 });
 
-function ContentHeader({ balances, onApply, loading }: { balances: LeaveBalanceItem[]; onApply?: () => void; loading?: boolean }) {
+function ContentHeader({ balances, onApply, loading, isEmptyRequests }: { balances: LeaveBalanceItem[]; onApply?: () => void; loading?: boolean; isEmptyRequests?: boolean }) {
   return (
     <View>
       <Text style={styles.sectionTitle}>Leave Balance</Text>
@@ -268,6 +269,15 @@ function ContentHeader({ balances, onApply, loading }: { balances: LeaveBalanceI
       </View>
 
       <Text style={[styles.sectionTitle, { marginTop: 8 }]}>Leave Requests</Text>
+      {isEmptyRequests ? (
+        <View style={styles.emptyCenter}>
+          <View style={styles.emptyImageBox}>
+            <Ionicons name="calendar-outline" size={42} color="#9ca3af" />
+          </View>
+          <Text style={styles.emptyTitleCenter}>No leave requests yet</Text>
+          <Text style={styles.emptySubtitleCenter}>Tap "Apply now" to submit your first request.</Text>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -418,6 +428,11 @@ const styles = StyleSheet.create({
   emptyRow: { flexDirection: 'row', alignItems: 'center' },
   emptyTitle: { marginLeft: 8, color: '#111827', fontWeight: '700' },
   emptySubtitle: { color: '#6b7280', fontSize: 12, marginTop: 8 },
+  emptyMedia: { alignItems: 'center', marginBottom: 10 },
+  emptyImageBox: { width: 120, height: 90, borderRadius: 12, backgroundColor: '#f3f4f6', alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
+  emptyCenter: { alignItems: 'center', justifyContent: 'center', paddingVertical: 24 },
+  emptyTitleCenter: { color: '#111827', fontWeight: '700', marginTop: 6, textAlign: 'center' },
+  emptySubtitleCenter: { color: '#6b7280', fontSize: 12, marginTop: 6, textAlign: 'center' },
   // Modal / sheet styles
   modalRoot: { ...StyleSheet.absoluteFillObject, justifyContent: 'flex-end' },
   modalBackdrop: { backgroundColor: 'transparent' },
@@ -488,12 +503,12 @@ const styles = StyleSheet.create({
 const ListFooter = React.memo(() => <View style={styles.listFooter} />);
 
 const EmptyRequests = React.memo(() => (
-  <View style={[styles.card, styles.emptyCard]}> 
-    <View style={styles.emptyRow}>
-      <Ionicons name="mail-open-outline" size={18} color="#6b7280" />
-      <Text style={styles.emptyTitle}>No leave requests yet</Text>
+  <View style={styles.emptyCenter}> 
+    <View style={styles.emptyImageBox}>
+      <Ionicons name="calendar-outline" size={42} color="#9ca3af" />
     </View>
-    <Text style={styles.emptySubtitle}>Tap "Apply now" to submit your first request.</Text>
+    <Text style={styles.emptyTitleCenter}>No leave requests yet</Text>
+    <Text style={styles.emptySubtitleCenter}>Tap "Apply now" to submit your first request.</Text>
   </View>
 ));
 
