@@ -49,6 +49,7 @@ export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string,
     associate_details: '',
   });
   const [attachments, setAttachments] = useState<Array<{ uri: string; name?: string; type?: string }>>([]);
+  const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [statusPickerVisible, setStatusPickerVisible] = useState(false);
   const [locationPickerVisible, setLocationPickerVisible] = useState(false);
   const [locationOptions, setLocationOptions] = useState<LocationOption[]>([]);
@@ -62,6 +63,10 @@ export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string,
   const [associatePickerVisible, setAssociatePickerVisible] = useState(false);
   const [associateOptions, setAssociateOptions] = useState<LocationOption[]>([]);
   const [associateSearch, setAssociateSearch] = useState('');
+  const [associateManualMode, setAssociateManualMode] = useState(false);
+  const [associateManualText, setAssociateManualText] = useState('');
+  // Shared manual-entry controller for multiple pickers (reduces many useStates)
+  const [manualEntry, setManualEntry] = useState<{ [key: string]: { mode: boolean; text: string } }>({});
   const [serviceTypePickerVisible, setServiceTypePickerVisible] = useState(false);
   const [serviceTypeOptions, setServiceTypeOptions] = useState<string[]>([]);
   const [requestTypePickerVisible, setRequestTypePickerVisible] = useState(false);
@@ -435,39 +440,44 @@ export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string,
                   {/* Lead Details */}
                   <Text style={styles.sectionTitle}>Lead Details</Text>
                   <Text style={styles.inputLabel}>Date</Text>
-                  <Pressable accessibilityRole="button" onPress={() => setDatePickerOpen(true)} style={styles.selectBox}>
+                  <Pressable accessibilityRole="button" onPress={() => setDatePickerOpen(true)} style={[styles.selectBox, !!errors.date && styles.inputError]}>
                     <Text style={styles.selectText}>{(form as any).date || 'Select date'}</Text>
                     <Ionicons name="calendar-outline" size={18} color="#6b7280" />
                   </Pressable>
+                  {!!errors.date && <Text style={styles.errorText}>{errors.date}</Text>}
                   <LabeledInput
                     label="Name"
                     placeholder="e.g. John Smith"
                     value={form.lead_name}
-                    onChangeText={(v: string) => setForm({ ...form, lead_name: v })}
+                    onChangeText={(v: string) => { setForm({ ...form, lead_name: v }); if (v) setErrors(prev => ({ ...prev, lead_name: '' })); }}
+                    style={!!errors.lead_name ? styles.inputError : undefined}
                   />
+                  {!!errors.lead_name && <Text style={styles.errorText}>{errors.lead_name}</Text>}
                   <Text style={styles.inputLabel}>Gender</Text>
                   <View style={styles.toggleRow}>
                     <Pressable
                       accessibilityRole="button"
-                      onPress={() => setForm({ ...(form as any), gender: 'Male' })}
+                      onPress={() => { setForm({ ...(form as any), gender: 'Male' }); setErrors(prev => ({ ...prev, gender: '' })); }}
                       style={[styles.toggleBtn, (form as any).gender === 'Male' && styles.toggleBtnActive]}
                     >
                       <Text style={[styles.toggleBtnText, (form as any).gender === 'Male' && styles.toggleBtnTextActive]}>Male</Text>
                     </Pressable>
                     <Pressable
                       accessibilityRole="button"
-                      onPress={() => setForm({ ...(form as any), gender: 'Female' })}
+                      onPress={() => { setForm({ ...(form as any), gender: 'Female' }); setErrors(prev => ({ ...prev, gender: '' })); }}
                       style={[styles.toggleBtn, (form as any).gender === 'Female' && styles.toggleBtnActive]}
                     >
                       <Text style={[styles.toggleBtnText, (form as any).gender === 'Female' && styles.toggleBtnTextActive]}>Female</Text>
                     </Pressable>
                   </View>
+                  {!!errors.gender && <Text style={styles.errorText}>{errors.gender}</Text>}
                   {/* Building & Location */}
                   <Text style={styles.inputLabel}>Building & Location</Text>
-                  <Pressable accessibilityRole="button" onPress={() => { setLocationSearch(''); setLocationManualMode(false); setLocationManualText(''); setLocationPickerVisible(true); }} style={styles.selectBox}>
+                  <Pressable accessibilityRole="button" onPress={() => { setLocationSearch(''); setLocationManualMode(false); setLocationManualText(''); setLocationPickerVisible(true); }} style={[styles.selectBox, !!errors.location && styles.inputError]}>
                     <Text style={styles.selectText}>{(locationOptions.find(o => o.name === form.location)?.label) || (form.location ? form.location : 'Select location')}</Text>
                     <Ionicons name="chevron-down" size={18} color="#6b7280" />
                   </Pressable>
+                  {!!errors.location && <Text style={styles.errorText}>{errors.location}</Text>}
                   {locationPickerVisible && (
                     <View style={styles.dropdownPanel}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingTop: 10 }}>
@@ -487,7 +497,7 @@ export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string,
                         {!locationManualMode && locationOptions
                           .filter(o => !locationSearch || String(o.label || o.name).toLowerCase().includes(locationSearch.toLowerCase()))
                           .map((o) => (
-                            <Pressable key={o.name} style={styles.selectOption} onPress={() => { setForm(prev => ({ ...(prev as any), location: o.name })); setLocationPickerVisible(false); }}>
+                            <Pressable key={o.name} style={styles.selectOption} onPress={() => { setForm(prev => ({ ...(prev as any), location: o.name })); setErrors(prev => ({ ...prev, location: '' })); setLocationPickerVisible(false); }}>
                               <Text style={styles.selectOptionText}>{o.label || o.name}</Text>
                               {form.location === o.name && <Ionicons name="checkmark" size={16} color="#111827" />}
                             </Pressable>
@@ -517,6 +527,7 @@ export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string,
                                   const name = (locationManualText || '').trim();
                                   if (!name) return;
                                   setForm(prev => ({ ...(prev as any), location: name }));
+                                  setErrors(prev => ({ ...prev, location: '' }));
                                   setLocationPickerVisible(false);
                                   setLocationManualMode(false);
                                 }}
@@ -544,18 +555,52 @@ export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string,
                   )}
                   {/* Source */}
                   <Text style={styles.inputLabel}>Source</Text>
-                  <Pressable accessibilityRole="button" onPress={() => setSourcePickerVisible(true)} style={styles.selectBox}>
+                  <Pressable accessibilityRole="button" onPress={() => { setManualEntry(p => ({ ...p, source: { mode: false, text: '' } })); setSourcePickerVisible(true); }} style={[styles.selectBox, !!errors.source && styles.inputError]}>
                     <Text style={styles.selectText}>{form.source || 'Select source'}</Text>
                     <Ionicons name="chevron-down" size={18} color="#6b7280" />
                   </Pressable>
+                  {!!errors.source && <Text style={styles.errorText}>{errors.source}</Text>}
                   {sourcePickerVisible && (
                     <View style={styles.dropdownPanel}>
                       {(sourceOptions || []).map((opt) => (
-                        <Pressable key={opt} style={styles.selectOption} onPress={() => { setForm({ ...form, source: opt }); setSourcePickerVisible(false); }}>
+                        <Pressable key={opt} style={styles.selectOption} onPress={() => { setForm({ ...form, source: opt }); setErrors(prev => ({ ...prev, source: '' })); setSourcePickerVisible(false); }}>
                           <Text style={styles.selectOptionText}>{opt}</Text>
                           {form.source === opt && <Ionicons name="checkmark" size={16} color="#111827" />}
                         </Pressable>
                       ))}
+                      <Pressable style={[styles.selectOption, { backgroundColor: '#fafafa' }]} onPress={() => setManualEntry(p => ({ ...p, source: { mode: true, text: form.source || '' } }))}>
+                        <Text style={[styles.selectOptionText, { color: '#0b6dff', fontWeight: '700' }]}>Enter manually…</Text>
+                      </Pressable>
+                      {manualEntry.source?.mode && (
+                        <View style={{ paddingHorizontal: 12, paddingVertical: 10 }}>
+                          <Text style={{ color: '#6b7280', marginBottom: 6 }}>Enter source</Text>
+                          <TextInput
+                            placeholder="Type source"
+                            placeholderTextColor="#9ca3af"
+                            style={styles.input}
+                            value={manualEntry.source?.text || ''}
+                            onChangeText={(t) => setManualEntry(p => ({ ...p, source: { mode: true, text: t } }))}
+                          />
+                          <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 10 }}>
+                            <Pressable style={[styles.modalBtn, styles.modalBtnSecondary]} onPress={() => setManualEntry(p => ({ ...p, source: { mode: false, text: '' } }))}>
+                              <Text style={styles.modalBtnTextSecondary}>Cancel</Text>
+                            </Pressable>
+                            <Pressable
+                              style={[styles.modalBtn, styles.modalBtnPrimary]}
+                              onPress={() => {
+                                const v = (manualEntry.source?.text || '').trim();
+                                if (!v) return;
+                                setForm(prev => ({ ...(prev as any), source: v }));
+                                setErrors(prev => ({ ...prev, source: '' }));
+                                setSourcePickerVisible(false);
+                                setManualEntry(p => ({ ...p, source: { mode: false, text: '' } }));
+                              }}
+                            >
+                              <Text style={styles.modalBtnText}>Save</Text>
+                            </Pressable>
+                          </View>
+                        </View>
+                      )}
                       {(!sourceOptions || sourceOptions.length === 0) && (
                         <View style={{ padding: 12 }}>
                           <Text style={{ color: '#6b7280' }}>No options</Text>
@@ -567,17 +612,20 @@ export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string,
                     label="Lead Owner"
                     placeholder="e.g. jane@company.com"
                     value={(form as any).lead_owner}
-                    onChangeText={(v: string) => setForm({ ...(form as any), lead_owner: v })}
+                    onChangeText={(v: string) => { setForm({ ...(form as any), lead_owner: v }); if (v) setErrors(prev => ({ ...prev, lead_owner: '' })); }}
+                    style={!!errors.lead_owner ? styles.inputError : undefined}
                   />
+                  {!!errors.lead_owner && <Text style={styles.errorText}>{errors.lead_owner}</Text>}
                   <Text style={styles.inputLabel}>Status</Text>
-                  <Pressable accessibilityRole="button" onPress={() => setStatusPickerVisible(true)} style={styles.selectBox}>
+                  <Pressable accessibilityRole="button" onPress={() => setStatusPickerVisible(true)} style={[styles.selectBox, !!errors.status && styles.inputError]}>
                     <Text style={styles.selectText}>{form.status}</Text>
                     <Ionicons name="chevron-down" size={18} color="#6b7280" />
                   </Pressable>
+                  {!!errors.status && <Text style={styles.errorText}>{errors.status}</Text>}
                   {statusPickerVisible && (
                     <View style={styles.dropdownPanel}>
                       {['Lead','Open','Replied','Opportunity','Quotation','Lost Quotation','Interested','Converted','Do Not Contact'].map(s => (
-                        <Pressable key={s} style={styles.selectOption} onPress={() => { setForm({ ...form, status: s }); setStatusPickerVisible(false); }}>
+                        <Pressable key={s} style={styles.selectOption} onPress={() => { setForm({ ...form, status: s }); setErrors(prev => ({ ...prev, status: '' })); setStatusPickerVisible(false); }}>
                           <Text style={styles.selectOptionText}>{s}</Text>
                         </Pressable>
                       ))}
@@ -585,10 +633,11 @@ export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string,
                   )}
                   {/* Territory */}
                   <Text style={styles.inputLabel}>Territory</Text>
-                  <Pressable accessibilityRole="button" onPress={() => { setTerritorySearch(''); setTerritoryPickerVisible(true); }} style={styles.selectBox}>
+                  <Pressable accessibilityRole="button" onPress={() => { setTerritorySearch(''); setManualEntry(p => ({ ...p, territory: { mode: false, text: '' } })); setTerritoryPickerVisible(true); }} style={[styles.selectBox, !!errors.territory && styles.inputError]}>
                     <Text style={styles.selectText}>{territoryOptions.find(o => o.name === form.territory)?.label || form.territory || 'Select territory'}</Text>
                     <Ionicons name="chevron-down" size={18} color="#6b7280" />
                   </Pressable>
+                  {!!errors.territory && <Text style={styles.errorText}>{errors.territory}</Text>}
                   {territoryPickerVisible && (
                     <View style={styles.dropdownPanel}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingTop: 10 }}>
@@ -604,18 +653,55 @@ export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string,
                           <Ionicons name="close" size={18} color="#6b7280" />
                         </Pressable>
                       </View>
-                      <View style={{ maxHeight: 220 }}>
-                        {territoryOptions
-                          .filter(o => !territorySearch || String(o.label || o.name).toLowerCase().includes(territorySearch.toLowerCase()))
-                          .map((o) => (
-                            <Pressable key={o.name} style={styles.selectOption} onPress={() => { setForm(prev => ({ ...(prev as any), territory: o.name })); setTerritoryPickerVisible(false); }}>
-                              <Text style={styles.selectOptionText}>{o.label || o.name}</Text>
-                              {form.territory === o.name && <Ionicons name="checkmark" size={16} color="#111827" />}
+                      <View style={{ maxHeight: 240 }}>
+                        {!manualEntry.territory?.mode && (
+                          <>
+                            {territoryOptions
+                              .filter(o => !territorySearch || String(o.label || o.name).toLowerCase().includes(territorySearch.toLowerCase()))
+                              .map((o) => (
+                                <Pressable key={o.name} style={styles.selectOption} onPress={() => { setForm(prev => ({ ...(prev as any), territory: o.name })); setErrors(prev => ({ ...prev, territory: '' })); setTerritoryPickerVisible(false); }}>
+                                  <Text style={styles.selectOptionText}>{o.label || o.name}</Text>
+                                  {form.territory === o.name && <Ionicons name="checkmark" size={16} color="#111827" />}
+                                </Pressable>
+                              ))}
+                            <Pressable style={[styles.selectOption, { backgroundColor: '#fafafa' }]} onPress={() => setManualEntry(p => ({ ...p, territory: { mode: true, text: form.territory || '' } }))}>
+                              <Text style={[styles.selectOptionText, { color: '#0b6dff', fontWeight: '700' }]}>Enter manually…</Text>
                             </Pressable>
-                          ))}
-                        {territoryOptions.length === 0 && (
-                          <View style={{ padding: 12 }}>
-                            <Text style={{ color: '#6b7280' }}>No territories found</Text>
+                            {territoryOptions.length === 0 && (
+                              <View style={{ padding: 12 }}>
+                                <Text style={{ color: '#6b7280' }}>No territories found</Text>
+                              </View>
+                            )}
+                          </>
+                        )}
+                        {manualEntry.territory?.mode && (
+                          <View style={{ paddingHorizontal: 12, paddingVertical: 10 }}>
+                            <Text style={{ color: '#6b7280', marginBottom: 6 }}>Enter territory</Text>
+                            <TextInput
+                              placeholder="Type territory"
+                              placeholderTextColor="#9ca3af"
+                              style={styles.input}
+                              value={manualEntry.territory?.text || ''}
+                              onChangeText={(t) => setManualEntry(p => ({ ...p, territory: { mode: true, text: t } }))}
+                            />
+                            <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 10 }}>
+                              <Pressable style={[styles.modalBtn, styles.modalBtnSecondary]} onPress={() => setManualEntry(p => ({ ...p, territory: { mode: false, text: '' } }))}>
+                                <Text style={styles.modalBtnTextSecondary}>Cancel</Text>
+                              </Pressable>
+                              <Pressable
+                                style={[styles.modalBtn, styles.modalBtnPrimary]}
+                                onPress={() => {
+                                  const v = (manualEntry.territory?.text || '').trim();
+                                  if (!v) return;
+                                  setForm(prev => ({ ...(prev as any), territory: v }));
+                                  setErrors(prev => ({ ...prev, territory: '' }));
+                                  setTerritoryPickerVisible(false);
+                                  setManualEntry(p => ({ ...p, territory: { mode: false, text: '' } }));
+                                }}
+                              >
+                                <Text style={styles.modalBtnText}>Save</Text>
+                              </Pressable>
+                            </View>
                           </View>
                         )}
                       </View>
@@ -623,18 +709,52 @@ export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string,
                   )}
                   {/* Lead Type */}
                   <Text style={styles.inputLabel}>Lead Type</Text>
-                  <Pressable accessibilityRole="button" onPress={() => setLeadTypePickerVisible(true)} style={styles.selectBox}>
+                  <Pressable accessibilityRole="button" onPress={() => { setManualEntry(p => ({ ...p, lead_type: { mode: false, text: '' } })); setLeadTypePickerVisible(true); }} style={[styles.selectBox, !!errors.lead_type && styles.inputError]}>
                     <Text style={styles.selectText}>{(form as any).lead_type || 'Select'}</Text>
                     <Ionicons name="chevron-down" size={18} color="#6b7280" />
                   </Pressable>
+                  {!!errors.lead_type && <Text style={styles.errorText}>{errors.lead_type}</Text>}
                   {leadTypePickerVisible && (
                     <View style={styles.dropdownPanel}>
                       {(leadTypeOptions || []).map((opt) => (
-                        <Pressable key={opt} style={styles.selectOption} onPress={() => { setForm(prev => ({ ...(prev as any), lead_type: opt })); setLeadTypePickerVisible(false); }}>
+                        <Pressable key={opt} style={styles.selectOption} onPress={() => { setForm(prev => ({ ...(prev as any), lead_type: opt })); setErrors(prev => ({ ...prev, lead_type: '' })); setLeadTypePickerVisible(false); }}>
                           <Text style={styles.selectOptionText}>{opt}</Text>
                           {(form as any).lead_type === opt && <Ionicons name="checkmark" size={16} color="#111827" />}
                         </Pressable>
                       ))}
+                      <Pressable style={[styles.selectOption, { backgroundColor: '#fafafa' }]} onPress={() => setManualEntry(p => ({ ...p, lead_type: { mode: true, text: (form as any).lead_type || '' } }))}>
+                        <Text style={[styles.selectOptionText, { color: '#0b6dff', fontWeight: '700' }]}>Enter manually…</Text>
+                      </Pressable>
+                      {manualEntry.lead_type?.mode && (
+                        <View style={{ paddingHorizontal: 12, paddingVertical: 10 }}>
+                          <Text style={{ color: '#6b7280', marginBottom: 6 }}>Enter lead type</Text>
+                          <TextInput
+                            placeholder="Type lead type"
+                            placeholderTextColor="#9ca3af"
+                            style={styles.input}
+                            value={manualEntry.lead_type?.text || ''}
+                            onChangeText={(t) => setManualEntry(p => ({ ...p, lead_type: { mode: true, text: t } }))}
+                          />
+                          <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 10 }}>
+                            <Pressable style={[styles.modalBtn, styles.modalBtnSecondary]} onPress={() => setManualEntry(p => ({ ...p, lead_type: { mode: false, text: '' } }))}>
+                              <Text style={styles.modalBtnTextSecondary}>Cancel</Text>
+                            </Pressable>
+                            <Pressable
+                              style={[styles.modalBtn, styles.modalBtnPrimary]}
+                              onPress={() => {
+                                const v = (manualEntry.lead_type?.text || '').trim();
+                                if (!v) return;
+                                setForm(prev => ({ ...(prev as any), lead_type: v }));
+                                setErrors(prev => ({ ...prev, lead_type: '' }));
+                                setLeadTypePickerVisible(false);
+                                setManualEntry(p => ({ ...p, lead_type: { mode: false, text: '' } }));
+                              }}
+                            >
+                              <Text style={styles.modalBtnText}>Save</Text>
+                            </Pressable>
+                          </View>
+                        </View>
+                      )}
                       {(!leadTypeOptions || leadTypeOptions.length === 0) && (
                         <View style={{ padding: 12 }}>
                           <Text style={{ color: '#6b7280' }}>No options</Text>
@@ -645,18 +765,52 @@ export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string,
 
                   {/* Request Type */}
                   <Text style={styles.inputLabel}>Request Type</Text>
-                  <Pressable accessibilityRole="button" onPress={() => setRequestTypePickerVisible(true)} style={styles.selectBox}>
+                  <Pressable accessibilityRole="button" onPress={() => { setManualEntry(p => ({ ...p, request_type: { mode: false, text: '' } })); setRequestTypePickerVisible(true); }} style={[styles.selectBox, !!errors.request_type && styles.inputError]}>
                     <Text style={styles.selectText}>{(form as any).request_type || 'Select'}</Text>
                     <Ionicons name="chevron-down" size={18} color="#6b7280" />
                   </Pressable>
+                  {!!errors.request_type && <Text style={styles.errorText}>{errors.request_type}</Text>}
                   {requestTypePickerVisible && (
                     <View style={styles.dropdownPanel}>
                       {(requestTypeOptions || []).map((opt) => (
-                        <Pressable key={opt} style={styles.selectOption} onPress={() => { setForm(prev => ({ ...(prev as any), request_type: opt })); setRequestTypePickerVisible(false); }}>
+                        <Pressable key={opt} style={styles.selectOption} onPress={() => { setForm(prev => ({ ...(prev as any), request_type: opt })); setErrors(prev => ({ ...prev, request_type: '' })); setRequestTypePickerVisible(false); }}>
                           <Text style={styles.selectOptionText}>{opt}</Text>
                           {(form as any).request_type === opt && <Ionicons name="checkmark" size={16} color="#111827" />}
                         </Pressable>
                       ))}
+                      <Pressable style={[styles.selectOption, { backgroundColor: '#fafafa' }]} onPress={() => setManualEntry(p => ({ ...p, request_type: { mode: true, text: (form as any).request_type || '' } }))}>
+                        <Text style={[styles.selectOptionText, { color: '#0b6dff', fontWeight: '700' }]}>Enter manually…</Text>
+                      </Pressable>
+                      {manualEntry.request_type?.mode && (
+                        <View style={{ paddingHorizontal: 12, paddingVertical: 10 }}>
+                          <Text style={{ color: '#6b7280', marginBottom: 6 }}>Enter request type</Text>
+                          <TextInput
+                            placeholder="Type request type"
+                            placeholderTextColor="#9ca3af"
+                            style={styles.input}
+                            value={manualEntry.request_type?.text || ''}
+                            onChangeText={(t) => setManualEntry(p => ({ ...p, request_type: { mode: true, text: t } }))}
+                          />
+                          <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 10 }}>
+                            <Pressable style={[styles.modalBtn, styles.modalBtnSecondary]} onPress={() => setManualEntry(p => ({ ...p, request_type: { mode: false, text: '' } }))}>
+                              <Text style={styles.modalBtnTextSecondary}>Cancel</Text>
+                            </Pressable>
+                            <Pressable
+                              style={[styles.modalBtn, styles.modalBtnPrimary]}
+                              onPress={() => {
+                                const v = (manualEntry.request_type?.text || '').trim();
+                                if (!v) return;
+                                setForm(prev => ({ ...(prev as any), request_type: v }));
+                                setErrors(prev => ({ ...prev, request_type: '' }));
+                                setRequestTypePickerVisible(false);
+                                setManualEntry(p => ({ ...p, request_type: { mode: false, text: '' } }));
+                              }}
+                            >
+                              <Text style={styles.modalBtnText}>Save</Text>
+                            </Pressable>
+                          </View>
+                        </View>
+                      )}
                       {(!requestTypeOptions || requestTypeOptions.length === 0) && (
                         <View style={{ padding: 12 }}>
                           <Text style={{ color: '#6b7280' }}>No options</Text>
@@ -667,18 +821,52 @@ export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string,
 
                   {/* Service Type */}
                   <Text style={styles.inputLabel}>Service Type</Text>
-                  <Pressable accessibilityRole="button" onPress={() => setServiceTypePickerVisible(true)} style={styles.selectBox}>
+                  <Pressable accessibilityRole="button" onPress={() => { setManualEntry(p => ({ ...p, service_type: { mode: false, text: '' } })); setServiceTypePickerVisible(true); }} style={[styles.selectBox, !!errors.service_type && styles.inputError]}>
                     <Text style={styles.selectText}>{(form as any).service_type || 'Select'}</Text>
                     <Ionicons name="chevron-down" size={18} color="#6b7280" />
                   </Pressable>
+                  {!!errors.service_type && <Text style={styles.errorText}>{errors.service_type}</Text>}
                   {serviceTypePickerVisible && (
                     <View style={styles.dropdownPanel}>
                       {(serviceTypeOptions || []).map((opt) => (
-                        <Pressable key={opt} style={styles.selectOption} onPress={() => { setForm(prev => ({ ...(prev as any), service_type: opt })); setServiceTypePickerVisible(false); }}>
+                        <Pressable key={opt} style={styles.selectOption} onPress={() => { setForm(prev => ({ ...(prev as any), service_type: opt })); setErrors(prev => ({ ...prev, service_type: '' })); setServiceTypePickerVisible(false); }}>
                           <Text style={styles.selectOptionText}>{opt}</Text>
                           {(form as any).service_type === opt && <Ionicons name="checkmark" size={16} color="#111827" />}
                         </Pressable>
                       ))}
+                      <Pressable style={[styles.selectOption, { backgroundColor: '#fafafa' }]} onPress={() => setManualEntry(p => ({ ...p, service_type: { mode: true, text: (form as any).service_type || '' } }))}>
+                        <Text style={[styles.selectOptionText, { color: '#0b6dff', fontWeight: '700' }]}>Enter manually…</Text>
+                      </Pressable>
+                      {manualEntry.service_type?.mode && (
+                        <View style={{ paddingHorizontal: 12, paddingVertical: 10 }}>
+                          <Text style={{ color: '#6b7280', marginBottom: 6 }}>Enter service type</Text>
+                          <TextInput
+                            placeholder="Type service type"
+                            placeholderTextColor="#9ca3af"
+                            style={styles.input}
+                            value={manualEntry.service_type?.text || ''}
+                            onChangeText={(t) => setManualEntry(p => ({ ...p, service_type: { mode: true, text: t } }))}
+                          />
+                          <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 10 }}>
+                            <Pressable style={[styles.modalBtn, styles.modalBtnSecondary]} onPress={() => setManualEntry(p => ({ ...p, service_type: { mode: false, text: '' } }))}>
+                              <Text style={styles.modalBtnTextSecondary}>Cancel</Text>
+                            </Pressable>
+                            <Pressable
+                              style={[styles.modalBtn, styles.modalBtnPrimary]}
+                              onPress={() => {
+                                const v = (manualEntry.service_type?.text || '').trim();
+                                if (!v) return;
+                                setForm(prev => ({ ...(prev as any), service_type: v }));
+                                setErrors(prev => ({ ...prev, service_type: '' }));
+                                setServiceTypePickerVisible(false);
+                                setManualEntry(p => ({ ...p, service_type: { mode: false, text: '' } }));
+                              }}
+                            >
+                              <Text style={styles.modalBtnText}>Save</Text>
+                            </Pressable>
+                          </View>
+                        </View>
+                      )}
                       {(!serviceTypeOptions || serviceTypeOptions.length === 0) && (
                         <View style={{ padding: 12 }}>
                           <Text style={{ color: '#6b7280' }}>No options</Text>
@@ -694,30 +882,38 @@ export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string,
                     placeholder="+1 555-123-4567"
                     keyboardType="phone-pad"
                     value={form.mobile_no}
-                    onChangeText={(v: string) => setForm({ ...form, mobile_no: v })}
+                    onChangeText={(v: string) => { setForm({ ...form, mobile_no: v }); if (v) setErrors(prev => ({ ...prev, mobile_no: '' })); }}
+                    style={!!errors.mobile_no ? styles.inputError : undefined}
                   />
+                  {!!errors.mobile_no && <Text style={styles.errorText}>{errors.mobile_no}</Text>}
                   <LabeledInput
                     label="Email"
                     placeholder="name@company.com"
                     keyboardType="email-address"
                     autoCapitalize="none"
                     value={form.email_id}
-                    onChangeText={(v: string) => setForm({ ...form, email_id: v })}
+                    onChangeText={(v: string) => { setForm({ ...form, email_id: v }); if (v) setErrors(prev => ({ ...prev, email_id: '' })); }}
+                    style={!!errors.email_id ? styles.inputError : undefined}
                   />
+                  {!!errors.email_id && <Text style={styles.errorText}>{errors.email_id}</Text>}
                   <LabeledInput
                     label="Website"
                     placeholder="https://example.com"
                     autoCapitalize="none"
                     value={(form as any).website}
-                    onChangeText={(v: string) => setForm({ ...(form as any), website: v })}
+                    onChangeText={(v: string) => { setForm({ ...(form as any), website: v }); if (v) setErrors(prev => ({ ...prev, website: '' })); }}
+                    style={!!errors.website ? styles.inputError : undefined}
                   />
+                  {!!errors.website && <Text style={styles.errorText}>{errors.website}</Text>}
                   <LabeledInput
                     label="WhatsApp"
                     placeholder="WhatsApp number"
                     keyboardType="phone-pad"
                     value={(form as any).whatsapp}
-                    onChangeText={(v: string) => setForm({ ...(form as any), whatsapp: v })}
+                    onChangeText={(v: string) => { setForm({ ...(form as any), whatsapp: v }); if (v) setErrors(prev => ({ ...prev, whatsapp: '' })); }}
+                    style={!!errors.whatsapp ? styles.inputError : undefined}
                   />
+                  {!!errors.whatsapp && <Text style={styles.errorText}>{errors.whatsapp}</Text>}
 
                   {/* Organisation */}
                   <Text style={styles.sectionTitle}>Organisation</Text>
@@ -725,20 +921,25 @@ export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string,
                     label="Organisation Name"
                     placeholder="e.g. Acme Inc"
                     value={form.company_name}
-                    onChangeText={(v: string) => setForm({ ...form, company_name: v })}
+                    onChangeText={(v: string) => { setForm({ ...form, company_name: v }); if (v) setErrors(prev => ({ ...prev, company_name: '' })); }}
+                    style={!!errors.company_name ? styles.inputError : undefined}
                   />
+                  {!!errors.company_name && <Text style={styles.errorText}>{errors.company_name}</Text>}
                   <LabeledInput
                     label="Territory"
                     placeholder="e.g. North America"
                     value={form.territory}
-                    onChangeText={(v: string) => setForm({ ...form, territory: v })}
+                    onChangeText={(v: string) => { setForm({ ...form, territory: v }); if (v) setErrors(prev => ({ ...prev, territory: '' })); }}
+                    style={!!errors.territory ? styles.inputError : undefined}
                   />
+                  {!!errors.territory && <Text style={styles.errorText}>{errors.territory}</Text>}
 
                   <Text style={styles.inputLabel}>Associate Details</Text>
-                  <Pressable accessibilityRole="button" onPress={() => { setAssociateSearch(''); setAssociatePickerVisible(true); }} style={styles.selectBox}>
+                  <Pressable accessibilityRole="button" onPress={() => { setAssociateSearch(''); setAssociateManualMode(false); setAssociateManualText(''); setAssociatePickerVisible(true); }} style={[styles.selectBox, !!errors.associate_details && styles.inputError]}>
                     <Text style={styles.selectText}>{associateOptions.find(o => o.name === (form as any).associate_details)?.label || (form as any).associate_details || 'Select associate'}</Text>
                     <Ionicons name="chevron-down" size={18} color="#6b7280" />
                   </Pressable>
+                  {!!errors.associate_details && <Text style={styles.errorText}>{errors.associate_details}</Text>}
                   {associatePickerVisible && (
                     <View style={styles.dropdownPanel}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingTop: 10 }}>
@@ -754,18 +955,55 @@ export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string,
                           <Ionicons name="close" size={18} color="#6b7280" />
                         </Pressable>
                       </View>
-                      <View style={{ maxHeight: 220 }}>
-                        {(associateOptions || [])
-                          .filter(o => !associateSearch || String(o.label || o.name).toLowerCase().includes(associateSearch.toLowerCase()))
-                          .map((o) => (
-                            <Pressable key={o.name} style={styles.selectOption} onPress={() => { setForm(prev => ({ ...(prev as any), associate_details: o.name })); setAssociatePickerVisible(false); }}>
-                              <Text style={styles.selectOptionText}>{o.label || o.name}</Text>
-                              {(form as any).associate_details === o.name && <Ionicons name="checkmark" size={16} color="#111827" />}
+                      <View style={{ maxHeight: 240 }}>
+                        {!associateManualMode && (
+                          <>
+                            {(associateOptions || [])
+                              .filter(o => !associateSearch || String(o.label || o.name).toLowerCase().includes(associateSearch.toLowerCase()))
+                              .map((o) => (
+                                <Pressable key={o.name} style={styles.selectOption} onPress={() => { setForm(prev => ({ ...(prev as any), associate_details: o.name })); setErrors(prev => ({ ...prev, associate_details: '' })); setAssociatePickerVisible(false); }}>
+                                  <Text style={styles.selectOptionText}>{o.label || o.name}</Text>
+                                  {(form as any).associate_details === o.name && <Ionicons name="checkmark" size={16} color="#111827" />}
+                                </Pressable>
+                              ))}
+                            <Pressable style={[styles.selectOption, { backgroundColor: '#fafafa' }]} onPress={() => { setAssociateManualMode(true); setAssociateManualText((form as any).associate_details || ''); }}>
+                              <Text style={[styles.selectOptionText, { color: '#0b6dff', fontWeight: '700' }]}>Enter manually…</Text>
                             </Pressable>
-                          ))}
-                        {(!associateOptions || associateOptions.length === 0) && (
-                          <View style={{ padding: 12 }}>
-                            <Text style={{ color: '#6b7280' }}>No associates found</Text>
+                            {(!associateOptions || associateOptions.length === 0) && (
+                              <View style={{ padding: 12 }}>
+                                <Text style={{ color: '#6b7280' }}>No associates found</Text>
+                              </View>
+                            )}
+                          </>
+                        )}
+                        {associateManualMode && (
+                          <View style={{ paddingHorizontal: 12, paddingVertical: 10 }}>
+                            <Text style={{ color: '#6b7280', marginBottom: 6 }}>Enter associate details</Text>
+                            <TextInput
+                              placeholder="Type associate details"
+                              placeholderTextColor="#9ca3af"
+                              style={styles.input}
+                              value={associateManualText}
+                              onChangeText={setAssociateManualText}
+                            />
+                            <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 10 }}>
+                              <Pressable style={[styles.modalBtn, styles.modalBtnSecondary]} onPress={() => { setAssociateManualMode(false); }}>
+                                <Text style={styles.modalBtnTextSecondary}>Cancel</Text>
+                              </Pressable>
+                              <Pressable
+                                style={[styles.modalBtn, styles.modalBtnPrimary]}
+                                onPress={() => {
+                                  const name = (associateManualText || '').trim();
+                                  if (!name) return;
+                                  setForm(prev => ({ ...(prev as any), associate_details: name }));
+                                  setErrors(prev => ({ ...prev, associate_details: '' }));
+                                  setAssociatePickerVisible(false);
+                                  setAssociateManualMode(false);
+                                }}
+                              >
+                                <Text style={styles.modalBtnText}>Save</Text>
+                              </Pressable>
+                            </View>
                           </View>
                         )}
                       </View>
@@ -776,10 +1014,11 @@ export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string,
                     label="Notes"
                     placeholder="Add any notes here"
                     value={form.notes}
-                    onChangeText={(v: string) => setForm({ ...form, notes: v })}
+                    onChangeText={(v: string) => { setForm({ ...form, notes: v }); if (v) setErrors(prev => ({ ...prev, notes: '' })); }}
                     style={{ height: 90, textAlignVertical: 'top' }}
                     multiline
                   />
+                  {!!errors.notes && <Text style={styles.errorText}>{errors.notes}</Text>}
 
                   <Text style={styles.sectionTitle}>Attachments</Text>
                   <View style={styles.attachRow}>
@@ -838,6 +1077,7 @@ export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string,
                   onConfirm={(d: Date) => {
                     setDatePickerOpen(false);
                     setForm({ ...(form as any), date: formatDate(d) });
+                    setErrors(prev => ({ ...prev, date: '' }));
                   }}
                   onCancel={() => setDatePickerOpen(false)}
                 />
@@ -846,15 +1086,40 @@ export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string,
                     <Text style={[styles.modalBtnText, styles.modalBtnTextSecondary]}>Cancel</Text>
                   </Pressable>
                   <Pressable style={[styles.modalBtn, styles.modalBtnPrimary]} disabled={saving} onPress={async () => {
-                    if (!form.lead_name && !form.company_name) {
-                      Alert.alert('Add Lead', 'Please enter Lead Name or Company');
+                    // All fields are mandatory for new lead
+                    const required: Array<{ key: keyof typeof form | string; label: string }> = [
+                      { key: 'date', label: 'Date' },
+                      { key: 'lead_name', label: 'Lead Name' },
+                      { key: 'gender', label: 'Gender' },
+                      { key: 'location', label: 'Building & Location' },
+                      { key: 'source', label: 'Source' },
+                      { key: 'lead_owner', label: 'Lead Owner' },
+                      { key: 'status', label: 'Status' },
+                      { key: 'lead_type', label: 'Lead Type' },
+                      { key: 'request_type', label: 'Request Type' },
+                      { key: 'service_type', label: 'Service Type' },
+                      { key: 'mobile_no', label: 'Phone No' },
+                      { key: 'email_id', label: 'Email' },
+                      { key: 'website', label: 'Website' },
+                      { key: 'whatsapp', label: 'WhatsApp' },
+                      { key: 'company_name', label: 'Organisation Name' },
+                      { key: 'territory', label: 'Territory' },
+                      { key: 'associate_details', label: 'Associate Details' },
+                      { key: 'notes', label: 'Notes' },
+                    ];
+                    const newErrors: { [key: string]: string } = {};
+                    for (const { key, label } of required) {
+                      const val = String((form as any)[key] ?? '').trim();
+                      if (!val.length) newErrors[String(key)] = `${label} is required`;
+                    }
+                    setErrors(newErrors);
+                    if (Object.keys(newErrors).length) return;
+                    const missing = required.filter(({ key }) => !String((form as any)[key] ?? '').trim().length);
+                    if (missing.length) {
+                      const msg = 'Please fill all required fields:\n' + missing.map(m => `• ${m.label}`).join('\n');
+                      Alert.alert('Add Lead', msg);
                       return;
                     }
-                    if (!(form as any).date) {
-                      Alert.alert('Add Lead', 'Please select Date');
-                      return;
-                    }
-                    // Building & Location is set statically to Deira
                     setSaving(true);
                     try {
                       try { console.log('AddLead submit form:', form, 'attachments:', attachments?.length || 0); } catch {}
@@ -866,7 +1131,7 @@ export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string,
                           date: '',
                           lead_name: '',
                           gender: '',
-                          location: 'Diera',
+                          location: '',
                           source: '',
                           lead_owner: '',
                           status: 'Lead',
@@ -882,6 +1147,7 @@ export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string,
                           notes: '',
                           associate_details: '',
                         });
+                        setErrors({});
                         setAttachments([]);
                         setPage(1); setHasMore(true);
                         await loadPage(1, { showSpinner: true, append: false });
@@ -1027,6 +1293,8 @@ const styles = StyleSheet.create({
   selectOption: { paddingVertical: 12, paddingHorizontal: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#e5e7eb' },
   selectOptionText: { color: '#111827' },
   dropdownPanel: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, overflow: 'hidden', marginTop: 6 },
+  inputError: { borderColor: '#ef4444' },
+  errorText: { color: '#ef4444', fontSize: 12, marginTop: 4, marginBottom: 8 },
   toggleRow: { flexDirection: 'row', gap: 8, marginBottom: 10 },
   toggleBtn: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 10, borderWidth: 1, borderColor: '#e5e7eb', backgroundColor: '#fff' },
   toggleBtnActive: { backgroundColor: '#0b0b1b', borderColor: '#0b0b1b' },

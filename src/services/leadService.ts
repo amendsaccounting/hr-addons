@@ -109,6 +109,7 @@ export async function listLeads(opts: ListOptions = {}): Promise<Lead[]> {
   const url = `${BASE_URL}/Lead?filters=${enc(filters)}&fields=${enc(fields)}&order_by=${enc(orderBy)}&limit_page_length=${limit}&limit_start=${start}`;
   const res = await fetch(url, { headers });
   const json = await res.json().catch(() => ({} as any));
+  try { debugLog('listLeads', { url, status: res.status, ok: res.ok, data: (json as any)?.data }); } catch {}
   const data = (json as any)?.data;
   if (!Array.isArray(data)) return [];
   return data as Lead[];
@@ -122,6 +123,7 @@ export async function countLeads(opts: ListOptions = {}): Promise<number> {
   try {
     const res = await fetch(url, { headers });
     const json = await res.json().catch(() => ({} as any));
+    try { debugLog('countLeads', { url, status: res.status, ok: res.ok, body: json }); } catch {}
     const count = (json as any)?.message ?? (json as any)?.data ?? 0;
     const n = Number(count);
     return Number.isFinite(n) ? n : 0;
@@ -141,6 +143,7 @@ export async function listDocNames(doctype: string, limit = 200): Promise<string
     try { console.log('listDocNames HTTP', res.status, 'for', dt); } catch {}
   }
   const json = await res.json().catch(() => ({} as any));
+  try { debugLog('listDocNames', { dt, url, status: res.status, ok: res.ok, data: (json as any)?.data }); } catch {}
   const data = (json as any)?.data;
   if (!Array.isArray(data)) return [];
   return data.map((r: any) => r?.name).filter((n: any) => typeof n === 'string');
@@ -154,6 +157,7 @@ async function fetchDocTypeMeta(dt: string): Promise<any | null> {
     const url = `${BASE_URL}/DocType/${encodeURIComponent(dt)}`;
     const res = await fetch(url, { headers });
     const json = await res.json().catch(() => ({} as any));
+    try { debugLog('fetchDocTypeMeta', { dt, url, status: res.status, ok: res.ok, hasData: !!((json as any)?.data ?? json) }); } catch {}
     return (json as any)?.data ?? json ?? null;
   } catch {
     return null;
@@ -206,6 +210,7 @@ async function listDocNameAndTitle(doctype: string, limit = 200): Promise<Locati
     const url = `${BASE_URL}/${encodeURIComponent(dt)}?fields=${enc(fields)}&limit_page_length=${limit}`;
     const res = await fetch(url, { headers });
     const json = await res.json().catch(() => ({} as any));
+    try { debugLog('listDocNameAndTitle.resource', { dt, url, status: res.status, ok: res.ok, rows: Array.isArray((json as any)?.data) ? (json as any)?.data?.length : 0 }); } catch {}
     const data = (json as any)?.data;
     if (Array.isArray(data) && data.length) {
       debugLog('list', dt, 'resource', 'rows:', data.length);
@@ -219,6 +224,7 @@ async function listDocNameAndTitle(doctype: string, limit = 200): Promise<Locati
     const url2 = `${METHOD_BASE}/frappe.client.get_list?doctype=${enc(dt)}&fields=${enc(fields)}&limit_page_length=${limit}`;
     const res2 = await fetch(url2, { headers });
     const json2 = await res2.json().catch(() => ({} as any));
+    try { debugLog('listDocNameAndTitle.method', { dt, url: url2, status: res2.status, ok: res2.ok, rows: Array.isArray(((json2 as any)?.message ?? (json2 as any)?.data)) ? (((json2 as any)?.message ?? (json2 as any)?.data)?.length) : 0 }); } catch {}
     const data2 = (json2 as any)?.message ?? (json2 as any)?.data;
     if (Array.isArray(data2) && data2.length) {
       debugLog('list', dt, 'method', 'rows:', data2.length);
@@ -264,6 +270,7 @@ export async function listTerritories(limit = 200): Promise<LocationOption[]> {
   const url = `${BASE_URL}/Territory?fields=${enc(fields)}&filters=${enc(filters)}&limit_page_length=${limit}`;
   const res = await fetch(url, { headers });
   const json = await res.json().catch(() => ({} as any));
+  try { debugLog('listTerritories', { url, status: res.status, ok: res.ok, rows: Array.isArray((json as any)?.data) ? (json as any)?.data?.length : 0 }); } catch {}
   const data = (json as any)?.data;
   if (!Array.isArray(data)) return [];
   return data.map((r: any) => ({ name: r?.name, label: r?.territory_name || r?.name })).filter((x: any) => x && x.name);
@@ -336,12 +343,14 @@ export async function getLeadSelectOptions(field: 'service_type' | 'request_type
     const raw = String(df?.options || '').trim();
     if (!raw) return [];
     const parts = raw.split('\n').map((s: string) => s.trim()).filter(Boolean);
+    try { debugLog('getLeadSelectOptions', { field, type: 'Select', count: parts.length }); } catch {}
     return parts;
   }
   if (ftype === 'Link' && typeof df?.options === 'string' && df.options) {
     // For Link fields, list names from the target doctype
     try {
       const rows = await listDocNameAndTitle(df.options, 200);
+      try { debugLog('getLeadSelectOptions', { field, type: 'Link', doctype: df.options, rows: rows?.length || 0 }); } catch {}
       if (Array.isArray(rows) && rows.length) return rows.map((r) => r.name).filter(Boolean);
     } catch {}
     // Fallbacks for common doctypes
@@ -418,6 +427,7 @@ export async function getLead(name: string): Promise<Lead | null> {
   const url = `${BASE_URL}/Lead/${encodeURIComponent(id)}`;
   const res = await fetch(url, { headers });
   const json = await res.json().catch(() => null as any);
+  try { debugLog('getLead', { url, status: res.status, ok: res.ok, body: json }); } catch {}
   if (!res.ok) return null;
   return ((json as any)?.data ?? json) as Lead;
 }
@@ -434,6 +444,7 @@ export async function createLead(data: Partial<Lead>): Promise<Lead | null> {
     const msg = (json && (json.message || json.exc || json.exception)) || `HTTP ${res.status}`;
     throw new Error(String(msg));
   }
+  try { debugLog('createLead', { url, status: res.status, ok: res.ok, body: json }); } catch {}
   return ((json as any)?.data ?? json) as Lead;
 }
 
@@ -625,6 +636,7 @@ export async function updateLead(name: string, updated: Partial<Lead>): Promise<
   const url = `${BASE_URL}/Lead/${encodeURIComponent(id)}`;
   const res = await fetch(url, { method: 'PUT', headers, body: JSON.stringify(updated) });
   const json = await res.json().catch(() => null as any);
+  try { debugLog('updateLead', { url, status: res.status, ok: res.ok, body: json }); } catch {}
   if (!res.ok) return null;
   return ((json as any)?.data ?? json) as Lead;
 }
@@ -635,6 +647,7 @@ export async function deleteLead(name: string): Promise<boolean> {
   if (!id) return false;
   const url = `${BASE_URL}/Lead/${encodeURIComponent(id)}`;
   const res = await fetch(url, { method: 'DELETE', headers });
+  try { debugLog('deleteLead', { url, status: res.status, ok: res.ok }); } catch {}
   if (res.ok) return true;
   return false;
 }
@@ -671,5 +684,6 @@ export async function uploadLeadAttachment(leadName: string, file: { uri: string
 
   const h: any = { 'Authorization': headers['Authorization'] };
   const res = await fetch(url, { method: 'POST', headers: h, body: form as any });
+  try { debugLog('uploadLeadAttachment', { url, status: res.status, ok: res.ok }); } catch {}
   return res.ok;
 }
