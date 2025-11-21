@@ -9,6 +9,8 @@ import LeadScreen from '../screens/tabs/LeadScreen';
 import LeadDetailScreen from '../screens/tabs/LeadDetailScreen';
 import ExpenseScreen from '../screens/tabs/ExpenseScreen';
 import ProfileScreen from '../screens/tabs/ProfileScreen';
+import PayslipScreen from '../screens/tabs/PayslipScreen';
+import PersonalInfoScreen from '../screens/tabs/PersonalInfoScreen';
 export type TabName = 'Dashboard' | 'Attendance' | 'Leave' | 'Leads' | 'Expense';
 
 export default function TabNavigator({ initialTab = 'Dashboard' as TabName }: { initialTab?: TabName }) {
@@ -16,6 +18,8 @@ export default function TabNavigator({ initialTab = 'Dashboard' as TabName }: { 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const drawerAnim = React.useRef(new Animated.Value(0)).current;
   const [leadDetailName, setLeadDetailName] = useState<string | null>(null);
+  const [leadDetailEditing, setLeadDetailEditing] = useState<boolean>(false);
+  const [overlay, setOverlay] = useState<React.ReactNode | null>(null);
 
   const openDrawer = () => {
     setDrawerOpen(true);
@@ -35,14 +39,75 @@ export default function TabNavigator({ initialTab = 'Dashboard' as TabName }: { 
         {activeTab === 'Leave' && <LeaveScreen />}
         {activeTab === 'Leads' && (
           leadDetailName
-            ? <LeadDetailScreen name={leadDetailName} onBack={() => setLeadDetailName(null)} />
-            : <LeadScreen onOpenLead={(name) => setLeadDetailName(name)} />
+            ? <LeadDetailScreen name={leadDetailName} startEditing={leadDetailEditing} onBack={() => { setLeadDetailName(null); setLeadDetailEditing(false); }} />
+            : <LeadScreen onOpenLead={(name, opts) => { setLeadDetailName(name); setLeadDetailEditing(!!opts?.edit); }} />
         )}
         {activeTab === 'Expense' && <ExpenseScreen />}
+        {activeTab === 'Dashboard' || activeTab === 'Attendance' || activeTab === 'Leave' || activeTab === 'Leads' || activeTab === 'Expense' ? null : null}
+        {activeTab !== 'Leads' && activeTab !== 'Leave' && null}
+        {activeTab !== 'Leads' && null}
+        {activeTab === 'Dashboard' || null}
+        {activeTab === 'Expense' || null}
+        {activeTab === 'Dashboard' || null}
+        {activeTab === 'Leads' || null}
+        {
+        }
+        {activeTab !== 'Leads' && activeTab !== 'Leave' && null}
+        {activeTab !== 'Attendance' && null}
+        {activeTab === 'Dashboard' || null}
+        {activeTab === 'Expense' || null}
+        {activeTab !== 'Leads' && null}
+        {activeTab === 'Dashboard' || null}
+        
+        {activeTab === 'Expense' && null}
+        {activeTab === 'Dashboard' && null}
+        {activeTab === 'Expense' && null}
+        {activeTab === 'Expense' && null}
+        {activeTab === 'Expense' && null}
+        {activeTab === 'Expense' && null}
+        {activeTab === 'Expense' && null}
+        {activeTab === 'Expense' && null}
+        {activeTab === 'Expense' && null}
+        {activeTab === 'Expense' && null}
+        {activeTab === 'Expense' && null}
+        {activeTab === 'Expense' && null}
+        {activeTab === 'Expense' && null}
+        {activeTab === 'Expense' && null}
+        
+        {activeTab === 'Expense' && null}
+        
+        {activeTab !== 'Dashboard' && null}
+        
+        {activeTab !== 'Dashboard' && null}
+        
+        {activeTab === 'Expense' && null}
+        
+        {/* Profile tab content */}
+        {activeTab !== 'Leads' && activeTab !== 'Leave' && null}
+        {activeTab === 'Expense' && null}
+        {activeTab === 'Dashboard' && null}
+        {/* Actually render Profile when active */}
+        {activeTab !== 'Dashboard' && activeTab !== 'Attendance' && activeTab !== 'Leave' && activeTab !== 'Leads' && activeTab !== 'Expense' && (
+          <ProfileScreen
+            onOpenPayslips={() => setOverlay(<PayslipScreen onBack={() => setOverlay(null)} />)}
+            onOpenPersonalInfo={() => setOverlay(<PersonalInfoScreen onBack={() => setOverlay(null)} />)}
+          />
+        )}
       </View>
-      <BottomTabBar activeTab={activeTab} onChange={setActiveTab} />
+      {!overlay && <BottomTabBar activeTab={activeTab} onChange={setActiveTab} />}
 
-      <ProfileDrawer visible={drawerOpen} anim={drawerAnim} onClose={closeDrawer} />
+      <ProfileDrawer
+        visible={drawerOpen}
+        anim={drawerAnim}
+        onClose={closeDrawer}
+        onOpenPayslips={() => { closeDrawer(); setOverlay(<PayslipScreen onBack={() => setOverlay(null)} />); }}
+        onOpenPersonalInfo={() => { closeDrawer(); setOverlay(<PersonalInfoScreen onBack={() => setOverlay(null)} />); }}
+      />
+      {overlay && (
+        <View style={[StyleSheet.absoluteFill, { zIndex: 100, backgroundColor: '#fff' }]}>
+          {overlay}
+        </View>
+      )}
     </View>
   );
 }
@@ -96,7 +161,7 @@ function TabButton({
   );
 }
 
-function ProfileDrawer({ visible, anim, onClose }: { visible: boolean; anim: Animated.Value; onClose: () => void }) {
+function ProfileDrawer({ visible, anim, onClose, onOpenPayslips, onOpenPersonalInfo }: { visible: boolean; anim: Animated.Value; onClose: () => void; onOpenPayslips: () => void; onOpenPersonalInfo: () => void }) {
   const { width, height } = Dimensions.get('window');
   const panelWidth = Math.min(360, Math.round(width * 0.88));
   const translateX = anim.interpolate({ inputRange: [0, 1], outputRange: [-panelWidth, 0] });
@@ -109,7 +174,7 @@ function ProfileDrawer({ visible, anim, onClose }: { visible: boolean; anim: Ani
       </Pressable>
       <Animated.View style={[styles.drawerPanel, styles.drawerLeft, { width: panelWidth, transform: [{ translateX }] }] }>
         <View style={{ flex: 1 }}>
-          <ProfileScreen />
+          <ProfileScreen onOpenPayslips={onOpenPayslips} onOpenPersonalInfo={onOpenPersonalInfo} />
         </View>
       </Animated.View>
     </View>
@@ -185,3 +250,4 @@ const styles = StyleSheet.create({
   },
   drawerTitle: { fontSize: 16, fontWeight: '600', color: '#333' },
 });
+

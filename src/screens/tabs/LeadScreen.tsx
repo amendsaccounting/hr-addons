@@ -7,7 +7,7 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { listAllLeads, listLeads, countLeads, deleteLead, createLeadFromModal, listLocations, listTerritories, getLeadSelectOptions, type Lead, type LocationOption } from '../../services/leadService';
 
-export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string) => void }) {
+export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string, opts?: { edit?: boolean }) => void }) {
   (Ionicons as any)?.loadFont?.();
   const insets = useSafeAreaInsets();
   const DEFAULT_LOCATION_LABEL = 'Deira';
@@ -332,15 +332,30 @@ export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string)
             updateCellsBatchingPeriod={50}
             removeClippedSubviews
             renderItem={({ item }) => (
-              <Pressable style={styles.leadCard} onPress={() => onOpenLead && onOpenLead(item.name)}>
+              <Pressable style={styles.leadCard} onPress={() => { onOpenLead && onOpenLead(item.name); }}>
                 <View style={styles.leadTop}>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.leadCompany}>{item.company_name || item.lead_name || '—'}</Text>
                     {!!item.lead_name && <Text style={styles.leadContact}>{item.lead_name}</Text>}
                   </View>
-                  <Pressable accessibilityRole="button" onPress={() => onDelete(item.name)}>
-                    <Ionicons name="trash-outline" size={18} color="#ef4444" />
-                  </Pressable>
+                  <View style={styles.leadActionsWrap}>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="Edit Lead"
+                      onPress={(e) => { e.stopPropagation?.(); onOpenLead && onOpenLead(item.name, { edit: true }); }}
+                      style={[styles.roundIconBtn, styles.roundIconBtnNeutral]}
+                    >
+                      <Ionicons name="create-outline" size={16} color="#111827" />
+                    </Pressable>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="Delete Lead"
+                      onPress={(e) => { e.stopPropagation?.(); onDelete(item.name); }}
+                      style={[styles.roundIconBtn, styles.roundIconBtnDanger]}
+                    >
+                      <Ionicons name="trash-outline" size={16} color="#ef4444" />
+                    </Pressable>
+                  </View>
                 </View>
                 <View style={styles.badgeRow}>
                   {!!item.status && (
@@ -910,6 +925,7 @@ const styles = StyleSheet.create({
 
   leadCard: { backgroundColor: '#fff', borderRadius: 12, borderWidth: 1, borderColor: '#e5e7eb', marginHorizontal: 16, padding: 14, marginTop: 10 },
   leadTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
+  leadActionsWrap: { flexDirection: 'row', alignItems: 'center', position: 'relative', gap: 8 },
   leadCompany: { color: '#111827', fontWeight: '700' },
   leadContact: { color: '#6b7280', marginTop: 2 },
 
@@ -917,6 +933,9 @@ const styles = StyleSheet.create({
   badge: { flexDirection: 'row', alignItems: 'center', borderRadius: 16, paddingHorizontal: 10, paddingVertical: 6, marginRight: 8 },
   badgeText: { fontSize: 12, fontWeight: '700', marginLeft: 6 },
   linkBadge: { borderWidth: 1, borderColor: '#e5e7eb' },
+  roundIconBtn: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#e5e7eb' },
+  roundIconBtnNeutral: { backgroundColor: '#f3f4f6' },
+  roundIconBtnDanger: { backgroundColor: '#fdeaea', borderColor: '#f3cccc' },
 
   notes: { color: '#374151', marginTop: 10 },
   detailList: { marginTop: 10 },

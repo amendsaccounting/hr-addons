@@ -14,6 +14,8 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Config from 'react-native-config';
 import { fetchEmployeeProfile, type ProfileView } from '../../services/profile';
+import PayslipScreen from './PayslipScreen';
+import PersonalInfoScreen from './PersonalInfoScreen';
 
 type ProfileData = {
   name?: string | null;
@@ -105,7 +107,7 @@ const LogoutButton = React.memo(function LogoutButton({ onPress }: { onPress: ()
   );
 });
 
-export default function ProfileScreen() {
+export default function ProfileScreen({ onOpenPayslips, onOpenPersonalInfo }: { onOpenPayslips?: () => void; onOpenPersonalInfo?: () => void }) {
   (Ionicons as any)?.loadFont?.();
 
   const [profile, setProfile] = useState<ProfileData>({});
@@ -253,7 +255,11 @@ export default function ProfileScreen() {
                      : ({ uri: src } as any);
   }, [profile.image]);
 
-  const onQuickPress = React.useCallback((label: string) => Alert.alert(label, 'Coming soon.'), []);
+  const onQuickPress = React.useCallback((label: string) => {
+    if (label === 'Payslips') { onOpenPayslips && onOpenPayslips(); return; }
+    if (label === 'Personal Information') { onOpenPersonalInfo && onOpenPersonalInfo(); return; }
+    Alert.alert(label, 'Coming soon.');
+  }, [onOpenPayslips, onOpenPersonalInfo]);
 
   const renderItem: ListRenderItem<Row> = React.useCallback(({ item }) => {
     switch (item.type) {
