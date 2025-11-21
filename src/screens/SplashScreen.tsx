@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, StatusBar, Animated, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, StatusBar, Animated, Dimensions, Image } from 'react-native';
+import { logo } from '../assets/images';
 
 const { height } = Dimensions.get('window');
 
@@ -50,17 +51,20 @@ useEffect(() => {
       )}
 
       <View style={styles.topSection}>
-        <Animated.View style={[styles.logoContainer, { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }]}>
-          <View style={styles.logoCircle}>
-            {IoniconsComp ? (
-              <IoniconsComp name="people" size={64} color="#fff" />
-            ) : (
-              <Text style={{ fontSize: 56, color: '#fff' }}>👥</Text>
-            )}
-          </View>
-        </Animated.View>
+<Animated.View style={[styles.logoContainer, { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }]}>
+  <View style={styles.logoCircle}>
+    <Image
+      source={logo}
+      style={{
+        width: 100,
+        height: 100,   
+        borderRadius: 50, 
+        resizeMode: 'cover',
+      }}
+    />
+  </View>
+</Animated.View>
       </View>
-
       <View style={styles.middleSection}>
         <Animated.View style={[styles.textContainer, { opacity: fadeAnim }]}>
           <Text style={styles.appName}>ADDON-S HR</Text>
@@ -89,11 +93,21 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#1a1f36' },
   topSection: { flex: 4, justifyContent: 'center', alignItems: 'center', paddingTop: height * 0.1 },
   logoContainer: { justifyContent: 'center', alignItems: 'center' },
-  logoCircle: {
-    width: 140, height: 140, borderRadius: 70,
-    backgroundColor: 'rgba(255,255,255,0.1)', justifyContent: 'center', alignItems: 'center',
-    borderWidth: 3, borderColor: 'rgba(255,255,255,0.2)', shadowColor: '#fff', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.3, shadowRadius: 20, elevation: 10,
-  },
+logoCircle: {
+  width: 120,  // reduced from 140
+  height: 120, // reduced from 140
+  borderRadius: 60, // half of width/height
+  backgroundColor: 'rgba(255,255,255,0.1)',
+  justifyContent: 'center',
+  alignItems: 'center',
+  borderWidth: 3,
+  borderColor: 'rgba(255,255,255,0.2)',
+  shadowColor: '#fff',
+  shadowOffset: { width: 0, height: 0 },
+  shadowOpacity: 0.3,
+  shadowRadius: 20,
+  elevation: 10,
+},
   middleSection: { flex: 4, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40 },
   textContainer: { alignItems: 'center' },
   appName: { fontSize: 34, fontWeight: 'bold', color: '#ffffff', letterSpacing: 1, marginBottom: 16 },

@@ -27,7 +27,6 @@ export default function LeadDetailScreen({ name, onBack, startEditing }: { name:
     source: '',
     status: '',
     territory: '',
-    // Custom / mapped
     date: '',
     location: '',
     lead_owner: '',

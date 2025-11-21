@@ -5,7 +5,7 @@ import DatePicker from 'react-native-date-picker';
 import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { listAllLeads, listLeads, countLeads, deleteLead, createLeadFromModal, listLocations, listTerritories, getLeadSelectOptions, type Lead, type LocationOption } from '../../services/leadService';
+import { listAllLeads, listLeads, countLeads, deleteLead, createLeadFromModal, listLocations, listTerritories, listAssociates, getLeadSelectOptions, type Lead, type LocationOption } from '../../services/leadService';
 
 export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string, opts?: { edit?: boolean }) => void }) {
   (Ionicons as any)?.loadFont?.();
@@ -46,6 +46,7 @@ export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string,
     company_name: '',
     territory: '',
     notes: '',
+    associate_details: '',
   });
   const [attachments, setAttachments] = useState<Array<{ uri: string; name?: string; type?: string }>>([]);
   const [statusPickerVisible, setStatusPickerVisible] = useState(false);
@@ -58,6 +59,9 @@ export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string,
   const [territoryPickerVisible, setTerritoryPickerVisible] = useState(false);
   const [territoryOptions, setTerritoryOptions] = useState<LocationOption[]>([]);
   const [territorySearch, setTerritorySearch] = useState('');
+  const [associatePickerVisible, setAssociatePickerVisible] = useState(false);
+  const [associateOptions, setAssociateOptions] = useState<LocationOption[]>([]);
+  const [associateSearch, setAssociateSearch] = useState('');
   const [serviceTypePickerVisible, setServiceTypePickerVisible] = useState(false);
   const [serviceTypeOptions, setServiceTypeOptions] = useState<string[]>([]);
   const [requestTypePickerVisible, setRequestTypePickerVisible] = useState(false);
@@ -177,6 +181,23 @@ export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string,
     if (!sourcePickerVisible) return;
     getLeadSelectOptions('source').then(setSourceOptions).catch(() => setSourceOptions([]));
   }, [sourcePickerVisible]);
+
+  // Fetch associates when dropdown opens
+  useEffect(() => {
+    let cancelled = false;
+    async function run() {
+      try {
+        if (associatePickerVisible) {
+          const opts = await listAssociates(200);
+          if (!cancelled) setAssociateOptions(opts || []);
+        }
+      } catch {
+        if (!cancelled) setAssociateOptions([]);
+      }
+    }
+    run();
+    return () => { cancelled = true; };
+  }, [associatePickerVisible]);
 
   useEffect(() => {
     setPage(1); setHasMore(true);
@@ -713,6 +734,44 @@ export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string,
                     onChangeText={(v: string) => setForm({ ...form, territory: v })}
                   />
 
+                  <Text style={styles.inputLabel}>Associate Details</Text>
+                  <Pressable accessibilityRole="button" onPress={() => { setAssociateSearch(''); setAssociatePickerVisible(true); }} style={styles.selectBox}>
+                    <Text style={styles.selectText}>{associateOptions.find(o => o.name === (form as any).associate_details)?.label || (form as any).associate_details || 'Select associate'}</Text>
+                    <Ionicons name="chevron-down" size={18} color="#6b7280" />
+                  </Pressable>
+                  {associatePickerVisible && (
+                    <View style={styles.dropdownPanel}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingTop: 10 }}>
+                        <Ionicons name="search" size={16} color="#6b7280" style={{ marginRight: 8 }} />
+                        <TextInput
+                          placeholder="Search associate..."
+                          placeholderTextColor="#9ca3af"
+                          style={[styles.searchInput, { flex: 1, paddingVertical: 6, borderWidth: 0 }]}
+                          value={associateSearch}
+                          onChangeText={setAssociateSearch}
+                        />
+                        <Pressable accessibilityRole="button" onPress={() => setAssociatePickerVisible(false)}>
+                          <Ionicons name="close" size={18} color="#6b7280" />
+                        </Pressable>
+                      </View>
+                      <View style={{ maxHeight: 220 }}>
+                        {(associateOptions || [])
+                          .filter(o => !associateSearch || String(o.label || o.name).toLowerCase().includes(associateSearch.toLowerCase()))
+                          .map((o) => (
+                            <Pressable key={o.name} style={styles.selectOption} onPress={() => { setForm(prev => ({ ...(prev as any), associate_details: o.name })); setAssociatePickerVisible(false); }}>
+                              <Text style={styles.selectOptionText}>{o.label || o.name}</Text>
+                              {(form as any).associate_details === o.name && <Ionicons name="checkmark" size={16} color="#111827" />}
+                            </Pressable>
+                          ))}
+                        {(!associateOptions || associateOptions.length === 0) && (
+                          <View style={{ padding: 12 }}>
+                            <Text style={{ color: '#6b7280' }}>No associates found</Text>
+                          </View>
+                        )}
+                      </View>
+                    </View>
+                  )}
+
                   <LabeledInput
                     label="Notes"
                     placeholder="Add any notes here"
@@ -821,6 +880,7 @@ export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string,
                           company_name: '',
                           territory: '',
                           notes: '',
+                          associate_details: '',
                         });
                         setAttachments([]);
                         setPage(1); setHasMore(true);

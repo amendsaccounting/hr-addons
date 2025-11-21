@@ -269,6 +269,54 @@ export async function listTerritories(limit = 200): Promise<LocationOption[]> {
   return data.map((r: any) => ({ name: r?.name, label: r?.territory_name || r?.name })).filter((x: any) => x && x.name);
 }
 
+// Associates listing (for dropdown in Add Lead)
+let _resolvedAssociateDoctype: string | null = null;
+async function resolveAssociateDoctype(): Promise<string> {
+  if (_resolvedAssociateDoctype) return _resolvedAssociateDoctype;
+  // 1) Try to read from Lead DocType meta using mapped fieldname
+  try {
+    const headers = getHeaders();
+    const url = `${BASE_URL}/DocType/Lead`;
+    const res = await fetch(url, { headers });
+    const json = await res.json().catch(() => ({} as any));
+    const doc = (json as any)?.data ?? json;
+    const fields = Array.isArray((doc as any)?.fields) ? (doc as any).fields : [];
+    const fieldname = (FIELD_MAP as any)?.associate_details || 'associate_details';
+    const f = fields.find((x: any) => x?.fieldname === fieldname);
+    if (f && f.fieldtype === 'Link' && typeof f.options === 'string' && f.options) {
+      _resolvedAssociateDoctype = f.options;
+      debugLog('resolveAssociateDoctype via Lead meta field', fieldname, '->', f.options);
+      return _resolvedAssociateDoctype;
+    }
+    // Heuristic: find any Link field with label/fieldname including 'associate'
+    const heur = fields.find((x: any) => String(x?.fieldtype).toLowerCase() === 'link' && typeof x?.options === 'string' && x.options && (/associate/i.test(String(x?.label || '')) || /associate/i.test(String(x?.fieldname || ''))));
+    if (heur) {
+      _resolvedAssociateDoctype = heur.options;
+      debugLog('resolveAssociateDoctype via heuristic', heur.fieldname, '->', heur.options);
+      return _resolvedAssociateDoctype;
+    }
+  } catch {}
+  // 2) Env override
+  const env = String((Config as any)?.ERP_ASSOCIATE_DOCTYPE || '').trim();
+  if (env) { _resolvedAssociateDoctype = env; return env; }
+  // 3) Fallbacks
+  _resolvedAssociateDoctype = 'Associate';
+  return _resolvedAssociateDoctype;
+}
+
+export async function listAssociates(limit = 200): Promise<LocationOption[]> {
+  const dt = await resolveAssociateDoctype();
+  let rows: LocationOption[] = [];
+  try { rows = await listDocNameAndTitle(dt, limit); } catch {}
+  if (rows && rows.length) return rows;
+  // Try a pluralized fallback commonly seen
+  const fallback = dt.toLowerCase() === 'associate' ? 'Associates' : 'Associate';
+  if (fallback !== dt) {
+    try { rows = await listDocNameAndTitle(fallback, limit); } catch {}
+  }
+  return rows || [];
+}
+
 // Fetch Select options for a Lead field (including custom-mapped fields)
 export async function getLeadSelectOptions(field: 'service_type' | 'request_type' | 'lead_type' | 'source'): Promise<string[]> {
   const meta = await fetchDocTypeMeta('Lead');
@@ -411,6 +459,7 @@ export type ModalLeadInput = {
   company_name?: string; // Organisation Name
   territory?: string;
   notes?: string;
+  associate_details?: string;
 };
 
 type AttachmentFile = { uri: string; name?: string; type?: string };
@@ -427,6 +476,7 @@ const FIELD_MAP: Record<string, string> = {
   whatsapp: 'custom_whatsapp',
   website: 'custom_website',
   notes: 'custom_notes',
+  associate_details: 'custom_associate_details',
 };
 
 const ENABLE_CUSTOM_LEAD_FIELDS = isTruthy((Config as any)?.ERP_ENABLE_CUSTOM_LEAD_FIELDS);
@@ -463,7 +513,7 @@ export function prepareLeadPayload(input: ModalLeadInput): Partial<Lead> {
 
   // Custom mappings
   if (ENABLE_CUSTOM_LEAD_FIELDS) {
-    (['gender','lead_owner','lead_type','request_type','service_type','whatsapp','website','notes'] as const).forEach((k) => {
+    (['gender','lead_owner','lead_type','request_type','service_type','whatsapp','website','notes','associate_details'] as const).forEach((k) => {
       const v = (input as any)[k];
       const target = FIELD_MAP[k];
       if (v != null && target) out[target] = v;
