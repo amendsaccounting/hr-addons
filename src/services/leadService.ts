@@ -535,6 +535,144 @@ export function prepareLeadPayload(input: ModalLeadInput): Partial<Lead> {
 }
 
 /**
+ * Prepare an update payload for Lead that preserves user intent to clear fields.
+ * Unlike create payload, this includes empty strings for fields present in input
+ * so that clearing a value in the UI removes it on the server as well.
+ */
+export function prepareLeadUpdatePayload(input: Partial<ModalLeadInput & Lead>): Partial<Lead> {
+  const out: any = {};
+  // Helper: only set if the key exists on input (even if empty string)
+  const has = (k: string) => Object.prototype.hasOwnProperty.call(input as any, k);
+
+  // Core/standard fields
+  if (has('lead_name')) out.lead_name = String((input as any).lead_name ?? '');
+  if (has('company_name')) out.company_name = String((input as any).company_name ?? '');
+  if (has('email_id')) out.email_id = String((input as any).email_id ?? '');
+  if (has('mobile_no')) out.mobile_no = String((input as any).mobile_no ?? '');
+  if (has('status')) {
+    const s = String((input as any).status ?? '').trim();
+    if (s) {
+      const allowed = new Set(['Lead','Open','Replied','Opportunity','Quotation','Lost Quotation','Interested','Converted','Do Not Contact']);
+      const map: Record<string, string> = { 'Qualified': 'Interested' };
+      const normalized = map[s] || s;
+      out.status = allowed.has(normalized) ? normalized : 'Lead';
+    }
+  }
+  if (has('source')) out.source = String((input as any).source ?? '');
+  if (has('territory')) out.territory = String((input as any).territory ?? '');
+
+  // Date/location custom mappings (set when present on input)
+  if (has('date')) out[FIELD_MAP.date] = String((input as any).date ?? '');
+  if (has('location') && FIELD_MAP.location) out[FIELD_MAP.location] = String((input as any).location ?? '');
+
+  // Website/Whatsapp/Notes and other custom fields
+  if (ENABLE_CUSTOM_LEAD_FIELDS) {
+    (['gender','lead_owner','lead_type','request_type','service_type','whatsapp','website','notes','associate_details'] as const).forEach((k) => {
+      if (has(k)) {
+        const target = FIELD_MAP[k];
+        if (target) out[target] = (input as any)[k] ?? '';
+      }
+    });
+  } else {
+    // Set standard keys for common fields when custom mapping is disabled
+    if (has('website')) out.website = String((input as any).website ?? '');
+    if (has('whatsapp')) out.whatsapp = String((input as any).whatsapp ?? '');
+    if (has('notes')) out.notes = String((input as any).notes ?? '');
+    if (has('lead_owner')) out.lead_owner = String((input as any).lead_owner ?? '');
+    if (has('lead_type')) out.lead_type = String((input as any).lead_type ?? '');
+    if (has('request_type')) out.request_type = String((input as any).request_type ?? '');
+    if (has('service_type')) out.service_type = String((input as any).service_type ?? '');
+  }
+
+  return out as Partial<Lead>;
+}
+
+/**
+ * Update Lead with field mapping resolved against DocType meta.
+ * Ensures we only send fields that exist on the server, and prefer
+ * custom fieldnames from FIELD_MAP when present in the meta.
+ */
+export async function updateLeadSmart(name: string, input: Partial<ModalLeadInput & Lead>): Promise<Lead | null> {
+  const meta = await fetchDocTypeMeta('Lead');
+  const fieldnames: Set<string> = new Set(Array.isArray((meta as any)?.fields) ? (meta as any).fields.map((f: any) => String(f?.fieldname)) : []);
+
+  const out: any = {};
+  const has = (k: string) => Object.prototype.hasOwnProperty.call(input as any, k);
+  const mapField = (logical: string, customKey?: keyof typeof FIELD_MAP) => {
+    const customName = customKey ? FIELD_MAP[customKey] : undefined;
+    if (customName && fieldnames.has(customName)) return customName;
+    if (fieldnames.has(logical)) return logical;
+    return null;
+  };
+
+  const assign = (logical: string, customKey?: keyof typeof FIELD_MAP) => {
+    if (!has(logical)) return;
+    const target = mapField(logical, customKey);
+    if (!target) return;
+    out[target] = (input as any)[logical] ?? '';
+  };
+
+  // Core
+  assign('lead_name');
+  assign('company_name');
+  assign('email_id');
+  assign('mobile_no');
+  assign('status');
+  assign('source');
+  assign('territory');
+  assign('website', 'website');
+  assign('whatsapp', 'whatsapp');
+  assign('notes', 'notes');
+
+  // Custom-mapped
+  assign('lead_owner', 'lead_owner');
+  assign('lead_type', 'lead_type');
+  assign('request_type', 'request_type');
+  assign('service_type', 'service_type');
+  assign('date', 'date');
+  assign('location', 'location');
+
+  // Additional standard fields commonly present
+  assign('phone');
+  assign('salutation');
+  assign('first_name');
+  assign('company');
+  assign('title');
+  assign('country');
+  assign('language');
+  assign('qualification_status');
+  assign('type');
+  assign('no_of_employees');
+
+  // Perform PUT with mapped payload and surface server error messages when possible
+  const headers = getHeaders();
+  const id = String(name || '').trim();
+  if (!id) return null;
+  const url = `${BASE_URL}/Lead/${encodeURIComponent(id)}`;
+  const res = await fetch(url, { method: 'PUT', headers, body: JSON.stringify(out) });
+  const json = await res.json().catch(() => null as any);
+  try { debugLog('updateLeadSmart', { url, status: res.status, ok: res.ok, body: json }); } catch {}
+  if (!res.ok) {
+    const msg = extractFrappeError(json) || 'Unable to save lead';
+    throw new Error(msg);
+  }
+  return ((json as any)?.data ?? json) as Lead;
+}
+
+function extractFrappeError(json: any): string | null {
+  try {
+    if (!json) return null;
+    if (typeof json.message === 'string' && json.message) return json.message;
+    if (Array.isArray(json?._server_messages) && json._server_messages.length) {
+      const first = json._server_messages[0];
+      try { const parsed = JSON.parse(first); if (parsed.message) return String(parsed.message); } catch {}
+    }
+    if (typeof json.exception === 'string' && json.exception) return json.exception;
+  } catch {}
+  return null;
+}
+
+/**
  * Create an ERPNext Lead from the modal fields and optionally upload attachments.
  * Returns the created Lead (or null on failure).
  */

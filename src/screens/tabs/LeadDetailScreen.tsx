@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, StatusBar, ActivityIndicator, Alert, Linking } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, StatusBar, ActivityIndicator, Alert, Linking, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
-import { getLead, updateLead, prepareLeadPayload, type Lead as ERPLead } from '../../services/leadService';
+import { getLead, updateLeadSmart, prepareLeadPayload, prepareLeadUpdatePayload, type Lead as ERPLead } from '../../services/leadService';
 
 (Ionicons as any)?.loadFont?.();
 
@@ -94,7 +94,21 @@ export default function LeadDetailScreen({ name, onBack, startEditing }: { name:
     return () => { cancelled = true; };
   }, [name]);
 
+  const showVal = (formVal: any, ...fallbacks: any[]) => {
+    if (editing) return String(formVal ?? '');
+    const list = [formVal, ...fallbacks];
+    for (const v of list) {
+      if (v !== undefined && v !== null && String(v) !== '') return String(v);
+    }
+    return '-';
+  };
+
   const safeOpen = async (url: string, label: string) => {
+    // Try to open directly first; some platforms return false for canOpenURL on tel/sms
+    try {
+      await Linking.openURL(url);
+      return;
+    } catch {}
     try {
       const ok = await Linking.canOpenURL(url);
       if (!ok) return Alert.alert(label, 'No compatible app to handle this action.');
@@ -113,7 +127,8 @@ export default function LeadDetailScreen({ name, onBack, startEditing }: { name:
   const onCall = () => {
     const phone = getPrimaryPhone();
     if (!phone) return Alert.alert('Call', 'No phone number');
-    safeOpen(`tel:${phone}`, 'Call');
+    const scheme = Platform.OS === 'ios' ? 'telprompt' : 'tel';
+    safeOpen(`${scheme}:${phone}`, 'Call');
   };
 
   const onMessage = () => {
@@ -132,7 +147,13 @@ export default function LeadDetailScreen({ name, onBack, startEditing }: { name:
   async function onSaveAll() {
     try {
       setSaving(true);
-      const payload = prepareLeadPayload({
+      // Ensure required minimal fields
+      if (!String(form.lead_name || '').trim()) {
+        Alert.alert('Lead', 'Lead Name is required');
+        return;
+      }
+      // Build update payload that preserves cleared values
+      const base: any = {
         lead_name: form.lead_name,
         company_name: form.company_name,
         email_id: form.email_id,
@@ -149,20 +170,19 @@ export default function LeadDetailScreen({ name, onBack, startEditing }: { name:
         website: form.website,
         whatsapp: form.whatsapp,
         notes: form.notes,
-      } as any);
-      const extra: any = {};
-      if (form.phone) extra.phone = form.phone;
-      if (form.salutation) extra.salutation = form.salutation;
-      if (form.first_name) extra.first_name = form.first_name;
-      if (form.company) extra.company = form.company;
-      if (form.title) extra.title = form.title;
-      if (form.country) extra.country = form.country;
-      if (form.language) extra.language = form.language;
-      if (form.qualification_status) extra.qualification_status = form.qualification_status;
-      if (form.type) extra.type = form.type;
-      if (form.no_of_employees) extra.no_of_employees = form.no_of_employees;
-
-      const updated = await updateLead(name, { ...payload, ...extra });
+        phone: form.phone,
+        salutation: form.salutation,
+        first_name: form.first_name,
+        company: form.company,
+        title: form.title,
+        country: form.country,
+        language: form.language,
+        qualification_status: form.qualification_status,
+        type: form.type,
+        no_of_employees: form.no_of_employees,
+      };
+      // Pass raw form-based values to smart updater so it can map to correct fieldnames
+      const updated = await updateLeadSmart(name, base);
       if (!updated) throw new Error('Save failed');
       setEditing(false);
       // Refresh
@@ -235,54 +255,54 @@ export default function LeadDetailScreen({ name, onBack, startEditing }: { name:
 
             <Card>
               <CardTitle>Contact Information</CardTitle>
-              <EditableField label="Mobile Number" value={form.mobile_no || (lead as any)?.mobile_no || '-'} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, mobile_no: t }))} />
+              <EditableField label="Mobile Number" value={showVal(form.mobile_no, (lead as any)?.mobile_no)} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, mobile_no: t }))} />
               <Divider />
-              <EditableField label="Phone Number" value={form.phone || (lead as any)?.phone || '-'} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, phone: t }))} />
+              <EditableField label="Phone Number" value={showVal(form.phone, (lead as any)?.phone)} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, phone: t }))} />
               <Divider />
-              <EditableField label="Email" value={form.email_id || (lead as any)?.email_id || '-'} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, email_id: t }))} />
+              <EditableField label="Email" value={showVal(form.email_id, (lead as any)?.email_id)} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, email_id: t }))} />
               <Divider />
-              <EditableField label="Website" value={form.website || (lead as any)?.website || '-'} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, website: t }))} />
+              <EditableField label="Website" value={showVal(form.website, (lead as any)?.website)} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, website: t }))} />
               <Divider />
-              <EditableField label="WhatsApp" value={form.whatsapp || (lead as any)?.custom_whatsapp || (lead as any)?.whatsapp || '-'} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, whatsapp: t }))} />
+              <EditableField label="WhatsApp" value={showVal(form.whatsapp, (lead as any)?.custom_whatsapp, (lead as any)?.whatsapp)} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, whatsapp: t }))} />
             </Card>
 
             <Card>
               <CardTitle>Lead Details</CardTitle>
-              <EditableField label="Lead Name" value={form.lead_name || (lead as any)?.lead_name || '-'} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, lead_name: t }))} />
+              <EditableField label="Lead Name" value={showVal(form.lead_name, (lead as any)?.lead_name)} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, lead_name: t }))} />
               <Divider />
-              <EditableField label="Salutation" value={form.salutation || (lead as any)?.salutation || '-'} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, salutation: t }))} />
+              <EditableField label="Salutation" value={showVal(form.salutation, (lead as any)?.salutation)} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, salutation: t }))} />
               <Divider />
-              <EditableField label="First Name" value={form.first_name || (lead as any)?.first_name || '-'} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, first_name: t }))} />
+              <EditableField label="First Name" value={showVal(form.first_name, (lead as any)?.first_name)} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, first_name: t }))} />
               <Divider />
-              <EditableField label="Status" value={form.status || (lead as any)?.status || '-'} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, status: t }))} />
+              <EditableField label="Status" value={showVal(form.status, (lead as any)?.status)} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, status: t }))} />
               <Divider />
-              <EditableField label="Lead Source" value={form.source || (lead as any)?.source || '-'} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, source: t }))} />
+              <EditableField label="Lead Source" value={showVal(form.source, (lead as any)?.source)} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, source: t }))} />
               <Divider />
-              <EditableField label="Qualification Status" value={form.qualification_status || (lead as any)?.qualification_status || '-'} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, qualification_status: t }))} />
+              <EditableField label="Qualification Status" value={showVal(form.qualification_status, (lead as any)?.qualification_status)} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, qualification_status: t }))} />
               <Divider />
-              <EditableField label="Lead Owner" value={form.lead_owner || (lead as any)?.lead_owner || '-'} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, lead_owner: t }))} />
+              <EditableField label="Lead Owner" value={showVal(form.lead_owner, (lead as any)?.lead_owner)} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, lead_owner: t }))} />
               <Divider />
-              <EditableField label="Territory" value={form.territory || (lead as any)?.territory || '-'} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, territory: t }))} />
+              <EditableField label="Territory" value={showVal(form.territory, (lead as any)?.territory)} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, territory: t }))} />
               <Divider />
-              <EditableField label="Company Name" value={form.company_name || (lead as any)?.company_name || '-'} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, company_name: t }))} />
+              <EditableField label="Company Name" value={showVal(form.company_name, (lead as any)?.company_name)} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, company_name: t }))} />
               <Divider />
-              <EditableField label="Company" value={form.company || (lead as any)?.company || '-'} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, company: t }))} />
+              <EditableField label="Company" value={showVal(form.company, (lead as any)?.company)} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, company: t }))} />
               <Divider />
-              <EditableField label="Title" value={form.title || (lead as any)?.title || '-'} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, title: t }))} />
+              <EditableField label="Title" value={showVal(form.title, (lead as any)?.title)} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, title: t }))} />
               <Divider />
-              <EditableField label="Country" value={form.country || (lead as any)?.country || '-'} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, country: t }))} />
+              <EditableField label="Country" value={showVal(form.country, (lead as any)?.country)} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, country: t }))} />
               <Divider />
-              <EditableField label="Location" value={form.location || (lead as any)?.custom_building__location || '-'} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, location: t }))} />
+              <EditableField label="Location" value={showVal(form.location, (lead as any)?.custom_building__location)} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, location: t }))} />
               <Divider />
-              <EditableField label="Language" value={form.language || (lead as any)?.language || '-'} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, language: t }))} />
+              <EditableField label="Language" value={showVal(form.language, (lead as any)?.language)} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, language: t }))} />
               <Divider />
-              <EditableField label="Request Type" value={form.request_type || (lead as any)?.request_type || '-'} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, request_type: t }))} />
+              <EditableField label="Request Type" value={showVal(form.request_type, (lead as any)?.request_type)} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, request_type: t }))} />
               <Divider />
-              <EditableField label="Type" value={form.type || (lead as any)?.type || '-'} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, type: t }))} />
+              <EditableField label="Type" value={showVal(form.type, (lead as any)?.type)} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, type: t }))} />
               <Divider />
-              <EditableField label="No. of Employees" value={form.no_of_employees || String((lead as any)?.no_of_employees || '') || '-'} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, no_of_employees: t }))} />
+              <EditableField label="No. of Employees" value={showVal(form.no_of_employees, (lead as any)?.no_of_employees)} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, no_of_employees: t }))} />
               <Divider />
-              <EditableField label="Date" value={form.date || (lead as any)?.custom_date || '-'} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, date: t }))} />
+              <EditableField label="Date" value={showVal(form.date, (lead as any)?.custom_date)} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, date: t }))} />
             </Card>
 
             <Card>
@@ -318,7 +338,7 @@ export default function LeadDetailScreen({ name, onBack, startEditing }: { name:
 
             <Card>
               <CardTitle>Notes / Follow-up</CardTitle>
-              <EditableField label="Notes" value={form.notes || (lead as any)?.custom_notes || (lead as any)?.notes || '-'} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, notes: t }))} />
+              <EditableField label="Notes" value={showVal(form.notes, (lead as any)?.custom_notes, (lead as any)?.notes)} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, notes: t }))} />
             </Card>
           </>
         )}
@@ -461,7 +481,3 @@ const styles = StyleSheet.create({
 
   fab: { position: 'absolute', right: 20, width: 48, height: 48, borderRadius: 24, backgroundColor: '#2563EB', alignItems: 'center', justifyContent: 'center', elevation: 3 },
 });
-
-
-
-

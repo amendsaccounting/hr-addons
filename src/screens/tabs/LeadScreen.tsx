@@ -10,6 +10,7 @@ import { listAllLeads, listLeads, countLeads, deleteLead, createLeadFromModal, l
 export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string, opts?: { edit?: boolean }) => void }) {
   (Ionicons as any)?.loadFont?.();
   const insets = useSafeAreaInsets();
+  const DELETE_TEMPORARILY_DISABLED = true;
   const DEFAULT_LOCATION_LABEL = 'Deira';
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -376,8 +377,9 @@ export default function LeadScreen({ onOpenLead }: { onOpenLead?: (name: string,
                     <Pressable
                       accessibilityRole="button"
                       accessibilityLabel="Delete Lead"
-                      onPress={(e) => { e.stopPropagation?.(); onDelete(item.name); }}
-                      style={[styles.roundIconBtn, styles.roundIconBtnDanger]}
+                      disabled={DELETE_TEMPORARILY_DISABLED}
+                      onPress={(e) => { e.stopPropagation?.(); if (DELETE_TEMPORARILY_DISABLED) { Alert.alert('Leads', 'Delete is temporarily disabled'); return; } onDelete(item.name); }}
+                      style={[styles.roundIconBtn, styles.roundIconBtnDanger, DELETE_TEMPORARILY_DISABLED && { opacity: 0.5 }]}
                     >
                       <Ionicons name="trash-outline" size={16} color="#ef4444" />
                     </Pressable>
