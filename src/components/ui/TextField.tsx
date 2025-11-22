@@ -1,0 +1,46 @@
+import React from 'react';
+import { View, TextInput, Text, StyleSheet, TextInputProps } from 'react-native';
+import Ionicons from 'react-native-vector-icons/Ionicons';
+import { colors, radii, spacing } from '../../styles/theme';
+
+type Props = TextInputProps & {
+  label?: string;
+  leftIcon?: string;
+  errorText?: string | null;
+};
+
+export default function TextField({ label, leftIcon, errorText, style, ...inputProps }: Props) {
+  return (
+    <View>
+      {label ? <Text style={styles.label}>{label}</Text> : null}
+      <View style={styles.inputRow}>
+        {leftIcon ? (
+          <Ionicons name={leftIcon as any} size={16} color={colors.textMuted} style={styles.leftIcon} />
+        ) : null}
+        <TextInput
+          style={[styles.input, style as any]}
+          placeholderTextColor={colors.textMuted}
+          {...inputProps}
+        />
+      </View>
+      {errorText ? <Text style={styles.errorText}>{errorText}</Text> : null}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  label: { color: colors.text, fontWeight: '600', marginBottom: spacing.xs },
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.gray300,
+    borderRadius: radii.md,
+    backgroundColor: colors.gray100,
+    height: 44,
+  },
+  leftIcon: { marginLeft: spacing.lg, marginRight: spacing.sm, color: colors.textMuted },
+  input: { flex: 1, paddingHorizontal: spacing.sm, color: colors.text },
+  errorText: { color: colors.error, marginTop: spacing.xs },
+});
+
