@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, Pressable, Animated, Dimensions, Easing } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Animated, Dimensions, Easing, Keyboard } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 (Ionicons as any)?.loadFont?.();
 import DashboardScreen from '../screens/tabs/DashboardScreen';
@@ -7,6 +7,7 @@ import AttendanceScreen from '../screens/tabs/AttendanceScreen';
 import LeaveScreen from '../screens/tabs/LeaveScreen';
 import LeadScreen from '../screens/tabs/LeadScreen';
 import LeadDetailScreen from '../screens/tabs/LeadDetailScreen';
+import LeadCreateScreen from '../screens/tabs/LeadCreateScreen';
 import ExpenseScreen from '../screens/tabs/ExpenseScreen';
 import ProfileScreen from '../screens/tabs/ProfileScreen';
 import PayslipScreen from '../screens/tabs/PayslipScreen';
@@ -20,6 +21,15 @@ export default function TabNavigator({ initialTab = 'Dashboard' as TabName }: { 
   const [leadDetailName, setLeadDetailName] = useState<string | null>(null);
   const [leadDetailEditing, setLeadDetailEditing] = useState<boolean>(false);
   const [overlay, setOverlay] = useState<React.ReactNode | null>(null);
+  const [creatingLead, setCreatingLead] = useState(false);
+  const [leadRefreshKey, setLeadRefreshKey] = useState(0);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+
+  React.useEffect(() => {
+    const subShow = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
+    const subHide = Keyboard.addListener('keyboardDidHide', () => setKeyboardVisible(false));
+    return () => { subShow.remove(); subHide.remove(); };
+  }, []);
 
   const openDrawer = () => {
     setDrawerOpen(true);
@@ -38,9 +48,13 @@ export default function TabNavigator({ initialTab = 'Dashboard' as TabName }: { 
         {activeTab === 'Attendance' && <AttendanceScreen />}
         {activeTab === 'Leave' && <LeaveScreen />}
         {activeTab === 'Leads' && (
-          leadDetailName
-            ? <LeadDetailScreen name={leadDetailName} startEditing={leadDetailEditing} onBack={() => { setLeadDetailName(null); setLeadDetailEditing(false); }} />
-            : <LeadScreen onOpenLead={(name, opts) => { setLeadDetailName(name); setLeadDetailEditing(!!opts?.edit); }} />
+          leadDetailName ? (
+            <LeadDetailScreen name={leadDetailName} startEditing={leadDetailEditing} onBack={() => { setLeadDetailName(null); setLeadDetailEditing(false); }} />
+          ) : creatingLead ? (
+            <LeadCreateScreen onCancel={() => setCreatingLead(false)} onCreated={() => { setCreatingLead(false); setLeadRefreshKey((k) => k + 1); }} />
+          ) : (
+            <LeadScreen onOpenLead={(name, opts) => { setLeadDetailName(name); setLeadDetailEditing(!!opts?.edit); }} onCreateLead={() => setCreatingLead(true)} refreshKey={leadRefreshKey} />
+          )
         )}
         {activeTab === 'Expense' && <ExpenseScreen />}
         {activeTab === 'Dashboard' || activeTab === 'Attendance' || activeTab === 'Leave' || activeTab === 'Leads' || activeTab === 'Expense' ? null : null}
@@ -94,7 +108,7 @@ export default function TabNavigator({ initialTab = 'Dashboard' as TabName }: { 
           />
         )}
       </View>
-      {!overlay && <BottomTabBar activeTab={activeTab} onChange={setActiveTab} />}
+      {!overlay && !keyboardVisible && <BottomTabBar activeTab={activeTab} onChange={setActiveTab} />}
 
       <ProfileDrawer
         visible={drawerOpen}

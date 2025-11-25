@@ -1,411 +1,827 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Pressable, Linking, Platform, Alert, SectionList, Modal, TextInput, KeyboardAvoidingView, TouchableWithoutFeedback, Keyboard } from 'react-native';
-import Ionicons from 'react-native-vector-icons/Ionicons';
-import LinearGradient from 'react-native-linear-gradient';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { getLead, updateLead, prepareLeadPayload, type Lead } from '../../services/leadService';
+import Config from 'react-native-config';
 
-(Ionicons as any)?.loadFont?.();
+// Minimal Lead shape based on ERPNext Lead doctype common fields
+export type Lead = {
+  name: string; // Docname (ID)
+  lead_name?: string;
+  company_name?: string;
+  email_id?: string;
+  mobile_no?: string;
+  phone?: string;
+  status?: string; // e.g. 'Lead', 'Open', 'Replied', 'Qualified', 'Converted', 'Do Not Contact'
+  source?: string; // e.g. 'Website', 'LinkedIn', etc.
+  territory?: string;
+  address?: string;
+  website?: string;
+  whatsapp?: string;
+  notes?: string;
+  [key: string]: any;
+};
 
-export default function LeadDetailScreen({ name, onBack }: { name: string; onBack?: () => void }) {
-  const insets = useSafeAreaInsets();
-  const [loading, setLoading] = useState(true);
-  const [lead, setLead] = useState<Lead | null>(null);
-  const [editVisible, setEditVisible] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({
-    lead_name: '',
-    company_name: '',
-    email_id: '',
-    mobile_no: '',
-    phone: '',
-    status: '',
-    source: '',
-    territory: '',
-    notes: '',
-  });
+type ListOptions = {
+  search?: string; // matches lead_name/email_id/company_name (LIKE)
+  status?: string;
+  source?: string;
+  fields?: string[];
+  orderBy?: string; // e.g. 'creation desc'
+  limit?: number;
+  page?: number; // 1-based
+};
 
-  console.log("lead=====>",lead);
-  
+function pickEnv(...keys: string[]): string {
+  for (const k of keys) {
+    const v = (Config as any)?.[k];
+    if (typeof v === 'string' && v.length > 0) return v;
+  }
+  return '';
+}
 
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
+const BASE_URL = (pickEnv('ERP_URL_RESOURCE', 'ERP_URL') || '').replace(/\/$/, '');
+// Derive method base: prefer replacing /api/resource with /api/method; else append appropriately
+function getMethodBase(resourceBase: string): string {
+  if (!resourceBase) return '/api/method';
+  const replaced = resourceBase.replace(/\/api\/resource\/?$/i, '/api/method');
+  if (replaced !== resourceBase) return replaced;
+  // If base already ends with /api, append /method; else append /api/method
+  if (/\/api\/?$/i.test(resourceBase)) return `${resourceBase.replace(/\/$/, '')}/method`;
+  return `${resourceBase}/api/method`;
+}
+const METHOD_BASE = getMethodBase(BASE_URL);
+const API_KEY = pickEnv('ERP_APIKEY', 'ERP_API_KEY');
+const API_SECRET = pickEnv('ERP_SECRET', 'ERP_API_SECRET');
+// Optional defaults for location
+const DEFAULT_LOCATION_NAME = pickEnv('ERP_DEFAULT_LOCATION_NAME', 'ERP_LOCATION_DEFAULT_NAME');
+const DEFAULT_LOCATION_LABEL = pickEnv('ERP_DEFAULT_LOCATION_LABEL', 'ERP_LOCATION_DEFAULT_LABEL');
+const VALIDATE_LOCATION_LINK = isTruthy((Config as any)?.ERP_VALIDATE_LOCATION_LINK);
+
+function getHeaders(): Record<string, string> {
+  if (!BASE_URL || !API_KEY || !API_SECRET) {
+    throw new Error('ERP credentials or URL are not configured. Check .env and rebuild the app.');
+  }
+  return {
+    'Content-Type': 'application/json',
+    'Authorization': `token ${API_KEY}:${API_SECRET}`,
+  };
+}
+
+function enc(x: any) {
+  return encodeURIComponent(typeof x === 'string' ? x : JSON.stringify(x));
+}
+
+function isTruthy(v: any): boolean {
+  const s = String(v ?? '').toLowerCase();
+  return s === '1' || s === 'true' || s === 'yes' || s === 'y' || s === 'on';
+}
+
+function debugLog(...args: any[]) {
+  try {
+    if (isTruthy((Config as any)?.ERP_DEBUG)) {
+      // eslint-disable-next-line no-console
+      console.log('[ERP]', ...args);
+    }
+  } catch {}
+}
+
+// Build simple AND filters array; for search we OR using frappe-style complex filters is cumbersome,
+// so we try a pragmatic approach: prefer lead_name LIKE, else email_id LIKE if search contains '@'.
+function buildFilters(opts: ListOptions) {
+  const filters: any[] = [];
+  if (opts.status) filters.push(['status', '=', opts.status]);
+  if (opts.source) filters.push(['source', '=', opts.source]);
+  if (opts.search) {
+    const q = `%${opts.search}%`;
+    if (opts.search.includes('@')) filters.push(['email_id', 'like', q]);
+    else if (/\d/.test(opts.search)) filters.push(['mobile_no', 'like', q]);
+    else filters.push(['company_name', 'like', q]);
+  }
+  return filters;
+}
+
+export async function listLeads(opts: ListOptions = {}): Promise<Lead[]> {
+  const headers = getHeaders();
+  const limit = Math.max(1, Math.min(200, opts.limit ?? 50));
+  const page = Math.max(1, opts.page ?? 1);
+  const start = (page - 1) * limit;
+  const fields = opts.fields ?? ['name','lead_name','company_name','email_id','mobile_no','status','source','territory'];
+  const orderBy = opts.orderBy ?? 'modified desc';
+  const filters = buildFilters(opts);
+
+  const url = `${BASE_URL}/Lead?filters=${enc(filters)}&fields=${enc(fields)}&order_by=${enc(orderBy)}&limit_page_length=${limit}&limit_start=${start}`;
+  const res = await fetch(url, { headers });
+  const json = await res.json().catch(() => ({} as any));
+  try { debugLog('listLeads', { url, status: res.status, ok: res.ok, data: (json as any)?.data }); } catch {}
+  const data = (json as any)?.data;
+  if (!Array.isArray(data)) return [];
+  return data as Lead[];
+}
+
+// Return total count for current filters (matches listLeads filters)
+export async function countLeads(opts: ListOptions = {}): Promise<number> {
+  const headers = getHeaders();
+  const filters = buildFilters(opts);
+  const url = `${METHOD_BASE}/frappe.client.get_count?doctype=${enc('Lead')}&filters=${enc(filters)}`;
+  try {
+    const res = await fetch(url, { headers });
+    const json = await res.json().catch(() => ({} as any));
+    try { debugLog('countLeads', { url, status: res.status, ok: res.ok, body: json }); } catch {}
+    const count = (json as any)?.message ?? (json as any)?.data ?? 0;
+    const n = Number(count);
+    return Number.isFinite(n) ? n : 0;
+  } catch {
+    return 0;
+  }
+}
+
+// List doc names for a given doctype (used for Link fields pickers)
+export async function listDocNames(doctype: string, limit = 200): Promise<string[]> {
+  const headers = getHeaders();
+  const dt = String(doctype || '').trim();
+  if (!dt) return [];
+  const url = `${BASE_URL}/${encodeURIComponent(dt)}?fields=${enc(['name'])}&limit_page_length=${limit}`;
+  const res = await fetch(url, { headers });
+  if (!res.ok) {
+    try { console.log('listDocNames HTTP', res.status, 'for', dt); } catch {}
+  }
+  const json = await res.json().catch(() => ({} as any));
+  try { debugLog('listDocNames', { dt, url, status: res.status, ok: res.ok, data: (json as any)?.data }); } catch {}
+  const data = (json as any)?.data;
+  if (!Array.isArray(data)) return [];
+  return data.map((r: any) => r?.name).filter((n: any) => typeof n === 'string');
+}
+
+export type LocationOption = { name: string; label: string };
+
+async function fetchDocTypeMeta(dt: string): Promise<any | null> {
+  try {
+    const headers = getHeaders();
+    const url = `${BASE_URL}/DocType/${encodeURIComponent(dt)}`;
+    const res = await fetch(url, { headers });
+    const json = await res.json().catch(() => ({} as any));
+    try { debugLog('fetchDocTypeMeta', { dt, url, status: res.status, ok: res.ok, hasData: !!((json as any)?.data ?? json) }); } catch {}
+    return (json as any)?.data ?? json ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function resolveTitleField(dt: string): Promise<string> {
+  const meta = await fetchDocTypeMeta(dt);
+  if (meta && typeof meta.title_field === 'string' && meta.title_field) {
+    return meta.title_field as string;
+  }
+  return 'title';
+}
+
+async function resolveByTitle(dt: string, label: string): Promise<{ name: string; label: string } | null> {
+  const headers = getHeaders();
+  const titleField = await resolveTitleField(dt);
+  const fields = titleField && titleField !== 'title' ? ['name', titleField] : ['name', 'title'];
+  // 1) exact match
+  try {
+    const filtersEq = [[titleField, '=', label]] as any;
+    const urlEq = `${BASE_URL}/${encodeURIComponent(dt)}?filters=${enc(filtersEq)}&fields=${enc(fields)}&limit_page_length=1`;
+    const rEq = await fetch(urlEq, { headers });
+    const jjEq = await rEq.json().catch(() => ({} as any));
+    const rec = Array.isArray(jjEq?.data) && jjEq.data[0];
+    if (rec && rec.name) return { name: rec.name, label: (rec?.[titleField] || rec?.title || rec.name) };
+  } catch {}
+  // 2) LIKE search
+  try {
+    const filtersLike = [[titleField, 'like', `%${label}%`]] as any;
+    const urlLike = `${BASE_URL}/${encodeURIComponent(dt)}?filters=${enc(filtersLike)}&fields=${enc(fields)}&limit_page_length=10`;
+    const rLike = await fetch(urlLike, { headers });
+    const jjLike = await rLike.json().catch(() => ({} as any));
+    const list = Array.isArray(jjLike?.data) ? jjLike.data : [];
+    if (list.length === 1) return { name: list[0].name, label: (list[0]?.[titleField] || list[0]?.title || list[0].name) };
+    const ci = list.find((x: any) => String(x?.[titleField] || x?.title || '').toLowerCase() === label.toLowerCase());
+    if (ci) return { name: ci.name, label: (ci?.[titleField] || ci?.title || ci.name) };
+  } catch {}
+  return null;
+}
+
+async function listDocNameAndTitle(doctype: string, limit = 200): Promise<LocationOption[]> {
+  const headers = getHeaders();
+  const dt = String(doctype || '').trim();
+  if (!dt) return [];
+  const titleField = await resolveTitleField(dt);
+  const fields = titleField && titleField !== 'title' ? ['name', titleField] : ['name', 'title'];
+  // Try resource API first
+  try {
+    const url = `${BASE_URL}/${encodeURIComponent(dt)}?fields=${enc(fields)}&limit_page_length=${limit}`;
+    const res = await fetch(url, { headers });
+    const json = await res.json().catch(() => ({} as any));
+    try { debugLog('listDocNameAndTitle.resource', { dt, url, status: res.status, ok: res.ok, rows: Array.isArray((json as any)?.data) ? (json as any)?.data?.length : 0 }); } catch {}
+    const data = (json as any)?.data;
+    if (Array.isArray(data) && data.length) {
+      debugLog('list', dt, 'resource', 'rows:', data.length);
+      return data
+        .map((r: any) => ({ name: r?.name, label: (r?.[titleField] || r?.title || r?.name) }))
+        .filter((x: any) => x && x.name);
+    }
+  } catch {}
+  // Fallback to method API (some deployments restrict resource listing or custom doctypes)
+  try {
+    const url2 = `${METHOD_BASE}/frappe.client.get_list?doctype=${enc(dt)}&fields=${enc(fields)}&limit_page_length=${limit}`;
+    const res2 = await fetch(url2, { headers });
+    const json2 = await res2.json().catch(() => ({} as any));
+    try { debugLog('listDocNameAndTitle.method', { dt, url: url2, status: res2.status, ok: res2.ok, rows: Array.isArray(((json2 as any)?.message ?? (json2 as any)?.data)) ? (((json2 as any)?.message ?? (json2 as any)?.data)?.length) : 0 }); } catch {}
+    const data2 = (json2 as any)?.message ?? (json2 as any)?.data;
+    if (Array.isArray(data2) && data2.length) {
+      debugLog('list', dt, 'method', 'rows:', data2.length);
+      return data2
+        .map((r: any) => ({ name: r?.name, label: (r?.[titleField] || r?.title || r?.name) }))
+        .filter((x: any) => x && x.name);
+    }
+  } catch {}
+  return [];
+}
+
+function getLocationDoctype(): string {
+  const dt = String((Config as any)?.ERP_LOCATION_DOCTYPE || '').trim();
+  return dt || 'Building & Location';
+}
+
+export async function listLocations(limit = 200): Promise<LocationOption[]> {
+  const primary = await resolveLocationDoctype();
+  debugLog('listLocations primary doctype:', primary);
+  let rows = await listDocNameAndTitle(primary, limit);
+  if (!rows || rows.length === 0) {
+    // Fallbacks for common doctypes used on various ERPNext setups
+    const fallbacks = [
+      primary === 'Building & Location' ? 'Location' : 'Building & Location',
+      'Location',
+    ].filter((v, i, a) => !!v && a.indexOf(v) === i);
+    for (const dt of fallbacks) {
       try {
-        setLoading(true);
-        const l = await getLead(name);
-        if (mounted) setLead(l);
-      } finally {
-        mounted && setLoading(false);
+        debugLog('listLocations fallback doctype:', dt);
+        const alt = await listDocNameAndTitle(dt, limit);
+        if (alt && alt.length) { rows = alt; break; }
+      } catch {}
+    }
+  }
+  return rows || [];
+}
+
+// List Territories (non-group)
+export async function listTerritories(limit = 200): Promise<LocationOption[]> {
+  const headers = getHeaders();
+  const fields = ['name', 'territory_name', 'is_group'];
+  const filters = [['is_group', '=', 0]] as any;
+  const url = `${BASE_URL}/Territory?fields=${enc(fields)}&filters=${enc(filters)}&limit_page_length=${limit}`;
+  const res = await fetch(url, { headers });
+  const json = await res.json().catch(() => ({} as any));
+  try { debugLog('listTerritories', { url, status: res.status, ok: res.ok, rows: Array.isArray((json as any)?.data) ? (json as any)?.data?.length : 0 }); } catch {}
+  const data = (json as any)?.data;
+  if (!Array.isArray(data)) return [];
+  return data.map((r: any) => ({ name: r?.name, label: r?.territory_name || r?.name })).filter((x: any) => x && x.name);
+}
+
+// Associates listing (for dropdown in Add Lead)
+let _resolvedAssociateDoctype: string | null = null;
+async function resolveAssociateDoctype(): Promise<string> {
+  if (_resolvedAssociateDoctype) return _resolvedAssociateDoctype;
+  // 1) Try to read from Lead DocType meta using mapped fieldname
+  try {
+    const headers = getHeaders();
+    const url = `${BASE_URL}/DocType/Lead`;
+    const res = await fetch(url, { headers });
+    const json = await res.json().catch(() => ({} as any));
+    const doc = (json as any)?.data ?? json;
+    const fields = Array.isArray((doc as any)?.fields) ? (doc as any).fields : [];
+    const fieldname = (FIELD_MAP as any)?.associate_details || 'associate_details';
+    const f = fields.find((x: any) => x?.fieldname === fieldname);
+    if (f && f.fieldtype === 'Link' && typeof f.options === 'string' && f.options) {
+      _resolvedAssociateDoctype = f.options;
+      debugLog('resolveAssociateDoctype via Lead meta field', fieldname, '->', f.options);
+      return _resolvedAssociateDoctype;
+    }
+    // Heuristic: find any Link field with label/fieldname including 'associate'
+    const heur = fields.find((x: any) => String(x?.fieldtype).toLowerCase() === 'link' && typeof x?.options === 'string' && x.options && (/associate/i.test(String(x?.label || '')) || /associate/i.test(String(x?.fieldname || ''))));
+    if (heur) {
+      _resolvedAssociateDoctype = heur.options;
+      debugLog('resolveAssociateDoctype via heuristic', heur.fieldname, '->', heur.options);
+      return _resolvedAssociateDoctype;
+    }
+  } catch {}
+  // 2) Env override
+  const env = String((Config as any)?.ERP_ASSOCIATE_DOCTYPE || '').trim();
+  if (env) { _resolvedAssociateDoctype = env; return env; }
+  // 3) Fallbacks
+  _resolvedAssociateDoctype = 'Associate';
+  return _resolvedAssociateDoctype;
+}
+
+export async function listAssociates(limit = 200): Promise<LocationOption[]> {
+  const dt = await resolveAssociateDoctype();
+  let rows: LocationOption[] = [];
+  try { rows = await listDocNameAndTitle(dt, limit); } catch {}
+  if (rows && rows.length) return rows;
+  // Try a pluralized fallback commonly seen
+  const fallback = dt.toLowerCase() === 'associate' ? 'Associates' : 'Associate';
+  if (fallback !== dt) {
+    try { rows = await listDocNameAndTitle(fallback, limit); } catch {}
+  }
+  return rows || [];
+}
+
+// Fetch Select options for a Lead field (including custom-mapped fields)
+export async function getLeadSelectOptions(field: 'service_type' | 'request_type' | 'lead_type' | 'source'): Promise<string[]> {
+  const meta = await fetchDocTypeMeta('Lead');
+  if (!meta || !Array.isArray((meta as any).fields)) return [];
+  const enableCustom = isTruthy((Config as any)?.ERP_ENABLE_CUSTOM_LEAD_FIELDS);
+  const map: Record<string, string> = {
+    service_type: enableCustom ? FIELD_MAP.service_type : 'service_type',
+    request_type: enableCustom ? FIELD_MAP.request_type : 'request_type',
+    lead_type: enableCustom ? FIELD_MAP.lead_type : 'lead_type',
+    source: 'source',
+  } as any;
+  const target = map[field] || field;
+  const df = (meta as any).fields.find((f: any) => String(f?.fieldname) === String(target));
+  if (!df) return [];
+  const ftype = String(df?.fieldtype);
+  if (ftype === 'Select') {
+    const raw = String(df?.options || '').trim();
+    if (!raw) return [];
+    const parts = raw.split('\n').map((s: string) => s.trim()).filter(Boolean);
+    try { debugLog('getLeadSelectOptions', { field, type: 'Select', count: parts.length }); } catch {}
+    return parts;
+  }
+  if (ftype === 'Link' && typeof df?.options === 'string' && df.options) {
+    // For Link fields, list names from the target doctype
+    try {
+      const rows = await listDocNameAndTitle(df.options, 200);
+      try { debugLog('getLeadSelectOptions', { field, type: 'Link', doctype: df.options, rows: rows?.length || 0 }); } catch {}
+      if (Array.isArray(rows) && rows.length) return rows.map((r) => r.name).filter(Boolean);
+    } catch {}
+    // Fallbacks for common doctypes
+    const fallbacks = [df.options, 'Lead Source', 'Source'].filter((v, i, a) => !!v && a.indexOf(v) === i);
+    for (const dt of fallbacks) {
+      try {
+        const rows = await listDocNameAndTitle(dt, 200);
+        if (Array.isArray(rows) && rows.length) return rows.map((r) => r.name).filter(Boolean);
+      } catch {}
+    }
+    return [];
+  }
+  return [];
+}
+
+let _resolvedLocationDoctype: string | null = null;
+async function resolveLocationDoctype(): Promise<string> {
+  if (_resolvedLocationDoctype) return _resolvedLocationDoctype;
+  const envDt = getLocationDoctype();
+  if (envDt && envDt !== 'Building & Location') {
+    _resolvedLocationDoctype = envDt;
+    debugLog('resolveLocationDoctype via env', envDt);
+    return envDt;
+  }
+  // Try to auto-detect from DocType Lead custom field mapping
+  try {
+    const headers = getHeaders();
+    const url = `${BASE_URL}/DocType/Lead`;
+    const res = await fetch(url, { headers });
+    const json = await res.json().catch(() => ({} as any));
+    const doc = (json as any)?.data ?? json;
+    const fields = Array.isArray((doc as any)?.fields) ? (doc as any).fields : [];
+    const locFieldname = (FIELD_MAP as any)?.location;
+    if (locFieldname && fields.length) {
+      const f = fields.find((x: any) => x?.fieldname === locFieldname);
+      if (f && f.fieldtype === 'Link' && typeof f.options === 'string' && f.options) {
+        _resolvedLocationDoctype = f.options;
+        debugLog('resolveLocationDoctype via Lead meta field', locFieldname, '->', f.options);
+        return f.options;
       }
-    })();
-    return () => { mounted = false; };
-  }, [name]);
+    }
+  } catch {}
+  _resolvedLocationDoctype = 'Building & Location';
+  debugLog('resolveLocationDoctype defaulting to', _resolvedLocationDoctype);
+  return _resolvedLocationDoctype;
+}
 
-  return (
-    <View style={styles.screen}>
-      {loading ? (
-        <View style={{ padding: 16 }}>
-          <ActivityIndicator />
-        </View>
-      ) : (
-        <>
-          <LinearGradient colors={["#0b0b1b", "#1f243d"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.heroCard, { paddingTop: insets.top + 12 }]}> 
+// Fetch all leads by paging until exhaustion. Adds a safety cap to prevent runaway downloads.
+export async function listAllLeads(opts: Omit<ListOptions, 'limit' | 'page'> & { pageSize?: number; hardCap?: number } = {}): Promise<Lead[]>
+{
+  const pageSize = Math.max(1, Math.min(500, opts.pageSize ?? 200));
+  const hardCap = Math.max(pageSize, opts.hardCap ?? 5000); // prevent unbounded growth
+  const out: Lead[] = [];
+  let page = 1;
+  // clone opts without page/limit
+  const base: ListOptions = { ...opts } as any;
+  delete (base as any).pageSize;
+  delete (base as any).hardCap;
 
-            <View style={styles.heroTopRow}>
-              <Pressable accessibilityRole="button" onPress={onBack} style={styles.backBtnDark}>
-                <Ionicons name="arrow-back" size={20} color="#fff" />
-              </Pressable>
-              <Text style={styles.heroTitle}>Lead Details</Text>
-              <Pressable accessibilityRole="button" onPress={() => {
-                setForm({
-                  lead_name: String(lead?.lead_name || ''),
-                  company_name: String(lead?.company_name || ''),
-                  email_id: String(lead?.email_id || ''),
-                  mobile_no: String(lead?.mobile_no || ''),
-                  phone: String(lead?.phone || ''),
-                  status: String(lead?.status || ''),
-                  source: String(lead?.source || ''),
-                  territory: String(lead?.territory || ''),
-                  notes: String((lead as any)?.notes || ''),
-                });
-                setEditVisible(true);
-              }} style={styles.editBtn}>
-                <Ionicons name="create-outline" size={18} color="#fff" />
-              </Pressable>
-            </View>
-            <View style={styles.heroInfoRow}>
-              <View style={styles.avatarLg}>
-                <Text style={styles.avatarLgText}>{(lead?.company_name || lead?.lead_name || 'L').slice(0,1).toUpperCase()}</Text>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.heroName} numberOfLines={1}>{lead?.company_name || lead?.lead_name || 'Lead'}</Text>
-                {!!lead?.lead_name && <Text style={styles.heroSub} numberOfLines={1}>{lead?.lead_name}</Text>}
-                <View style={styles.heroChips}>
-                  {!!lead?.status && (
-                    <View style={[styles.badge, { backgroundColor: '#e7f0ff' }]}>
-                      <Text style={[styles.badgeText, { color: '#0b6dff' }]}>{lead.status}</Text>
-                    </View>
-                  )}
-                  {!!lead?.source && (
-                    <View style={[styles.badge, { backgroundColor: '#fff' }, styles.linkBadge]}>
-                      <Text style={[styles.badgeText, { color: '#111827' }]}>{lead.source}</Text>
-                    </View>
-                  )}
-                </View>
-              </View>
-            </View>
-            <View style={styles.quickActions}>
-              <QuickAction icon="call" label="Call" onPress={() => callNumber(lead?.mobile_no || lead?.phone)} />
-              <QuickAction icon="mail" label="Email" onPress={() => emailTo(lead?.email_id)} />
-              <QuickAction icon="navigate" label="Map" onPress={() => openMap(lead?.address)} />
-            </View>
-          </LinearGradient>
+  while (out.length < hardCap) {
+    const batch = await listLeads({ ...base, page, limit: pageSize });
+    if (!batch || batch.length === 0) break;
+    out.push(...batch);
+    if (batch.length < pageSize) break; // no more pages
+    page += 1;
+  }
+  return out;
+}
 
-          <ScrollView contentContainerStyle={[styles.wrapper, { paddingBottom: insets.bottom + 24 }]} showsVerticalScrollIndicator={false}>
-          {(() => {
-            type RowDef = { label: string; value?: any; icon?: string; multiline?: boolean; onPress?: () => void };
-            type CardItem = { kind: 'rows'; rows: RowDef[] } | { kind: 'notes'; text: string };
-            type CardSection = { title: string; data: CardItem[] };
+export async function getLead(name: string): Promise<Lead | null> {
+  const headers = getHeaders();
+  const id = String(name || '').trim();
+  if (!id) return null;
+  const url = `${BASE_URL}/Lead/${encodeURIComponent(id)}`;
+  const res = await fetch(url, { headers });
+  const json = await res.json().catch(() => null as any);
+  try { debugLog('getLead', { url, status: res.status, ok: res.ok, body: json }); } catch {}
+  if (!res.ok) return null;
+  return ((json as any)?.data ?? json) as Lead;
+}
 
-            const sections: CardSection[] = [];
-            const contactRows: RowDef[] = [
-              { label: 'Email', value: lead?.email_id, icon: 'mail-outline', onPress: () => emailTo(lead?.email_id) },
-              { label: 'Mobile', value: lead?.mobile_no, icon: 'call-outline', onPress: () => callNumber(lead?.mobile_no) },
-              { label: 'Phone', value: lead?.phone, icon: 'call-outline', onPress: () => callNumber(lead?.phone) },
-            ].filter(r => r.value);
-            if (contactRows.length) sections.push({ title: 'Contact', data: [{ kind: 'rows', rows: contactRows }] });
+export async function createLead(data: Partial<Lead>): Promise<Lead | null> {
+  const headers = getHeaders();
+  const url = `${BASE_URL}/Lead`;
+  const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(data) });
+  let json: any = null;
+  try { json = await res.json(); } catch {}
+  try { console.log('createLead response status:', res.status, 'ok:', res.ok); } catch {}
+  if (!res.ok) {
+    try { console.log('createLead error body:', json || (await res.text())); } catch {}
+    const msg = (json && (json.message || json.exc || json.exception)) || `HTTP ${res.status}`;
+    throw new Error(String(msg));
+  }
+  try { debugLog('createLead', { url, status: res.status, ok: res.ok, body: json }); } catch {}
+  return ((json as any)?.data ?? json) as Lead;
+}
 
-            const companyRows: RowDef[] = [
-              { label: 'Company Name', value: lead?.company_name, icon: 'business-outline' },
-              { label: 'Address', value: lead?.address, icon: 'home-outline', multiline: true, onPress: () => openMap(lead?.address) },
-            ].filter(r => r.value);
-            if (companyRows.length) sections.push({ title: 'Company', data: [{ kind: 'rows', rows: companyRows }] });
+// Input shape coming from Add Lead modal
+export type ModalLeadInput = {
+  // Lead Details
+  date?: string; // YYYY-MM-DD
+  lead_name?: string; // Name / Contact Person
+  gender?: 'Male' | 'Female' | string;
+  location?: string; // Building & Location
+  source?: string;
+  lead_owner?: string;
+  status?: string; // Lead/Open/Replied/Qualified/Converted
+  lead_type?: string; // custom
+  request_type?: string; // custom
+  service_type?: string; // custom
+  // Contact
+  mobile_no?: string; // Phone No
+  email_id?: string;
+  website?: string;
+  whatsapp?: string;
+  // Organisation
+  company_name?: string; // Organisation Name
+  territory?: string;
+  notes?: string;
+  associate_details?: string;
+};
 
-            const detailRows: RowDef[] = [
-              { label: 'Status', value: lead?.status, icon: 'bookmark-outline' },
-              { label: 'Source', value: lead?.source, icon: 'link-outline' },
-              { label: 'Territory', value: lead?.territory, icon: 'location-outline' },
-              { label: 'Lead Name', value: lead?.lead_name, icon: 'person-outline' },
-              { label: 'Lead ID', value: lead?.name, icon: 'id-card-outline' },
-            ].filter(r => r.value);
-            if (detailRows.length) sections.push({ title: 'Details', data: [{ kind: 'rows', rows: detailRows }] });
+type AttachmentFile = { uri: string; name?: string; type?: string };
 
-            if (lead?.notes) sections.push({ title: 'Notes', data: [{ kind: 'notes', text: String(lead.notes) }] });
+// Field mapping to ERPNext Lead doctype. Adjust keys on the right to your custom fieldnames.
+const FIELD_MAP: Record<string, string> = {
+  location: 'custom_building__location',
+  date: 'custom_date',
+  gender: 'custom_gender',
+  lead_owner: 'custom_lead_owner',
+  lead_type: 'custom_lead_type',
+  request_type: 'custom_request_type',
+  service_type: 'custom_service_type',
+  whatsapp: 'custom_whatsapp',
+  website: 'custom_website',
+  notes: 'custom_notes',
+  associate_details: 'custom_associate_details',
+};
 
-            const shown = new Set<string>(['name','lead_name','company_name','email_id','mobile_no','phone','status','source','territory','address','notes']);
-            const extrasKeys = Object.keys(lead || {})
-              .filter(k => !shown.has(k) && !/^(__|_)/.test(k) && !['doctype','owner','creation','modified','modified_by','docstatus','idx'].includes(k))
-              .filter(k => { const v: any = (lead as any)[k]; return v !== null && v !== undefined && String(v).trim().length > 0; });
-            if (extrasKeys.length) {
-              const toLabel = (s: string) => s.replace(/_/g,' ').replace(/\b\w/g, c => c.toUpperCase());
-              const rows: RowDef[] = extrasKeys.map(k => ({ label: toLabel(k), value: String((lead as any)[k]) }));
-              sections.push({ title: 'Other Details', data: [{ kind: 'rows', rows }] });
+const ENABLE_CUSTOM_LEAD_FIELDS = isTruthy((Config as any)?.ERP_ENABLE_CUSTOM_LEAD_FIELDS);
+
+/**
+ * Prepare an ERPNext Lead payload from modal input.
+ * Safe to send directly to POST /Lead.
+ */
+export function prepareLeadPayload(input: ModalLeadInput): Partial<Lead> {
+  const out: any = {};
+  // Core/standard fields (keep to simple base fields to avoid child-table issues)
+  if (input.lead_name) out.lead_name = String(input.lead_name).trim();
+  if (input.company_name) out.company_name = String(input.company_name).trim();
+  if (input.email_id) out.email_id = String(input.email_id).trim();
+  if (input.mobile_no) out.mobile_no = String(input.mobile_no).trim();
+  if (input.status) {
+    const s = String(input.status).trim();
+    // Sanitize status to server-allowed values; map common synonyms
+    const allowed = new Set(['Lead','Open','Replied','Opportunity','Quotation','Lost Quotation','Interested','Converted','Do Not Contact']);
+    const map: Record<string, string> = { 'Qualified': 'Interested' };
+    const normalized = map[s] || s;
+    if (allowed.has(normalized)) out.status = normalized;
+    else out.status = 'Lead';
+  }
+  if (input.source) out.source = String(input.source).trim();
+  if (input.territory) out.territory = String(input.territory).trim();
+  // Always map mandatory custom fields when provided (location disabled)
+  if ((input as any).date) out[FIELD_MAP.date] = String((input as any).date).trim();
+  // Location is mandatory on your site; map when provided regardless of ENABLE_CUSTOM_LEAD_FIELDS
+  if ((input as any).location && FIELD_MAP.location) {
+    out[FIELD_MAP.location] = String((input as any).location).trim();
+  }
+  // Skip sending 'notes' directly — on some sites it's a child table; map via custom if enabled
+
+  // Custom mappings
+  if (ENABLE_CUSTOM_LEAD_FIELDS) {
+    (['gender','lead_owner','lead_type','request_type','service_type','whatsapp','website','notes','associate_details'] as const).forEach((k) => {
+      const v = (input as any)[k];
+      const target = FIELD_MAP[k];
+      if (v != null && target) out[target] = v;
+    });
+  }
+
+  return out as Partial<Lead>;
+}
+
+/**
+ * Prepare an update payload for Lead that preserves user intent to clear fields.
+ * Unlike create payload, this includes empty strings for fields present in input
+ * so that clearing a value in the UI removes it on the server as well.
+ */
+export function prepareLeadUpdatePayload(input: Partial<ModalLeadInput & Lead>): Partial<Lead> {
+  const out: any = {};
+  // Helper: only set if the key exists on input (even if empty string)
+  const has = (k: string) => Object.prototype.hasOwnProperty.call(input as any, k);
+
+  // Core/standard fields
+  if (has('lead_name')) out.lead_name = String((input as any).lead_name ?? '');
+  if (has('company_name')) out.company_name = String((input as any).company_name ?? '');
+  if (has('email_id')) out.email_id = String((input as any).email_id ?? '');
+  if (has('mobile_no')) out.mobile_no = String((input as any).mobile_no ?? '');
+  if (has('status')) {
+    const s = String((input as any).status ?? '').trim();
+    if (s) {
+      const allowed = new Set(['Lead','Open','Replied','Opportunity','Quotation','Lost Quotation','Interested','Converted','Do Not Contact']);
+      const map: Record<string, string> = { 'Qualified': 'Interested' };
+      const normalized = map[s] || s;
+      out.status = allowed.has(normalized) ? normalized : 'Lead';
+    }
+  }
+  if (has('source')) out.source = String((input as any).source ?? '');
+  if (has('territory')) out.territory = String((input as any).territory ?? '');
+
+  // Date/location custom mappings (set when present on input)
+  if (has('date')) out[FIELD_MAP.date] = String((input as any).date ?? '');
+  if (has('location') && FIELD_MAP.location) out[FIELD_MAP.location] = String((input as any).location ?? '');
+
+  // Website/Whatsapp/Notes and other custom fields
+  if (ENABLE_CUSTOM_LEAD_FIELDS) {
+    (['gender','lead_owner','lead_type','request_type','service_type','whatsapp','website','notes','associate_details'] as const).forEach((k) => {
+      if (has(k)) {
+        const target = FIELD_MAP[k];
+        if (target) out[target] = (input as any)[k] ?? '';
+      }
+    });
+  } else {
+    // Set standard keys for common fields when custom mapping is disabled
+    if (has('website')) out.website = String((input as any).website ?? '');
+    if (has('whatsapp')) out.whatsapp = String((input as any).whatsapp ?? '');
+    if (has('notes')) out.notes = String((input as any).notes ?? '');
+    if (has('lead_owner')) out.lead_owner = String((input as any).lead_owner ?? '');
+    if (has('lead_type')) out.lead_type = String((input as any).lead_type ?? '');
+    if (has('request_type')) out.request_type = String((input as any).request_type ?? '');
+    if (has('service_type')) out.service_type = String((input as any).service_type ?? '');
+  }
+
+  return out as Partial<Lead>;
+}
+
+/**
+ * Update Lead with field mapping resolved against DocType meta.
+ * Ensures we only send fields that exist on the server, and prefer
+ * custom fieldnames from FIELD_MAP when present in the meta.
+ */
+export async function updateLeadSmart(name: string, input: Partial<ModalLeadInput & Lead>): Promise<Lead | null> {
+  const meta = await fetchDocTypeMeta('Lead');
+  const fieldnames: Set<string> = new Set(Array.isArray((meta as any)?.fields) ? (meta as any).fields.map((f: any) => String(f?.fieldname)) : []);
+
+  const out: any = {};
+  const has = (k: string) => Object.prototype.hasOwnProperty.call(input as any, k);
+  const mapField = (logical: string, customKey?: keyof typeof FIELD_MAP) => {
+    const customName = customKey ? FIELD_MAP[customKey] : undefined;
+    if (customName && fieldnames.has(customName)) return customName;
+    if (fieldnames.has(logical)) return logical;
+    return null;
+  };
+
+  const assign = (logical: string, customKey?: keyof typeof FIELD_MAP) => {
+    if (!has(logical)) return;
+    const target = mapField(logical, customKey);
+    if (!target) return;
+    out[target] = (input as any)[logical] ?? '';
+  };
+
+  // Core
+  assign('lead_name');
+  assign('company_name');
+  assign('email_id');
+  assign('mobile_no');
+  assign('status');
+  assign('source');
+  assign('territory');
+  assign('website', 'website');
+  assign('whatsapp', 'whatsapp');
+  assign('notes', 'notes');
+
+  // Custom-mapped
+  assign('lead_owner', 'lead_owner');
+  assign('lead_type', 'lead_type');
+  assign('request_type', 'request_type');
+  assign('service_type', 'service_type');
+  assign('date', 'date');
+  assign('location', 'location');
+
+  // Additional standard fields commonly present
+  assign('phone');
+  assign('salutation');
+  assign('first_name');
+  assign('company');
+  assign('title');
+  assign('country');
+  assign('language');
+  assign('qualification_status');
+  assign('type');
+  assign('no_of_employees');
+
+  // Perform PUT with mapped payload and surface server error messages when possible
+  const headers = getHeaders();
+  const id = String(name || '').trim();
+  if (!id) return null;
+  const url = `${BASE_URL}/Lead/${encodeURIComponent(id)}`;
+  const res = await fetch(url, { method: 'PUT', headers, body: JSON.stringify(out) });
+  const json = await res.json().catch(() => null as any);
+  try { debugLog('updateLeadSmart', { url, status: res.status, ok: res.ok, body: json }); } catch {}
+  if (!res.ok) {
+    const msg = extractFrappeError(json) || 'Unable to save lead';
+    throw new Error(msg);
+  }
+  return ((json as any)?.data ?? json) as Lead;
+}
+
+function extractFrappeError(json: any): string | null {
+  try {
+    if (!json) return null;
+    if (typeof json.message === 'string' && json.message) return json.message;
+    if (Array.isArray(json?._server_messages) && json._server_messages.length) {
+      const first = json._server_messages[0];
+      try { const parsed = JSON.parse(first); if (parsed.message) return String(parsed.message); } catch {}
+    }
+    if (typeof json.exception === 'string' && json.exception) return json.exception;
+  } catch {}
+  return null;
+}
+
+/**
+ * Create an ERPNext Lead from the modal fields and optionally upload attachments.
+ * Returns the created Lead (or null on failure).
+ */
+export async function createLeadFromModal(input: ModalLeadInput, attachments?: AttachmentFile[]): Promise<Lead | null> {
+  const payload = prepareLeadPayload(input);
+  try { console.log('createLeadFromModal payload:', payload); } catch {}
+  // Validate Link fields proactively to avoid server-side link errors (location disabled)
+  const linkMap: Record<string, string> = {
+    source: 'Lead Source',
+    territory: 'Territory',
+  };
+  // Helper to check link existence via GET /api/resource/Doctype/Name
+  async function linkExists(doctype: string, name: string): Promise<boolean> {
+    try {
+      const headers = getHeaders();
+      const url = `${BASE_URL}/${encodeURIComponent(doctype)}/${encodeURIComponent(name)}`;
+      const res = await fetch(url, { headers });
+      if (res.ok) return true;
+      // If permissions block reading the target doctype, avoid false negatives here
+      if (res.status === 401 || res.status === 403) return true;
+      return false;
+    } catch {
+      return false;
+    }
+  }
+  // Optional links: if invalid, drop them to allow lead creation
+  for (const k of ['source', 'territory'] as const) {
+    if ((payload as any)[k]) {
+      const ok = await linkExists(linkMap[k], String((payload as any)[k]));
+      if (!ok) {
+        try { console.log(`Dropping invalid ${k}:`, (payload as any)[k]); } catch {}
+        delete (payload as any)[k];
+      }
+    }
+  }
+  // Optional: validate/resolve Location link (disabled unless ERP_VALIDATE_LOCATION_LINK=true)
+  if (VALIDATE_LOCATION_LINK) {
+    try {
+      const locField = FIELD_MAP.location;
+      // Apply environment defaults if no location provided
+      if (!((payload as any)[locField])) {
+        if (DEFAULT_LOCATION_NAME) {
+          (payload as any)[locField] = DEFAULT_LOCATION_NAME;
+        } else if (DEFAULT_LOCATION_LABEL) {
+          (payload as any)[locField] = DEFAULT_LOCATION_LABEL;
+        }
+      }
+      const raw = (payload as any)[locField];
+      if (raw) {
+        const dt = await resolveLocationDoctype();
+        const nameVal = String(raw);
+        const ok = await linkExists(dt, nameVal);
+        if (!ok) {
+          // Try resolving within primary doctype
+          let rec = await resolveByTitle(dt, nameVal);
+          // If still not found, try common fallbacks (when we can't fetch meta/options)
+          if (!rec) {
+            const fallbacksRaw = pickEnv('ERP_LOCATION_FALLBACKS') || '';
+            const fallbacks = (fallbacksRaw ? fallbacksRaw.split(',') : ['Building and Location', 'Location']).map(s => s.trim()).filter(Boolean);
+            for (const alt of fallbacks) {
+              rec = await resolveByTitle(alt, nameVal);
+              if (rec) break;
             }
-
-            return (
-              <SectionList
-                sections={sections}
-                keyExtractor={(item, index) => `${(item as any).kind}-${index}`}
-                renderSectionHeader={({ section }) => (
-                  <Text style={styles.sectionTitle}>{section.title}</Text>
-                )}
-                renderItem={({ item }) => (
-                  item.kind === 'rows' ? (
-                    <View style={styles.card}>
-                      {item.rows.map((r, i) => (
-                        <InfoRow key={`${r.label}-${i}`} label={r.label} value={r.value} icon={r.icon as any} multiline={r.multiline} isLast={i === item.rows.length - 1} onPress={r.onPress} />
-                      ))}
-                    </View>
-                  ) : (
-                    <View style={styles.card}><Text style={styles.notesText}>{item.text}</Text></View>
-                  )
-                )}
-                contentContainerStyle={[styles.wrapper, { paddingBottom: insets.bottom + 24 }]}
-                initialNumToRender={3}
-                windowSize={10}
-                removeClippedSubviews
-                stickySectionHeadersEnabled={false}
-                showsVerticalScrollIndicator={false}
-              />
-            );
-          })()}
-        </ScrollView>
-        {/* Edit Modal */}
-        <Modal visible={editVisible} transparent animationType="fade" onRequestClose={() => setEditVisible(false)}>
-          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-            <View style={styles.modalBackdrop}>
-              <KeyboardAvoidingView
-                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                keyboardVerticalOffset={insets.top + 12}
-                style={styles.modalWrap}
-              >
-                <View style={styles.modalCard}>
-                  <View style={styles.modalHeader}>
-                    <View style={styles.modalHeaderText}>
-                      <Text style={styles.modalTitle}>Edit Lead</Text>
-                      <Text style={styles.modalSubtitle}>Update lead details and contact</Text>
-                    </View>
-                    <Pressable accessibilityRole="button" onPress={() => setEditVisible(false)}>
-                      <Ionicons name="close" size={20} color="#111827" />
-                    </Pressable>
-                  </View>
-                  <ScrollView
-                    style={styles.modalBodyScroll}
-                    contentContainerStyle={styles.modalBody}
-                    showsVerticalScrollIndicator={false}
-                    keyboardShouldPersistTaps="handled"
-                  >
-                    <Text style={styles.sectionTitle}>Lead Details</Text>
-                    <Text style={styles.inputLabel}>Name</Text>
-                    <TextInput
-                      placeholder="e.g. John Smith"
-                      placeholderTextColor="#9ca3af"
-                      style={styles.input}
-                      value={form.lead_name}
-                      onChangeText={(v) => setForm({ ...form, lead_name: v })}
-                    />
-                    <Text style={styles.inputLabel}>Company Name</Text>
-                    <TextInput
-                      placeholder="e.g. Acme Inc."
-                      placeholderTextColor="#9ca3af"
-                      style={styles.input}
-                      value={form.company_name}
-                      onChangeText={(v) => setForm({ ...form, company_name: v })}
-                    />
-                    <Text style={styles.inputLabel}>Status</Text>
-                    <TextInput
-                      placeholder="Lead / Open / Replied ..."
-                      placeholderTextColor="#9ca3af"
-                      style={styles.input}
-                      value={form.status}
-                      onChangeText={(v) => setForm({ ...form, status: v })}
-                    />
-                    <Text style={styles.inputLabel}>Source</Text>
-                    <TextInput
-                      placeholder="e.g. Website"
-                      placeholderTextColor="#9ca3af"
-                      style={styles.input}
-                      value={form.source}
-                      onChangeText={(v) => setForm({ ...form, source: v })}
-                    />
-                    <Text style={styles.inputLabel}>Territory</Text>
-                    <TextInput
-                      placeholder="e.g. UAE"
-                      placeholderTextColor="#9ca3af"
-                      style={styles.input}
-                      value={form.territory}
-                      onChangeText={(v) => setForm({ ...form, territory: v })}
-                    />
-
-                    <Text style={styles.sectionTitle}>Contact</Text>
-                    <Text style={styles.inputLabel}>Email</Text>
-                    <TextInput
-                      placeholder="e.g. john@example.com"
-                      placeholderTextColor="#9ca3af"
-                      style={styles.input}
-                      keyboardType="email-address"
-                      autoCapitalize="none"
-                      value={form.email_id}
-                      onChangeText={(v) => setForm({ ...form, email_id: v })}
-                    />
-                    <Text style={styles.inputLabel}>Mobile</Text>
-                    <TextInput
-                      placeholder="e.g. 0501234567"
-                      placeholderTextColor="#9ca3af"
-                      style={styles.input}
-                      keyboardType="phone-pad"
-                      value={form.mobile_no}
-                      onChangeText={(v) => setForm({ ...form, mobile_no: v })}
-                    />
-                    <Text style={styles.inputLabel}>Phone</Text>
-                    <TextInput
-                      placeholder="e.g. 042345678"
-                      placeholderTextColor="#9ca3af"
-                      style={styles.input}
-                      keyboardType="phone-pad"
-                      value={form.phone}
-                      onChangeText={(v) => setForm({ ...form, phone: v })}
-                    />
-
-                    <Text style={styles.sectionTitle}>Notes</Text>
-                    <TextInput
-                      placeholder="Notes"
-                      placeholderTextColor="#9ca3af"
-                      style={[styles.input, { minHeight: 80, textAlignVertical: 'top' }]}
-                      multiline
-                      value={form.notes}
-                      onChangeText={(v) => setForm({ ...form, notes: v })}
-                    />
-                  </ScrollView>
-                  <View style={styles.modalFooter}>
-                    <Pressable style={[styles.modalBtn, styles.modalBtnSecondary]} onPress={() => setEditVisible(false)}>
-                      <Text style={styles.modalBtnTextSecondary}>Cancel</Text>
-                    </Pressable>
-                    <Pressable
-                      style={[styles.modalBtn, styles.modalBtnPrimary]}
-                      onPress={async () => {
-                        if (!lead?.name) return;
-                        try {
-                          setSaving(true);
-                          const base = prepareLeadPayload({
-                            lead_name: form.lead_name,
-                            company_name: form.company_name,
-                            email_id: form.email_id,
-                            mobile_no: form.mobile_no,
-                            status: form.status as any,
-                            source: form.source,
-                            territory: form.territory,
-                            notes: form.notes,
-                          } as any);
-                          const payload: any = { ...base };
-                          if (form.phone) payload.phone = form.phone;
-                          const updated = await updateLead(lead.name, payload);
-                          if (!updated) throw new Error('Unable to update lead');
-                          setLead(updated);
-                          setEditVisible(false);
-                        } catch (e: any) {
-                          Alert.alert('Edit Lead', e?.message || 'Failed to save changes');
-                        } finally {
-                          setSaving(false);
-                        }
-                      }}
-                    >
-                      {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.modalBtnText}>Save Changes</Text>}
-                    </Pressable>
-                  </View>
-                </View>
-              </KeyboardAvoidingView>
-            </View>
-          </TouchableWithoutFeedback>
-        </Modal>
-        </>
-      )}
-    </View>
-  );
+          }
+          if (rec && rec.name) (payload as any)[locField] = rec.name;
+          else throw new Error(`Selected location not found: ${nameVal}`);
+        }
+      }
+    } catch (e) {
+      // Surface a readable error to caller
+      throw e instanceof Error ? e : new Error('Invalid Building & Location');
+    }
+  } else {
+    // No validation: only apply env defaults if location is absent
+    const locField = FIELD_MAP.location;
+    if (!((payload as any)[locField])) {
+      if (DEFAULT_LOCATION_NAME) (payload as any)[locField] = DEFAULT_LOCATION_NAME;
+      else if (DEFAULT_LOCATION_LABEL) (payload as any)[locField] = DEFAULT_LOCATION_LABEL;
+    }
+  }
+  let created: Lead | null = null;
+  created = await createLead(payload);
+  try { console.log('createLeadFromModal created:', created); } catch {}
+  try {
+    if ((created as any)?.name && attachments && attachments.length) {
+      const results = await Promise.allSettled(attachments.map((f) => uploadLeadAttachment((created as any).name, f)));
+      try { console.log('createLeadFromModal attachment results:', results.map(r => (r as any).status)); } catch {}
+    }
+  } catch {
+    // Ignore attachment failures here; upstream can decide to notify or retry
+  }
+  return created;
 }
 
-function InfoRow({ label, value, icon, multiline, isLast, onPress }: { label: string; value?: string | number | null; icon?: string; multiline?: boolean; isLast?: boolean; onPress?: () => void }) {
-  if (!value && value !== 0) return null;
-  const Inner = (
-    <View style={[styles.infoRow, !isLast && styles.infoRowBorder]}>
-      <View style={styles.infoLeft}>
-        {!!icon && <Ionicons name={icon as any} size={14} color="#6b7280" style={{ width: 18, marginRight: 6 }} />}
-        <Text style={styles.infoLabel}>{label}</Text>
-      </View>
-      <Text style={[styles.infoValue, multiline && { flex: 1 }]} numberOfLines={multiline ? 0 : 1}>{String(value)}</Text>
-    </View>
-  );
-  if (onPress) return <Pressable onPress={onPress}>{Inner}</Pressable>;
-  return Inner;
+export async function updateLead(name: string, updated: Partial<Lead>): Promise<Lead | null> {
+  const headers = getHeaders();
+  const id = String(name || '').trim();
+  if (!id) return null;
+  const url = `${BASE_URL}/Lead/${encodeURIComponent(id)}`;
+  const res = await fetch(url, { method: 'PUT', headers, body: JSON.stringify(updated) });
+  const json = await res.json().catch(() => null as any);
+  try { debugLog('updateLead', { url, status: res.status, ok: res.ok, body: json }); } catch {}
+  if (!res.ok) return null;
+  return ((json as any)?.data ?? json) as Lead;
 }
 
-function callNumber(num?: string | null) {
-  if (!num) return Alert.alert('Call', 'No phone number available');
-  Linking.openURL(`tel:${String(num).trim()}`).catch(() => Alert.alert('Call', 'Unable to open dialer'));
-}
-function emailTo(addr?: string | null) {
-  if (!addr) return Alert.alert('Email', 'No email address available');
-  Linking.openURL(`mailto:${String(addr).trim()}`).catch(() => Alert.alert('Email', 'Unable to open mail app'));
-}
-function openMap(address?: string | null) {
-  if (!address) return Alert.alert('Map', 'No address available');
-  const q = encodeURIComponent(address);
-  const url = Platform.OS === 'ios' ? `http://maps.apple.com/?q=${q}` : `geo:0,0?q=${q}`;
-  Linking.openURL(url).catch(() => Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${q}`));
+export async function deleteLead(name: string): Promise<boolean> {
+  const headers = getHeaders();
+  const id = String(name || '').trim();
+  if (!id) return false;
+  const url = `${BASE_URL}/Lead/${encodeURIComponent(id)}`;
+  const res = await fetch(url, { method: 'DELETE', headers });
+  try { debugLog('deleteLead', { url, status: res.status, ok: res.ok }); } catch {}
+  if (res.ok) return true;
+  return false;
 }
 
-function QuickAction({ icon, label, onPress }: { icon: string; label: string; onPress?: () => void }) {
-  return (
-    <Pressable onPress={onPress} style={styles.quickBtn}>
-      <Ionicons name={`${icon}-outline` as any} size={16} color="#fff" />
-      <Text style={styles.quickLabel}>{label}</Text>
-    </Pressable>
-  );
+export async function changeLeadStatus(name: string, status: string): Promise<Lead | null> {
+  return updateLead(name, { status } as Partial<Lead>);
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#fff' },
-  wrapper: { paddingHorizontal: 12, paddingBottom: 12, paddingTop: 0 },
-  heroCard: { borderRadius: 0, paddingHorizontal: 12, paddingVertical: 12 },
-  heroTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  backBtnDark: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.15)' },
-  heroTitle: { fontSize: 16, fontWeight: '700', color: '#fff' },
-  editBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.15)' },
-  heroInfoRow: { flexDirection: 'row', alignItems: 'center', marginTop: 12 },
-  avatarLg: { width: 56, height: 56, borderRadius: 28, backgroundColor: '#111827', alignItems: 'center', justifyContent: 'center', marginRight: 12, borderWidth: 2, borderColor: 'rgba(255,255,255,0.2)' },
-  avatarLgText: { color: '#fff', fontWeight: '800', fontSize: 18 },
-  heroName: { color: '#fff', fontSize: 18, fontWeight: '800' },
-  heroSub: { color: '#cbd5e1', fontSize: 12, marginTop: 2 },
-  heroChips: { flexDirection: 'row', gap: 8, marginTop: 8 },
-  quickActions: { flexDirection: 'row', gap: 10, marginTop: 12 },
-  quickBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 0, backgroundColor: 'rgba(255,255,255,0.18)' },
-  quickLabel: { color: '#fff', fontWeight: '700', fontSize: 12 },
+export function toListItem(l: Lead) {
+  return {
+    id: l.name,
+    title: l.company_name || l.lead_name || l.email_id || l.name,
+    subtitle: l.lead_name || l.email_id || '',
+    status: l.status || '',
+    value: l.source || '',
+  };
+}
 
-  card: { backgroundColor: '#fff', borderRadius: 12, borderWidth: 1, borderColor: '#e5e7eb', padding: 12 },
-  sectionTitle: { marginTop: 12, marginBottom: 6, marginLeft: 2, fontSize: 12, fontWeight: '700', color: '#111827' },
-  infoRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10 },
-  infoRowBorder: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#eef0f3' },
-  infoLeft: { flexDirection: 'row', alignItems: 'center' },
-  infoLabel: { color: '#6b7280', fontSize: 12 },
-  infoValue: { color: '#111827', fontSize: 13, marginLeft: 10, maxWidth: '60%', textAlign: 'right' },
-  notesText: { fontSize: 12, color: '#4b5563' },
-  // Modal styles
-  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'flex-end', alignItems: 'stretch' },
-  modalWrap: { width: '100%', alignItems: 'stretch', justifyContent: 'flex-end' },
-  modalCard: { backgroundColor: '#fff', borderTopLeftRadius: 16, borderTopRightRadius: 16, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, overflow: 'hidden', width: '100%', elevation: 8, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 16, shadowOffset: { width: 0, height: -4 } },
-  modalHeader: { backgroundColor: '#fff', paddingHorizontal: 16, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#e5e7eb' },
-  modalTitle: { color: '#111827', fontWeight: '700' },
-  modalSubtitle: { color: '#6b7280', marginTop: 4, fontSize: 12 },
-  modalHeaderText: { flex: 1 },
-  modalBodyScroll: { maxHeight: 520 },
-  modalBody: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 16 },
-  inputLabel: { color: '#6b7280', fontSize: 12, marginBottom: 6 },
-  input: { borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, color: '#111827', backgroundColor: '#fff', marginBottom: 10 },
-  modalFooter: { flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: 12, paddingVertical: 12, gap: 10 },
-  modalBtn: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 10 },
-  modalBtnSecondary: { backgroundColor: '#f3f4f6' },
-  modalBtnPrimary: { backgroundColor: '#0b0b1b' },
-  modalBtnText: { color: '#fff', fontWeight: '700' },
-  modalBtnTextSecondary: { color: '#111827' },
-});
+export async function uploadLeadAttachment(leadName: string, file: { uri: string; name?: string; type?: string }): Promise<boolean> {
+  const id = String(leadName || '').trim();
+  if (!id) return false;
+  // Authorization header from existing helpers
+  const headers = getHeaders();
+  const methodBase = BASE_URL.includes('/api/resource')
+    ? BASE_URL.replace('/api/resource', '/api/method')
+    : `${BASE_URL.replace(/\/$/, '')}/api/method`;
+  const url = `${methodBase}/upload_file`;
+
+  const form = new FormData();
+  form.append('doctype', 'Lead');
+  form.append('docname', id);
+  form.append('is_private', '0');
+  form.append('file', { uri: file.uri as any, name: (file.name || 'attachment'), type: (file.type || 'application/octet-stream') } as any);
+
+  const h: any = { 'Authorization': headers['Authorization'] };
+  const res = await fetch(url, { method: 'POST', headers: h, body: form as any });
+  try { debugLog('uploadLeadAttachment', { url, status: res.status, ok: res.ok }); } catch {}
+  return res.ok;
+}
