@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 (Ionicons as any)?.loadFont?.();
 import Geolocation from 'react-native-geolocation-service';
-import { listUserSuggestions } from '../../services/leadService';
+import { listUserSuggestions, fetchLeadStatusOptions } from '../../services/leadService';
 
 const HEADER_BG = '#0b0b1b';
 
@@ -40,6 +40,9 @@ export default function LeadCreateScreen({ onCancel, onCreated }: Props) {
   const [ownerLoading, setOwnerLoading] = useState(false);
   const [ownerInteracting, setOwnerInteracting] = useState(false);
   const [ownerList, setOwnerList] = useState<Array<{ email: string; fullName: string | null }>>([]);
+  const [statusOpen, setStatusOpen] = useState(false);
+  const [statusOptions, setStatusOptions] = useState<string[]>([]);
+  const [statusLoading, setStatusLoading] = useState(false);
 
   // Debounce Lead Owner suggestions when dropdown is open
   useEffect(() => {
@@ -141,11 +144,21 @@ export default function LeadCreateScreen({ onCancel, onCreated }: Props) {
     }
   };
 
+  // Load Status options on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        setStatusLoading(true);
+        const opts = await fetchLeadStatusOptions();
+        if (Array.isArray(opts) && opts.length > 0) setStatusOptions(opts);
+      } catch {}
+      finally { setStatusLoading(false); }
+    })();
+  }, []);
+
   return (
     <View style={styles.screen}>
       <StatusBar barStyle="light-content" backgroundColor={HEADER_BG} />
-
-      {/* Simple Header */}
       <View style={[styles.simpleHeader, { paddingTop: insets.top + 10 }]}> 
         <View style={styles.simpleHeaderRow}>
           <Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={onCancel} style={styles.iconBtn}>
@@ -244,7 +257,19 @@ export default function LeadCreateScreen({ onCancel, onCreated }: Props) {
           <View style={styles.divider} />
 
           <Text style={styles.fieldLabel}>Status</Text>
-          <TextInput value={leadForm.status} onChangeText={setField('status')} placeholder="Status" placeholderTextColor="#9CA3AF" style={styles.input} />
+          <Pressable onPress={() => setStatusOpen(v => !v)} style={styles.pickerInput} accessibilityRole="button" accessibilityLabel="Select status">
+            <Text style={{ color: leadForm.status ? '#111827' : '#9CA3AF' }}>{leadForm.status || (statusLoading ? 'Loading…' : 'Select status')}</Text>
+            <Ionicons style={styles.fieldChevron} name={statusOpen ? 'chevron-up' : 'chevron-down'} size={16} color="#6b7280" />
+          </Pressable>
+          {statusOpen && (
+            <View style={styles.dropdownPanel}>
+              {(statusOptions.length > 0 ? statusOptions : ['Open','New','Contacted','Qualified','Prospect','Converted','Lost']).map((opt) => (
+                <Pressable key={opt} style={styles.optionItem} onPress={() => { setField('status')(opt); setStatusOpen(false); }}>
+                  <Text style={styles.optionText}>{opt}</Text>
+                </Pressable>
+              ))}
+            </View>
+          )}
           <View style={styles.divider} />
 
           <Text style={styles.fieldLabel}>Source</Text>
@@ -332,6 +357,10 @@ const styles = StyleSheet.create({
   suggestItem: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 6, borderBottomWidth: 1, borderColor: '#f3f4f6' },
   suggestText: { color: '#111827', flexShrink: 1, fontWeight: '500', fontSize: 12, lineHeight: 16 },
   suggestSub: { color: '#6b7280', fontSize: 12, marginTop: 2 },
+  // Simple dropdown list
+  dropdownPanel: { marginTop: 6, backgroundColor: '#fff', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, overflow: 'hidden' },
+  optionItem: { paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
+  optionText: { color: '#111827', fontSize: 14 },
   // Gender toggle
   genderRow: { flexDirection: 'row' },
   genderButton: { flex: 1, borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 8, paddingVertical: 8, alignItems: 'center', marginRight: 8, backgroundColor: '#fff' },
