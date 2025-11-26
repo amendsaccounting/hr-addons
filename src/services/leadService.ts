@@ -158,6 +158,99 @@ export async function listLeads({
 }
 
 
+// Count leads matching optional search + status using method endpoint when available.
+// Falls back to approximate count when method URL is not configured.
+export async function countLeads({ search, status }: { search?: string; status?: string }): Promise<number | null> {
+  const f = new Array<any>();
+  if (status && status !== 'All') f.push(['status', '=', status]);
+
+  // Prefer method endpoint: frappe.client.get_count
+  try {
+    if (!METHOD_URL) throw new Error('METHOD_URL not configured');
+    const params: any = {
+      doctype: 'Lead',
+    };
+    // Apply filters; apply simple LIKE on lead_name for search (broad or_filters not supported by get_count)
+    const filters = [...f];
+    if (search && search.trim().length > 0) {
+      const like = `%${search.trim()}%`;
+      filters.push(['lead_name', 'like', like]);
+    }
+    if (filters.length > 0) params.filters = JSON.stringify(filters);
+    const res = await axios.get(`${METHOD_URL}/frappe.client.get_count`, { params, headers: headers() });
+    const n = Number(res?.data?.message ?? res?.data);
+    if (Number.isFinite(n)) return n;
+  } catch (err) {
+    try { console.warn('countLeads method failed', (err as any)?.message); } catch {}
+  }
+
+  // No reliable count available
+  return null;
+}
+
+// List User suggestions (email + full name) for assigning tasks/events
+export async function listUserSuggestions(search: string = '', limit: number = 10): Promise<Array<{ email: string; fullName: string | null }>> {
+  const q = String(search || '').trim();
+  const normalize = (r: any): { email: string; fullName: string | null } | null => {
+    const name = String(r?.name || '').trim();
+    const email = String(r?.email || (name.includes('@') ? name : '') || '').trim();
+    const fullName = r?.full_name ? String(r.full_name) : null;
+    if (!email) return null;
+    return { email, fullName };
+  };
+
+  // Prefer METHOD get_list for richer fields
+  if (METHOD_URL) {
+    try {
+      const params: any = {
+        doctype: 'User',
+        fields: JSON.stringify(['name', 'full_name', 'email', 'username']),
+        limit_page_length: limit,
+        order_by: 'modified desc',
+      };
+      if (q) {
+        params.or_filters = JSON.stringify([
+          ['name', 'like', `%${q}%`],
+          ['full_name', 'like', `%${q}%`],
+          ['email', 'like', `%${q}%`],
+          ['username', 'like', `%${q}%`],
+        ]);
+      }
+      const res = await axios.get(`${METHOD_URL}/frappe.client.get_list`, { params, headers: headers() });
+      const rows = (res?.data?.message ?? []) as any[];
+      const out = rows.map(normalize).filter(Boolean) as Array<{ email: string; fullName: string | null }>;
+      if (out.length > 0) return out.slice(0, limit);
+    } catch (e) {
+      try { console.warn('listUserSuggestions method failed', (e as any)?.message); } catch {}
+    }
+  }
+  // Fallback to RESOURCE (may be restricted)
+  if (BASE_URL) {
+    try {
+      const params: any = {
+        fields: JSON.stringify(['name', 'full_name', 'email', 'username']),
+        limit_page_length: limit,
+        order_by: 'modified desc',
+      };
+      if (q) params.filters = JSON.stringify([['name', 'like', `%${q}%`]]);
+      const res = await axios.get(`${BASE_URL}/User`, { params, headers: headers() });
+      const rows = (res?.data?.data ?? []) as any[];
+      const out = rows.map(normalize).filter(Boolean) as Array<{ email: string; fullName: string | null }>;
+      if (out.length > 0) return out.slice(0, limit);
+    } catch (e) {
+      try { console.warn('listUserSuggestions resource failed', (e as any)?.message); } catch {}
+    }
+  }
+
+  // Final fallback: search by link API and keep only items that look like emails
+  try {
+    const names = await searchDocNames('User', q, limit);
+    const emails = names.filter(n => /@/.test(n));
+    return emails.map(e => ({ email: e, fullName: null }));
+  } catch {}
+  return [];
+}
+
 // Fetch a single lead by name (ID)
 export async function getLead(name: string): Promise<Lead | null> {
   const n = String(name || '').trim();
@@ -907,8 +1000,8 @@ export async function createLead(payload: Record<string, any>): Promise<Lead | t
 
 
 // Create a Task linked to a Lead
-export async function createTaskForLead(args: { leadName: string; title: string; dueDate?: string; notes?: string; priority?: 'Low' | 'Medium' | 'High' | 'Urgent' | string; status?: string }): Promise<any | null> {
-  const { leadName, title, dueDate, notes, priority, status } = args;
+export async function createTaskForLead(args: { leadName: string; title: string; dueDate?: string; notes?: string; priority?: 'Low' | 'Medium' | 'High' | 'Urgent' | string; status?: string; assignedTo?: string }): Promise<any | null> {
+  const { leadName, title, dueDate, notes, priority, status, assignedTo } = args;
   const doc: any = {
     doctype: 'Task',
     subject: title,
@@ -928,13 +1021,34 @@ export async function createTaskForLead(args: { leadName: string; title: string;
     const body = { ...doc };
     delete body.doctype;
     const res = await axios.post(`${BASE_URL}/Task`, body, { headers: { ...headers(), 'Content-Type': 'application/json' } });
-    return (res?.data?.data ?? res?.data ?? true) as any;
+    const created = (res?.data?.data ?? res?.data ?? true) as any;
+    // Attempt assignment if requested and we can resolve created name
+    const createdName: string | undefined = (created && typeof created === 'object' && created.name) ? String(created.name) : undefined;
+    if (assignedTo && createdName && METHOD_URL) {
+      try {
+        await axios.post(`${METHOD_URL}/frappe.desk.form.assign_to.add`, {
+          doctype: 'Task', name: createdName, assign_to: [assignedTo], notify: 0,
+        }, { headers: { ...headers(), 'Content-Type': 'application/json' } });
+      } catch (e) {
+        // non-fatal
+      }
+    }
+    return created;
   } catch {}
   // METHOD fallback
   try {
     if (!METHOD_URL) throw new Error('METHOD_URL not configured');
     const res = await axios.post(`${METHOD_URL}/frappe.client.insert`, { doc }, { headers: { ...headers(), 'Content-Type': 'application/json' } });
-    return res?.data?.message ?? true;
+    const created = res?.data?.message ?? true;
+    const createdName: string | undefined = (created && typeof created === 'object' && created.name) ? String(created.name) : undefined;
+    if (assignedTo && createdName) {
+      try {
+        await axios.post(`${METHOD_URL}/frappe.desk.form.assign_to.add`, {
+          doctype: 'Task', name: createdName, assign_to: [assignedTo], notify: 0,
+        }, { headers: { ...headers(), 'Content-Type': 'application/json' } });
+      } catch (e) {}
+    }
+    return created;
   } catch (e) {
     console.error('createTaskForLead failed', (e as any)?.response?.data || (e as any)?.message);
     return null;

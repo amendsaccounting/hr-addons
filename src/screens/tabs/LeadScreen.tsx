@@ -17,7 +17,8 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
-import { listLeads, type Lead as ERPLead, createTaskForLead, createEventForLead } from '../../services/leadService';
+import { listLeads, type Lead as ERPLead, createTaskForLead, createEventForLead, countLeads, listUserSuggestions } from '../../services/leadService';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { launchImageLibrary, Asset } from 'react-native-image-picker';
 
 (Ionicons as any)?.loadFont?.();
@@ -55,7 +56,8 @@ export default function LeadScreen({ onOpenLead, onCreateLead, refreshKey }: Pro
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [hasMore, setHasMore] = useState(true);
-  const PAGE = 20;
+  const [totalCount, setTotalCount] = useState<number | null>(null);
+  const PAGE = 15;
   const [taskLead, setTaskLead] = useState<LeadItem | null>(null);
   const [eventLead, setEventLead] = useState<LeadItem | null>(null);
   
@@ -109,6 +111,12 @@ export default function LeadScreen({ onOpenLead, onCreateLead, refreshKey }: Pro
     // initial and when query/filter or refresh key change
     setRefreshing(true);
     load(true);
+    (async () => {
+      try {
+        const n = await countLeads({ search: query, status: filter });
+        setTotalCount(typeof n === 'number' ? n : null);
+      } catch { setTotalCount(null); }
+    })();
   }, [query, filter, refreshKey]);
 
   const keyExtractor = useCallback((item: LeadItem) => item.id, []);
@@ -136,7 +144,7 @@ export default function LeadScreen({ onOpenLead, onCreateLead, refreshKey }: Pro
 
         {/* Stats inside header */}
         <View style={[styles.statsRow, { marginTop: 6 }]}> 
-          <StatCard label="Total Leads" value="3" />
+          <StatCard label="Total Leads" value={totalCount != null ? String(totalCount) : `${data.length}${hasMore ? '+' : ''}`} />
           <StatCard label="Pipeline Value" value="$150k" />
           <StatCard label="Won" value="$0k" />
         </View>
@@ -188,11 +196,20 @@ export default function LeadScreen({ onOpenLead, onCreateLead, refreshKey }: Pro
         onEndReachedThreshold={0.5}
         refreshing={refreshing}
         onRefresh={() => { setRefreshing(true); load(true); }}
-        ListEmptyComponent={!loading ? (() => (
-          <View style={{ padding: 20, alignItems: 'center' }}>
-            <Text style={{ color: '#6b7280' }}>No leads found</Text>
+        ListFooterComponent={loading && !refreshing ? (() => (
+          <View style={{ paddingVertical: 16, alignItems: 'center', justifyContent: 'center' }}>
+            <ActivityIndicator size="small" color="#000000" />
           </View>
-        )) : undefined}
+        )) : null}
+        ListEmptyComponent={() => (
+          <View style={{ padding: 24, alignItems: 'center', justifyContent: 'center' }}>
+            {loading ? (
+              <ActivityIndicator size="small" color="#000000" />
+            ) : (
+              <Text style={{ color: '#6b7280' }}>No leads found</Text>
+            )}
+          </View>
+        )}
       />
       {/* Creation Modals */}
       <CreateTaskModal visible={!!taskLead} lead={taskLead} onClose={() => setTaskLead(null)} />
@@ -251,7 +268,7 @@ const LeadCard = React.memo(function LeadCard({ item, onOpenLead, onCreateTask, 
   return (
     <Pressable
       style={styles.card}
-      onPress={() => onOpenLead?.(item.name)}
+      onPress={() => onOpenLead?.(item.id)}
       accessibilityRole="button"
       accessibilityLabel={`Open ${item.name}`}
     >
@@ -261,7 +278,7 @@ const LeadCard = React.memo(function LeadCard({ item, onOpenLead, onCreateTask, 
           accessibilityRole="button"
           accessibilityLabel="Edit lead"
           style={styles.roundIcon}
-          onPress={() => onOpenLead?.(item.name, { edit: true })}
+          onPress={() => onOpenLead?.(item.id, { edit: true })}
         >
           <Ionicons name="create-outline" size={16} color="#fff" />
         </Pressable>
@@ -335,11 +352,15 @@ const ToolButton = React.memo(function ToolButton({ icon, title, onPress }: { ic
 function CreateTaskModal({ visible, onClose, lead }: { visible: boolean; onClose: () => void; lead: LeadItem | null }) {
   const [title, setTitle] = useState<string>(lead ? `Follow up: ${lead.name}` : '');
   const [dueDate, setDueDate] = useState<string>('');
+  const [assignedTo, setAssignedTo] = useState<string>('');
   const [notes, setNotes] = useState<string>('');
   const [files, setFiles] = useState<Attachment[]>([]);
   const [creating, setCreating] = useState<boolean>(false);
-  const [priority, setPriority] = useState<'Low' | 'Medium' | 'High' | 'Urgent' | ''>('Medium');
-  const [status, setStatus] = useState<string>('Open');
+  const [showDate, setShowDate] = useState<boolean>(false);
+  const [assigneeOpen, setAssigneeOpen] = useState<boolean>(false);
+  const [assigneeLoading, setAssigneeLoading] = useState<boolean>(false);
+  const [assigneeList, setAssigneeList] = useState<Array<{ email: string; fullName: string | null }>>([]);
+  const [assigneeInteracting, setAssigneeInteracting] = useState<boolean>(false);
   // normalize date to YYYY-MM-DD expected by ERP
   const toIsoDate = (v: string): string | null => {
     const s = String(v || '').trim();
@@ -380,10 +401,29 @@ function CreateTaskModal({ visible, onClose, lead }: { visible: boolean; onClose
     if (visible) {
       setTitle(lead ? `Follow up: ${lead.name}` : '');
       setDueDate('');
+      setAssignedTo('');
       setNotes('');
       setFiles([]);
+      setAssigneeOpen(false);
+      setAssigneeList([]);
     }
   }, [visible, lead]);
+
+  // Debounce assignee query and fetch suggestions
+  useEffect(() => {
+    if (!assigneeOpen) return;
+    const q = assignedTo.trim();
+    const t = setTimeout(async () => {
+      try {
+        setAssigneeLoading(true);
+        const out = await listUserSuggestions(q, 10);
+        try { console.log('[LeadScreen] Assignee suggestions', { query: q, count: Array.isArray(out) ? out.length : 0, items: out }); } catch {}
+        setAssigneeList(out || []);
+      } catch (e) { try { console.log('[LeadScreen] Assignee suggestions error', (e as any)?.message || e); } catch {}; setAssigneeList([]); }
+      finally { setAssigneeLoading(false); }
+    }, 200);
+    return () => clearTimeout(t);
+  }, [assignedTo, assigneeOpen]);
 
   const onAddAttachment = async () => {
     try {
@@ -405,39 +445,65 @@ function CreateTaskModal({ visible, onClose, lead }: { visible: boolean; onClose
           </View>
           <Text style={styles.modalHint} numberOfLines={1}>For: {lead?.name || '-'}</Text>
           <View style={styles.modalField}> 
-            <Text style={styles.modalLabel}>Title</Text>
-            <TextInput value={title} onChangeText={setTitle} placeholder="Task title" style={styles.modalInput} />
+            <Text style={styles.modalLabel}>Due Date</Text>
+            <Pressable onPress={() => setShowDate(true)} style={[styles.modalInput, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]} accessibilityRole="button">
+              <Text style={{ color: dueDate ? '#111827' : '#9ca3af' }}>{dueDate || 'Pick a date'}</Text>
+              <Ionicons name="calendar-outline" size={16} color="#6b7280" />
+            </Pressable>
+            {showDate && (
+              <DateTimePicker
+                value={dueDate ? new Date(dueDate) : new Date()}
+                onChange={(_, d) => { setShowDate(false); if (d) {
+                  const y = d.getFullYear(); const m = String(d.getMonth()+1).padStart(2,'0'); const day = String(d.getDate()).padStart(2,'0'); setDueDate(`${y}-${m}-${day}`);
+                }}}
+                mode="date"
+                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+              />
+            )}
           </View>
           <View style={styles.modalField}> 
-            <Text style={styles.modalLabel}>Due Date</Text>
-            <TextInput value={dueDate} onChangeText={setDueDate} placeholder="YYYY-MM-DD" style={styles.modalInput} />
-          </View>
-          <View style={{ flexDirection: 'row' }}>
-            <View style={[styles.modalField, { flex: 1, marginRight: 6 }]}> 
-              <Text style={styles.modalLabel}>Priority</Text>
-              <View style={[styles.modalInput, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}> 
-                <Text style={{ color: '#111827' }}>{priority || 'Select priority'}</Text>
-                <View style={{ flexDirection: 'row' }}>
-                  {(['Low','Medium','High','Urgent'] as const).map(p => (
-                    <Pressable key={p} onPress={() => setPriority(p)} style={{ paddingHorizontal: 6, paddingVertical: 4, marginLeft: 4, backgroundColor: priority===p? '#0b0b1b':'#f3f4f6', borderRadius: 6, borderWidth: 1, borderColor: '#e5e7eb' }}>
-                      <Text style={{ color: priority===p? '#fff':'#111827', fontSize: 11, fontWeight: '700' }}>{p}</Text>
-                    </Pressable>
-                  ))}
+            <Text style={styles.modalLabel}>Assigned To</Text>
+            <View style={{ position: 'relative' }}>
+              <TextInput
+                value={assignedTo}
+                onChangeText={setAssignedTo}
+                placeholder="user@example.com or username"
+                style={styles.modalInput}
+                onFocus={() => setAssigneeOpen(true)}
+                onBlur={() => { if (!assigneeInteracting) setAssigneeOpen(false); }}
+              />
+              {assigneeOpen && (
+                <View style={styles.suggestPanel}>
+                  {assigneeLoading ? (
+                    <View style={{ padding: 10, alignItems: 'center' }}>
+                      <ActivityIndicator size="small" color="#000" />
+                    </View>
+                  ) : assigneeList.length > 0 ? (
+                    <ScrollView
+                      keyboardShouldPersistTaps="always"
+                      keyboardDismissMode="on-drag"
+                      nestedScrollEnabled
+                      contentContainerStyle={{ paddingVertical: 4 }}
+                      style={{ height: 220 }}
+                      onTouchStart={() => setAssigneeInteracting(true)}
+                      onTouchEnd={() => setTimeout(() => setAssigneeInteracting(false), 100)}
+                    >
+                      {assigneeList.map(({ email, fullName }) => (
+                        <Pressable key={email} style={styles.suggestItem} onPress={() => { setAssignedTo(email); setAssigneeOpen(false); }} accessibilityRole="button">
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.suggestText} numberOfLines={1}>{email}</Text>
+                            {fullName ? <Text style={styles.suggestSub} numberOfLines={1}>{fullName}</Text> : null}
+                          </View>
+                        </Pressable>
+                      ))}
+                    </ScrollView>
+                  ) : (
+                    <View style={{ padding: 10 }}>
+                      <Text style={{ color: '#6b7280' }}>No suggestions</Text>
+                    </View>
+                  )}
                 </View>
-              </View>
-            </View>
-            <View style={[styles.modalField, { flex: 1, marginLeft: 6 }]}> 
-              <Text style={styles.modalLabel}>Status</Text>
-              <View style={[styles.modalInput, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}> 
-                <Text style={{ color: '#111827' }}>{status || 'Open'}</Text>
-                <View style={{ flexDirection: 'row' }}>
-                  {(['Open','Working','Pending Review','Completed'] as const).map(s => (
-                    <Pressable key={s} onPress={() => setStatus(s)} style={{ paddingHorizontal: 6, paddingVertical: 4, marginLeft: 4, backgroundColor: status===s? '#0b0b1b':'#f3f4f6', borderRadius: 6, borderWidth: 1, borderColor: '#e5e7eb' }}>
-                      <Text style={{ color: status===s? '#fff':'#111827', fontSize: 11, fontWeight: '700' }}>{s}</Text>
-                    </Pressable>
-                  ))}
-                </View>
-              </View>
+              )}
             </View>
           </View>
           <View style={styles.modalField}> 
@@ -464,13 +530,13 @@ function CreateTaskModal({ visible, onClose, lead }: { visible: boolean; onClose
           </View>
           <View style={styles.modalActions}>
             <Pressable style={[styles.modalBtn, styles.modalBtnGhost]} onPress={onClose}><Text style={styles.modalBtnGhostText}>Cancel</Text></Pressable>
-            <Pressable style={[styles.modalBtn, styles.modalBtnPrimary]} disabled={creating || !title.trim() || !priority} onPress={async () => {
+            <Pressable style={[styles.modalBtn, styles.modalBtnPrimary]} disabled={creating} onPress={async () => {
   if (!lead?.id) return;
   try {
     setCreating(true);
     const isoDue = dueDate.trim() ? toIsoDate(dueDate.trim()) : undefined;
     if (dueDate.trim() && !isoDue) { Alert.alert('Task', 'Please enter Due Date as YYYY-MM-DD'); setCreating(false); return; }
-    const ok = await createTaskForLead({ leadName: lead.id, title: title.trim(), dueDate: isoDue, notes: notes.trim() || undefined, priority: priority || undefined, status: status || undefined });
+    const ok = await createTaskForLead({ leadName: lead.id, title: title.trim() || `Follow up: ${lead.name}`, dueDate: isoDue, notes: notes.trim() || undefined, assignedTo: assignedTo.trim() || undefined });
     if (!ok) throw new Error("Failed to create task");
     Alert.alert("Task", "Task created");
     onClose();
@@ -700,6 +766,11 @@ const styles = StyleSheet.create({
   modalField: { marginTop: 8 },
   modalLabel: { color: '#6b7280', fontSize: 12, marginBottom: 4, fontWeight: '600' },
   modalInput: { backgroundColor: '#f9fafb', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 10, color: '#111827' },
+  // Fixed-height dropdown so full list stays inside and scrolls
+  suggestPanel: { position: 'absolute', top: 46, left: 0, right: 0, backgroundColor: '#fff', borderWidth: 1, borderColor: '#e5e7eb', borderTopWidth: 0, borderBottomLeftRadius: 10, borderBottomRightRadius: 10, height: 220, zIndex: 20, elevation: 6, overflow: 'hidden' },
+  suggestItem: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 6, borderBottomWidth: 1, borderColor: '#f3f4f6' },
+  suggestText: { color: '#111827', flexShrink: 1, fontWeight: '500', fontSize: 12, lineHeight: 16 },
+  suggestSub: { color: '#6b7280', fontSize: 12, marginTop: 2 },
   modalActions: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 12 },
   modalBtn: { height: 40, borderRadius: 10, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center', marginLeft: 8 },
   modalBtnGhost: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#e5e7eb' },
@@ -717,9 +788,6 @@ const styles = StyleSheet.create({
 
   // deprecated leftover styles removed
 });
-
-
-
 
 
 

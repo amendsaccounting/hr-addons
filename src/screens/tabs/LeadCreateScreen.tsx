@@ -334,46 +334,7 @@ console.log("form====>",form);
     return `Lat ${latitude.toFixed(5)}, Lng ${longitude.toFixed(5)}`;
   };
 
-  // Autofill current location on mount (silent) if permission is already granted
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        // Only autofill when field is empty
-        if (String((form as any)?.location || '').trim().length > 0) return;
-        let granted = false;
-        if (Platform.OS === 'android') {
-          try {
-            granted = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION);
-          } catch { granted = false; }
-        } else {
-          try {
-            const status = await (Geolocation as any).requestAuthorization?.('whenInUse');
-            granted = status === 'granted' || status === 'authorized' || status === 'always';
-          } catch { granted = false; }
-        }
-        if (!granted) return;
-        const pos: any = await new Promise((resolve, reject) => {
-          Geolocation.getCurrentPosition(
-            (p) => resolve(p),
-            (e) => reject(e),
-            { enableHighAccuracy: true, timeout: 12000, maximumAge: 5000 }
-          );
-        });
-        if (cancelled) return;
-        const { latitude, longitude } = (pos?.coords || {}) as any;
-        if (typeof latitude === 'number' && typeof longitude === 'number') {
-          const addr = await reverseGeocode(latitude, longitude);
-          if (cancelled) return;
-          setForm((p: any) => {
-            if (String(p?.location || '').trim().length > 0) return p;
-            return { ...p, location: addr };
-          });
-        }
-      } catch { /* silent */ }
-    })();
-    return () => { cancelled = true; };
-  }, []);
+  // Disable auto location fetch on mount per requirement
 
   // no explicit button-triggered location fill; autofill runs on mount when permission is granted
 
@@ -471,11 +432,7 @@ console.log("form====>",form);
             <Divider />
             <SelectField label="Request type" value={form.request_type} placeholder="Select request type" options={REQUEST_OPTIONS} onSelect={(v) => setField('request_type')(v)} required />
             <Divider />
-            {locationLinkDoctype ? (
-              <LinkSelect label="Building & Location" doctype={locationLinkDoctype} value={form.location} onChange={(v) => setField('location')(v)} referenceField={locationFieldKey} filters={locationFilters} required showSearch={false} />
-            ) : (
-              <LocationSelect label="Building & Location" value={form.location} onChange={(v) => setField('location')(v)} required showSearch={false} />
-            )}
+            <LocationSelect label="Building & Location" value={form.location} onChange={(v) => setField('location')(v)} required showSearch={false} />
             <Divider />
             {serviceLinkDoctype ? (
               <LinkSelect label="Service Type" doctype={serviceLinkDoctype} value={form.service_type} onChange={(v) => setField('service_type')(v)} referenceField={serviceFieldKey} filters={serviceLinkFilters} required />
@@ -734,6 +691,8 @@ function LocationSelect({ label, value, onChange, required, showSearch = true }:
   const [q, setQ] = useState('');
   const [items, setItems] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const [resolving, setResolving] = useState(false);
+  const runningRef = React.useRef(false);
 
   useEffect(() => {
     let t: any;
@@ -747,12 +706,87 @@ function LocationSelect({ label, value, onChange, required, showSearch = true }:
 
   useEffect(() => { if (open) { setQ(''); setItems([]); } }, [open]);
 
+  const onPressFetchLocation = async () => {
+    if (resolving || runningRef.current) return;
+    runningRef.current = true;
+    setResolving(true);
+    try {
+      // Guard: Geolocation availability
+      if (!Geolocation || typeof (Geolocation as any).getCurrentPosition !== 'function') {
+        Alert.alert('Location', 'Location service not available on this device.');
+        setOpen(true);
+        return;
+      }
+      let granted = false;
+      if (Platform.OS === 'android') {
+        try {
+          granted = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION);
+          if (!granted) {
+            const req = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION, {
+              title: 'Location Permission',
+              message: 'Allow app to access your location to fill Building & Location.',
+              buttonPositive: 'OK'
+            });
+            granted = req === PermissionsAndroid.RESULTS.GRANTED;
+          }
+        } catch { granted = false; }
+      } else {
+        try {
+          const status = await (Geolocation as any).requestAuthorization?.('whenInUse');
+          granted = status === 'granted' || status === 'authorized' || status === 'always';
+        } catch { granted = false; }
+      }
+      if (!granted) { setResolving(false); setOpen(o => !o); return; }
+      const pos: any = await new Promise((resolve, reject) => {
+        try {
+          (Geolocation as any).getCurrentPosition(
+            (p: any) => resolve(p),
+            (e: any) => reject(e),
+            { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 }
+          );
+        } catch (e) { reject(e); }
+      });
+      const { latitude, longitude } = (pos?.coords || {}) as any;
+      if (typeof latitude === 'number' && typeof longitude === 'number') {
+        const GOOGLE_KEY = (Config as any)?.GOOGLE_MAPS_API_KEY || (Config as any)?.GOOGLE_API_KEY;
+        let addr = '';
+        if (GOOGLE_KEY) {
+          try {
+            const gUrl = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${GOOGLE_KEY}&language=en`;
+            const gRes = await fetch(gUrl);
+            const gj = await gRes.json().catch(() => null as any);
+            addr = String(gj?.results?.[0]?.formatted_address || '');
+          } catch {}
+        }
+        if (!addr) {
+          try {
+            const nUrl = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}&accept-language=en`;
+            const nRes = await fetch(nUrl, { headers: { 'User-Agent': 'hr_addons/1.0 (reverse-geocode)', 'Accept-Language': 'en' } as any });
+            const nj = await nRes.json().catch(() => null as any);
+            addr = String(nj?.display_name || '');
+          } catch {}
+        }
+        if (addr) { onChange(addr); }
+        else { Alert.alert('Location', 'Unable to resolve address. Please select manually.'); setOpen(true); }
+      } else {
+        Alert.alert('Location', 'Unable to fetch GPS coordinates.');
+        setOpen(true);
+      }
+    } catch (e: any) {
+      try { console.log('Location fetch error', e?.message || e); } catch {}
+      setOpen(true);
+    } finally {
+      setResolving(false);
+      runningRef.current = false;
+    }
+  };
+
   return (
     <View style={{ paddingVertical: 10 }}>
       <Text style={styles.fieldLabel}>{label}{required ? <Text style={{ color: '#dc2626' }}>{' *'}</Text> : null}</Text>
-      <Pressable onPress={() => setOpen((o) => !o)} style={styles.selectInput}>
-        <Text style={[styles.selectTextEllipsize, !value && { color: '#9CA3AF' }]} numberOfLines={1} ellipsizeMode="tail">{value || 'Select location'}</Text>
-        <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={16} color="#6B7280" />
+      <Pressable onPress={onPressFetchLocation} style={styles.selectInput}>
+        <Text style={[styles.selectTextEllipsize, !value && { color: '#9CA3AF' }]} numberOfLines={1} ellipsizeMode="tail">{value || (resolving ? 'Detecting current location…' : 'Tap to use current location')}</Text>
+        {resolving ? <ActivityIndicator size="small" /> : <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={16} color="#6B7280" />}
       </Pressable>
       {open && (
         <View style={styles.dropdownPanel}>
@@ -854,7 +888,7 @@ function AssociateSelect({ label, value, onChange, required }: { label: string; 
   );
 }
 
-function LinkSelect({ label, doctype, value, onChange, referenceField, filters, required, showSearch = true }: { label: string; doctype: string; value: string; onChange: (v: string) => void; referenceField?: string | null; filters?: Record<string, any>; required?: boolean; showSearch?: boolean }) {
+function LinkSelect({ label, doctype, value, onChange, referenceField, filters, required, showSearch = true, fetchOnPress }: { label: string; doctype: string; value: string; onChange: (v: string) => void; referenceField?: string | null; filters?: Record<string, any>; required?: boolean; showSearch?: boolean; fetchOnPress?: () => void | Promise<void> }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
   const [items, setItems] = useState<string[]>([]);
@@ -887,7 +921,15 @@ function LinkSelect({ label, doctype, value, onChange, referenceField, filters, 
   return (
     <View style={{ paddingVertical: 10 }}>
       <Text style={styles.fieldLabel}>{label}{required ? <Text style={{ color: '#dc2626' }}>{' *'}</Text> : null}</Text>
-      <Pressable onPress={() => setOpen((o) => !o)} style={styles.selectInput}>
+      <Pressable
+        onPress={async () => {
+          if (fetchOnPress) { try { await fetchOnPress(); } catch {} return; }
+          setOpen((o) => !o);
+        }}
+        onLongPress={() => setOpen((o) => !o)}
+        delayLongPress={200}
+        style={styles.selectInput}
+      >
         <Text style={[styles.selectTextEllipsize, !value && { color: '#9CA3AF' }]} numberOfLines={1} ellipsizeMode="tail">{value || `Select ${label.toLowerCase()}`}</Text>
         <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={16} color="#6B7280" />
       </Pressable>
