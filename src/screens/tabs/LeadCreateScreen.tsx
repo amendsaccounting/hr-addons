@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 (Ionicons as any)?.loadFont?.();
 import Geolocation from 'react-native-geolocation-service';
-import { listUserSuggestions, fetchLeadStatusOptions } from '../../services/leadService';
+import { listUserSuggestions, fetchLeadStatusOptions, listDocNamesSimple } from '../../services/leadService';
 
 const HEADER_BG = '#0b0b1b';
 
@@ -43,6 +43,15 @@ export default function LeadCreateScreen({ onCancel, onCreated }: Props) {
   const [statusOpen, setStatusOpen] = useState(false);
   const [statusOptions, setStatusOptions] = useState<string[]>([]);
   const [statusLoading, setStatusLoading] = useState(false);
+  const [sourceOpen, setSourceOpen] = useState(false);
+  const [sourceOptions, setSourceOptions] = useState<string[]>([]);
+  const [sourceLoading, setSourceLoading] = useState(false);
+  const [leadTypeOpen, setLeadTypeOpen] = useState(false);
+  const [leadTypeOptions, setLeadTypeOptions] = useState<string[]>([]);
+  const [leadTypeLoading, setLeadTypeLoading] = useState(false);
+  const [associateOpen, setAssociateOpen] = useState(false);
+  const [associateOptions, setAssociateOptions] = useState<Array<{ email: string; fullName: string | null }>>([]);
+  const [associateLoading, setAssociateLoading] = useState(false);
 
   // Debounce Lead Owner suggestions when dropdown is open
   useEffect(() => {
@@ -153,6 +162,42 @@ export default function LeadCreateScreen({ onCancel, onCreated }: Props) {
         if (Array.isArray(opts) && opts.length > 0) setStatusOptions(opts);
       } catch {}
       finally { setStatusLoading(false); }
+    })();
+  }, []);
+
+  // Load Source options on mount (Lead Source doctype)
+  useEffect(() => {
+    (async () => {
+      try {
+        setSourceLoading(true);
+        const names = await listDocNamesSimple('Lead Source', 20);
+        if (Array.isArray(names) && names.length > 0) setSourceOptions(names);
+      } catch {}
+      finally { setSourceLoading(false); }
+    })();
+  }, []);
+
+  // Load Lead Type options on mount (Lead Type doctype)
+  useEffect(() => {
+    (async () => {
+      try {
+        setLeadTypeLoading(true);
+        const names = await listDocNamesSimple('Lead Type', 20);
+        if (Array.isArray(names) && names.length > 0) setLeadTypeOptions(names);
+      } catch {}
+      finally { setLeadTypeLoading(false); }
+    })();
+  }, []);
+
+  // Load Associate Details options on mount (use User suggestions for names/emails)
+  useEffect(() => {
+    (async () => {
+      try {
+        setAssociateLoading(true);
+        const users = await listUserSuggestions('', 20);
+        if (Array.isArray(users) && users.length > 0) setAssociateOptions(users);
+      } catch {}
+      finally { setAssociateLoading(false); }
     })();
   }, []);
 
@@ -273,15 +318,55 @@ export default function LeadCreateScreen({ onCancel, onCreated }: Props) {
           <View style={styles.divider} />
 
           <Text style={styles.fieldLabel}>Source</Text>
-          <TextInput value={leadForm.source} onChangeText={setField('source')} placeholder="Source" placeholderTextColor="#9CA3AF" style={styles.input} />
+          <Pressable onPress={() => setSourceOpen(v => !v)} style={styles.pickerInput} accessibilityRole="button" accessibilityLabel="Select source">
+            <Text style={{ color: leadForm.source ? '#111827' : '#9CA3AF' }}>{leadForm.source || (sourceLoading ? 'Loading…' : 'Select source')}</Text>
+            <Ionicons style={styles.fieldChevron} name={sourceOpen ? 'chevron-up' : 'chevron-down'} size={16} color="#6b7280" />
+          </Pressable>
+          {sourceOpen && (
+            <View style={styles.dropdownPanel}>
+              {(sourceOptions.length > 0 ? sourceOptions : ['Website','Phone','Email','Referral','Campaign','Event']).map((opt) => (
+                <Pressable key={opt} style={styles.optionItem} onPress={() => { setField('source')(opt); setSourceOpen(false); }}>
+                  <Text style={styles.optionText}>{opt}</Text>
+                </Pressable>
+              ))}
+            </View>
+          )}
           <View style={styles.divider} />
 
           <Text style={styles.fieldLabel}>Lead Type</Text>
-          <TextInput value={leadForm.lead_type} onChangeText={setField('lead_type')} placeholder="Lead Type" placeholderTextColor="#9CA3AF" style={styles.input} />
+          <Pressable onPress={() => setLeadTypeOpen(v => !v)} style={styles.pickerInput} accessibilityRole="button" accessibilityLabel="Select lead type">
+            <Text style={{ color: leadForm.lead_type ? '#111827' : '#9CA3AF' }}>{leadForm.lead_type || (leadTypeLoading ? 'Loading…' : 'Select lead type')}</Text>
+            <Ionicons style={styles.fieldChevron} name={leadTypeOpen ? 'chevron-up' : 'chevron-down'} size={16} color="#6b7280" />
+          </Pressable>
+          {leadTypeOpen && (
+            <View style={styles.dropdownPanel}>
+              {(leadTypeOptions.length > 0 ? leadTypeOptions : ['Individual','Company','Partner']).map((opt) => (
+                <Pressable key={opt} style={styles.optionItem} onPress={() => { setField('lead_type')(opt); setLeadTypeOpen(false); }}>
+                  <Text style={styles.optionText}>{opt}</Text>
+                </Pressable>
+              ))}
+            </View>
+          )}
           <View style={styles.divider} />
 
           <Text style={styles.fieldLabel}>Associate Details</Text>
-          <TextInput value={leadForm.associate_details} onChangeText={setField('associate_details')} placeholder="Associate Details" placeholderTextColor="#9CA3AF" style={[styles.input, { minHeight: 80, textAlignVertical: 'top' }]} multiline />
+          <Pressable onPress={() => setAssociateOpen(v => !v)} style={styles.pickerInput} accessibilityRole="button" accessibilityLabel="Select associate">
+            <Text style={{ color: leadForm.associate_details ? '#111827' : '#9CA3AF' }}>{leadForm.associate_details || (associateLoading ? 'Loading…' : 'Select associate')}</Text>
+            <Ionicons style={styles.fieldChevron} name={associateOpen ? 'chevron-up' : 'chevron-down'} size={16} color="#6b7280" />
+          </Pressable>
+          {associateOpen && (
+            <View style={styles.dropdownPanel}>
+              {(associateOptions.length > 0 ? associateOptions : []).map(({ email, fullName }) => (
+                <Pressable key={email} style={styles.optionItem} onPress={() => { setField('associate_details')(email); setAssociateOpen(false); }}>
+                  <Text style={styles.optionText}>{email}</Text>
+                  {fullName ? <Text style={{ color: '#6b7280', fontSize: 12, marginTop: 2 }}>{fullName}</Text> : null}
+                </Pressable>
+              ))}
+              {(!associateLoading && associateOptions.length === 0) && (
+                <View style={styles.optionItem}><Text style={[styles.optionText, { color: '#6b7280' }]}>No associates</Text></View>
+              )}
+            </View>
+          )}
           <View style={styles.divider} />
 
           <Text style={styles.fieldLabel}>Request Type</Text>
