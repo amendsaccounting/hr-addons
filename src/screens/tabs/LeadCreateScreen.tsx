@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, StatusBar, ActivityIndicator, Platform, PermissionsAndroid, Alert } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 (Ionicons as any)?.loadFont?.();
 import Geolocation from 'react-native-geolocation-service';
+import { listUserSuggestions } from '../../services/leadService';
 
 const HEADER_BG = '#0b0b1b';
 
@@ -14,7 +16,7 @@ type Props = {
 
 export default function LeadCreateScreen({ onCancel, onCreated }: Props) {
   const insets = useSafeAreaInsets();
-  const [form, setForm] = useState({
+  const [leadForm, setLeadForm] = useState({
     date: '',
     lead_owner: '',
     gender: '',
@@ -31,8 +33,47 @@ export default function LeadCreateScreen({ onCancel, onCreated }: Props) {
     website: '',
     territory: '',
   });
-  const setField = (k: string) => (v: string) => setForm((p) => ({ ...p, [k]: v }));
+  const setField = (k: string) => (v: string) => setLeadForm((p) => ({ ...p, [k]: v }));
   const [locLoading, setLocLoading] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [ownerOpen, setOwnerOpen] = useState(false);
+  const [ownerLoading, setOwnerLoading] = useState(false);
+  const [ownerInteracting, setOwnerInteracting] = useState(false);
+  const [ownerList, setOwnerList] = useState<Array<{ email: string; fullName: string | null }>>([]);
+
+  // Debounce Lead Owner suggestions when dropdown is open
+  useEffect(() => {
+    if (!ownerOpen) return;
+    const q = String(leadForm.lead_owner || '').trim();
+    const t = setTimeout(async () => {
+      try {
+        setOwnerLoading(true);
+        const out = await listUserSuggestions(q, 10);
+        setOwnerList(out || []);
+      } catch {
+        setOwnerList([]);
+      } finally {
+        setOwnerLoading(false);
+      }
+    }, 200);
+    return () => clearTimeout(t);
+  }, [leadForm.lead_owner, ownerOpen]);
+
+  const formatDate = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+
+  const parseDate = (s: string): Date => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+    if (m) {
+      const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+      if (!isNaN(d.getTime())) return d;
+    }
+    return new Date();
+  };
 
   const ensureLocationPermission = async (): Promise<boolean> => {
     try {
@@ -120,51 +161,111 @@ export default function LeadCreateScreen({ onCancel, onCreated }: Props) {
           <Text style={styles.cardTitle}>Lead Details</Text>
 
           <Text style={styles.fieldLabel}>Date</Text>
-          <TextInput
-            value={form.date}
-            onChangeText={setField('date')}
-            placeholder="YYYY-MM-DD"
-            placeholderTextColor="#9CA3AF"
-            style={styles.input}
-            keyboardType={Platform.select({ ios: 'numbers-and-punctuation', android: 'number-pad', default: 'default' }) as any}
-          />
-          <View style={styles.divider} />
-
-          <Text style={styles.fieldLabel}>Lead Owner</Text>
-          <TextInput value={form.lead_owner} onChangeText={setField('lead_owner')} placeholder="Lead Owner" placeholderTextColor="#9CA3AF" style={styles.input} />
-          <View style={styles.divider} />
-
-          <Text style={styles.fieldLabel}>Gender</Text>
-          <TextInput value={form.gender} onChangeText={setField('gender')} placeholder="Gender" placeholderTextColor="#9CA3AF" style={styles.input} />
-          <View style={styles.divider} />
-
-          <Text style={styles.fieldLabel}>Status</Text>
-          <TextInput value={form.status} onChangeText={setField('status')} placeholder="Status" placeholderTextColor="#9CA3AF" style={styles.input} />
-          <View style={styles.divider} />
-
-          <Text style={styles.fieldLabel}>Source</Text>
-          <TextInput value={form.source} onChangeText={setField('source')} placeholder="Source" placeholderTextColor="#9CA3AF" style={styles.input} />
-          <View style={styles.divider} />
-
-          <Text style={styles.fieldLabel}>Lead Type</Text>
-          <TextInput value={form.lead_type} onChangeText={setField('lead_type')} placeholder="Lead Type" placeholderTextColor="#9CA3AF" style={styles.input} />
+          <Pressable
+            onPress={() => setShowDatePicker(v => !v)}
+            style={styles.pickerInput}
+            accessibilityRole="button"
+            accessibilityLabel="Select date"
+          >
+            <Text style={{ color: leadForm.date ? '#111827' : '#9CA3AF' }}>{leadForm.date || 'Select date'}</Text>
+            <Ionicons style={styles.fieldChevron} name={showDatePicker ? 'chevron-up' : 'chevron-down'} size={16} color="#6b7280" />
+          </Pressable>
+          {showDatePicker && (
+            <DateTimePicker
+              value={leadForm.date ? parseDate(leadForm.date) : new Date()}
+              mode="date"
+              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+              onChange={(_e, selected) => {
+                if (Platform.OS === 'android') setShowDatePicker(false);
+                if (selected) setField('date')(formatDate(selected));
+              }}
+            />
+          )}
           <View style={styles.divider} />
 
           <Text style={styles.fieldLabel}>Full Name</Text>
-          <TextInput value={form.full_name} onChangeText={setField('full_name')} placeholder="Full Name" placeholderTextColor="#9CA3AF" style={styles.input} />
+          <TextInput value={leadForm.full_name} onChangeText={setField('full_name')} placeholder="Full Name" placeholderTextColor="#9CA3AF" style={styles.input} />
+          <View style={styles.divider} />
+
+          <Text style={styles.fieldLabel}>Lead Owner</Text>
+          <View style={{ position: 'relative' }}>
+            <TextInput
+              value={leadForm.lead_owner}
+              onChangeText={setField('lead_owner')}
+              placeholder="owner email or name"
+              placeholderTextColor="#9CA3AF"
+              style={styles.input}
+              onFocus={() => setOwnerOpen(true)}
+              onBlur={() => { if (!ownerInteracting) setOwnerOpen(false); }}
+            />
+            {ownerOpen && (
+              <View style={styles.suggestPanel}>
+                {ownerLoading ? (
+                  <View style={{ padding: 10, alignItems: 'center' }}>
+                    <ActivityIndicator size="small" color="#000" />
+                  </View>
+                ) : ownerList.length > 0 ? (
+                  <ScrollView
+                    keyboardShouldPersistTaps="always"
+                    keyboardDismissMode={Platform.OS === 'ios' ? 'on-drag' : 'none'}
+                    nestedScrollEnabled
+                    contentContainerStyle={{ paddingVertical: 4 }}
+                    style={{ height: 220 }}
+                    onTouchStart={() => setOwnerInteracting(true)}
+                    onTouchEnd={() => setTimeout(() => setOwnerInteracting(false), 100)}
+                  >
+                    {ownerList.map(({ email, fullName }) => (
+                      <Pressable key={email} style={styles.suggestItem} onPress={() => { setField('lead_owner')(email); setOwnerOpen(false); }} accessibilityRole="button">
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.suggestText} numberOfLines={1}>{email}</Text>
+                          {fullName ? <Text style={styles.suggestSub} numberOfLines={1}>{fullName}</Text> : null}
+                        </View>
+                      </Pressable>
+                    ))}
+                  </ScrollView>
+                ) : (
+                  <View style={{ padding: 10 }}>
+                    <Text style={{ color: '#6b7280' }}>No suggestions</Text>
+                  </View>
+                )}
+              </View>
+            )}
+          </View>
+          <View style={styles.divider} />
+
+          <Text style={styles.fieldLabel}>Gender</Text>
+          <View style={styles.genderRow}>
+            {['Male','Female','Other'].map((g) => (
+              <Pressable key={g} style={[styles.genderButton, leadForm.gender === g && styles.genderButtonSelected]} onPress={() => setField('gender')(g)} accessibilityRole="button" accessibilityLabel={`Select ${g}`}>
+                <Text style={[styles.genderText, leadForm.gender === g && styles.genderTextSelected]}>{g}</Text>
+              </Pressable>
+            ))}
+          </View>
+          <View style={styles.divider} />
+
+          <Text style={styles.fieldLabel}>Status</Text>
+          <TextInput value={leadForm.status} onChangeText={setField('status')} placeholder="Status" placeholderTextColor="#9CA3AF" style={styles.input} />
+          <View style={styles.divider} />
+
+          <Text style={styles.fieldLabel}>Source</Text>
+          <TextInput value={leadForm.source} onChangeText={setField('source')} placeholder="Source" placeholderTextColor="#9CA3AF" style={styles.input} />
+          <View style={styles.divider} />
+
+          <Text style={styles.fieldLabel}>Lead Type</Text>
+          <TextInput value={leadForm.lead_type} onChangeText={setField('lead_type')} placeholder="Lead Type" placeholderTextColor="#9CA3AF" style={styles.input} />
           <View style={styles.divider} />
 
           <Text style={styles.fieldLabel}>Associate Details</Text>
-          <TextInput value={form.associate_details} onChangeText={setField('associate_details')} placeholder="Associate Details" placeholderTextColor="#9CA3AF" style={[styles.input, { minHeight: 80, textAlignVertical: 'top' }]} multiline />
+          <TextInput value={leadForm.associate_details} onChangeText={setField('associate_details')} placeholder="Associate Details" placeholderTextColor="#9CA3AF" style={[styles.input, { minHeight: 80, textAlignVertical: 'top' }]} multiline />
           <View style={styles.divider} />
 
           <Text style={styles.fieldLabel}>Request Type</Text>
-          <TextInput value={form.request_type} onChangeText={setField('request_type')} placeholder="Request Type" placeholderTextColor="#9CA3AF" style={styles.input} />
+          <TextInput value={leadForm.request_type} onChangeText={setField('request_type')} placeholder="Request Type" placeholderTextColor="#9CA3AF" style={styles.input} />
           <View style={styles.divider} />
 
           <Text style={styles.fieldLabel}>Building & Location</Text>
           <View style={styles.inputWrapper}>
-            <TextInput value={form.location} onChangeText={setField('location')} placeholder="Building & Location" placeholderTextColor="#9CA3AF" style={[styles.input, styles.inputWithIcon]} />
+            <TextInput value={leadForm.location} onChangeText={setField('location')} placeholder="Building & Location" placeholderTextColor="#9CA3AF" style={[styles.input, styles.inputWithIcon]} />
             <Pressable style={styles.fieldIconBtn} onPress={handleUseCurrentLocation} accessibilityRole="button" accessibilityLabel="Use current location" disabled={locLoading}>
               {locLoading ? (
                 <ActivityIndicator size="small" color="#6B7280" />
@@ -176,23 +277,23 @@ export default function LeadCreateScreen({ onCancel, onCreated }: Props) {
           <View style={styles.divider} />
 
           <Text style={styles.fieldLabel}>Service Type</Text>
-          <TextInput value={form.service_type} onChangeText={setField('service_type')} placeholder="Service Type" placeholderTextColor="#9CA3AF" style={styles.input} />
+          <TextInput value={leadForm.service_type} onChangeText={setField('service_type')} placeholder="Service Type" placeholderTextColor="#9CA3AF" style={styles.input} />
           <View style={styles.divider} />
 
           <Text style={styles.fieldLabel}>Email</Text>
-          <TextInput value={form.email_id} onChangeText={setField('email_id')} placeholder="Email" placeholderTextColor="#9CA3AF" style={styles.input} keyboardType="email-address" autoCapitalize="none" />
+          <TextInput value={leadForm.email_id} onChangeText={setField('email_id')} placeholder="Email" placeholderTextColor="#9CA3AF" style={styles.input} keyboardType="email-address" autoCapitalize="none" />
           <View style={styles.divider} />
 
           <Text style={styles.fieldLabel}>Mobile Number</Text>
-          <TextInput value={form.mobile_no} onChangeText={setField('mobile_no')} placeholder="Mobile Number" placeholderTextColor="#9CA3AF" style={styles.input} keyboardType="phone-pad" />
+          <TextInput value={leadForm.mobile_no} onChangeText={setField('mobile_no')} placeholder="Mobile Number" placeholderTextColor="#9CA3AF" style={styles.input} keyboardType="phone-pad" />
           <View style={styles.divider} />
 
           <Text style={styles.fieldLabel}>Website</Text>
-          <TextInput value={form.website} onChangeText={setField('website')} placeholder="Website" placeholderTextColor="#9CA3AF" style={styles.input} autoCapitalize="none" />
+          <TextInput value={leadForm.website} onChangeText={setField('website')} placeholder="Website" placeholderTextColor="#9CA3AF" style={styles.input} autoCapitalize="none" />
           <View style={styles.divider} />
 
           <Text style={styles.fieldLabel}>Territory</Text>
-          <TextInput value={form.territory} onChangeText={setField('territory')} placeholder="Territory" placeholderTextColor="#9CA3AF" style={styles.input} />
+          <TextInput value={leadForm.territory} onChangeText={setField('territory')} placeholder="Territory" placeholderTextColor="#9CA3AF" style={styles.input} />
         </View>
       </ScrollView>
 
@@ -224,6 +325,19 @@ const styles = StyleSheet.create({
   inputWrapper: { position: 'relative' },
   inputWithIcon: { paddingRight: 40 },
   fieldIconBtn: { position: 'absolute', right: 8, top: 8, width: 24, height: 24, alignItems: 'center', justifyContent: 'center' },
+  pickerInput: { borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 8, paddingVertical: 12, paddingHorizontal: 10, backgroundColor: '#FFFFFF', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  fieldChevron: { marginLeft: 8 },
+  // Suggest dropdown for Lead Owner
+  suggestPanel: { position: 'absolute', top: 46, left: 0, right: 0, backgroundColor: '#fff', borderWidth: 1, borderColor: '#e5e7eb', borderTopWidth: 0, borderBottomLeftRadius: 10, borderBottomRightRadius: 10, height: 220, zIndex: 20, elevation: 6, overflow: 'hidden' },
+  suggestItem: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 6, borderBottomWidth: 1, borderColor: '#f3f4f6' },
+  suggestText: { color: '#111827', flexShrink: 1, fontWeight: '500', fontSize: 12, lineHeight: 16 },
+  suggestSub: { color: '#6b7280', fontSize: 12, marginTop: 2 },
+  // Gender toggle
+  genderRow: { flexDirection: 'row' },
+  genderButton: { flex: 1, borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 8, paddingVertical: 8, alignItems: 'center', marginRight: 8, backgroundColor: '#fff' },
+  genderButtonSelected: { backgroundColor: '#0b0b1b', borderColor: '#0b0b1b' },
+  genderText: { color: '#111827', fontWeight: '600' },
+  genderTextSelected: { color: '#fff', fontWeight: '700' },
   divider: { height: 1, backgroundColor: '#EFF2F5', marginVertical: 8 },
 
   bottomBar: { position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: '#ffffff', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#E5E7EB', paddingTop: 8, paddingHorizontal: 12, flexDirection: 'row', justifyContent: 'space-between' },
