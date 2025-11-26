@@ -869,11 +869,13 @@ export async function updateLeadSmart(name: string, updatedFields: Record<string
 export async function createLead(payload: Record<string, any>): Promise<Lead | true | null> {
   let validLocation: string | null = null;
 
-  try {
-    const candidates: string[] = [];
-    const forcedDt = pickEnv("ERP_LOCATION_DOCTYPE", "ERP_LOCATION_DT");
-    if (forcedDt) { candidates.push(forcedDt); }
-    else { candidates.push("Location"); candidates.push("Building & Location"); }
+  const hasLocationInput = !!((payload as any)?.custom_building__location || (payload as any)?.location);
+  if (hasLocationInput) {
+    try {
+      const candidates: string[] = [];
+      const forcedDt = pickEnv("ERP_LOCATION_DOCTYPE", "ERP_LOCATION_DT");
+      if (forcedDt) { candidates.push(forcedDt); }
+      else { candidates.push("Location"); candidates.push("Building & Location"); }
 
     const ensureValid = async (name?: string | null, locDt?: string): Promise<string | null> => {
       const n = String(name || "").trim();
@@ -934,7 +936,6 @@ export async function createLead(payload: Record<string, any>): Promise<Lead | t
         }
       }
     }
-
     // If still not resolved, pick the first available from the primary doctype list
     if (!validLocation) {
       const primary = forcedDt || 'Location';
@@ -958,8 +959,13 @@ export async function createLead(payload: Record<string, any>): Promise<Lead | t
       delete (payload as any).custom_building__location;
       delete (payload as any).location;
     }
-  } catch (e) {
-    console.warn("Location validation error", e);
+    } catch (e) {
+      console.warn("Location validation error", e);
+      delete (payload as any).custom_building__location;
+      delete (payload as any).location;
+    }
+  } else {
+    // Caller did not provide any location; do not attempt defaults. Avoid LinkValidationError.
     delete (payload as any).custom_building__location;
     delete (payload as any).location;
   }
@@ -994,10 +1000,6 @@ export async function createLead(payload: Record<string, any>): Promise<Lead | t
     return null;
   }
 }
-
-
-
-
 
 // Create a Task linked to a Lead
 export async function createTaskForLead(args: { leadName: string; title: string; dueDate?: string; notes?: string; priority?: 'Low' | 'Medium' | 'High' | 'Urgent' | string; status?: string; assignedTo?: string }): Promise<any | null> {
