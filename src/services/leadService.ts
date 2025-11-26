@@ -236,6 +236,36 @@ export async function searchDocNames(doctype: string, txt: string, limit: number
   }
 }
 
+// Simple helper: list first N document names for a doctype
+export async function listDocNamesSimple(doctype: string, limit: number = 10): Promise<string[]> {
+  const out: string[] = [];
+  // METHOD first
+  if (METHOD_URL) {
+    try {
+      const res = await axios.get(`${METHOD_URL}/frappe.client.get_list`, {
+        params: { doctype, fields: JSON.stringify(['name']), limit_page_length: limit },
+        headers: headers(),
+      });
+      const rows = (res?.data?.message ?? []) as any[];
+      for (const r of rows) { const n = String(r?.name || '').trim(); if (n) out.push(n); }
+      if (out.length > 0) return out;
+    } catch {}
+  }
+  // RESOURCE fallback
+  if (BASE_URL) {
+    try {
+      const res2 = await axios.get(`${BASE_URL}/${encodeURIComponent(doctype)}`, {
+        params: { fields: JSON.stringify(['name']), limit_page_length: limit },
+        headers: headers(),
+      });
+      const rows = (res2?.data?.data ?? []) as any[];
+      for (const r of rows) { const n = String(r?.name || '').trim(); if (n) out.push(n); }
+      if (out.length > 0) return out;
+    } catch {}
+  }
+  return out;
+}
+
 // Check if a document with exact name exists for a given doctype.
 export async function existsDocName(doctype: string, name: string): Promise<boolean> {
   const n = String(name || '').trim();
@@ -795,7 +825,32 @@ export async function createLead(payload: Record<string, any>): Promise<Lead | t
       } catch {}
     }
 
-    // If still not resolved, try forced default (validate or create)\n    if (!validLocation) {\n      const forcedDefault = pickEnv('ERP_LOCATION_DEFAULT', 'ERP_LOCATION_DEFAULT_NAME', 'DEFAULT_LOCATION') || '';\n      const fd = forcedDefault.trim();\n      if (fd.length > 0) {\n        const tryList = forcedDt ? [forcedDt] : candidates;\n        for (const dt of tryList) {\n          validLocation = await ensureValid(fd, dt);\n          if (validLocation) break;\n          try {\n            const created = await createDocNameIfPossible(dt!, fd);\n            if (created) { validLocation = created; break; }\n          } catch {}\n        }\n      }\n    }\n\n    // If still not resolved, pick the first available from the primary doctype list\n    if (!validLocation) {\n      const primary = forcedDt || 'Location';\n      try {\n        const names = await listDocNamesSimple(primary, 1);\n        if (names && names.length > 0) validLocation = names[0];\n      } catch {}\n    }\n// If still not resolved, keep the originally requested raw value to satisfy mandatory
+    // If still not resolved, try forced default (validate or create)
+    if (!validLocation) {
+      const forcedDefault = pickEnv('ERP_LOCATION_DEFAULT', 'ERP_LOCATION_DEFAULT_NAME', 'DEFAULT_LOCATION') || '';
+      const fd = forcedDefault.trim();
+      if (fd.length > 0) {
+        const tryList = forcedDt ? [forcedDt] : candidates;
+        for (const dt of tryList) {
+          validLocation = await ensureValid(fd, dt);
+          if (validLocation) break;
+          try {
+            const created = await createDocNameIfPossible(dt!, fd);
+            if (created) { validLocation = created; break; }
+          } catch {}
+        }
+      }
+    }
+
+    // If still not resolved, pick the first available from the primary doctype list
+    if (!validLocation) {
+      const primary = forcedDt || 'Location';
+      try {
+        const names = await listDocNamesSimple(primary, 1);
+        if (names && names.length > 0) validLocation = names[0];
+      } catch {}
+    }
+    // If still not resolved, keep the originally requested raw value to satisfy mandatory
     if (!validLocation) {
       const requestedRaw = (payload as any)?.custom_building__location || (payload as any)?.location || '';
       if (requestedRaw && String(requestedRaw).trim().length > 0) validLocation = String(requestedRaw).trim();
@@ -850,3 +905,84 @@ export async function createLead(payload: Record<string, any>): Promise<Lead | t
 
 
 
+
+// Create a Task linked to a Lead
+export async function createTaskForLead(args: { leadName: string; title: string; dueDate?: string; notes?: string; priority?: 'Low' | 'Medium' | 'High' | 'Urgent' | string; status?: string }): Promise<any | null> {
+  const { leadName, title, dueDate, notes, priority, status } = args;
+  const doc: any = {
+    doctype: 'Task',
+    subject: title,
+    title,
+    description: notes || '',
+    status: status || 'Open',
+    priority: priority || undefined,
+    exp_end_date: dueDate || undefined,
+    due_date: dueDate || undefined,
+    reference_type: 'Lead',
+    reference_name: leadName,
+    link_doctype: 'Lead',
+    link_name: leadName,
+  };
+  // RESOURCE first
+  try {
+    const body = { ...doc };
+    delete body.doctype;
+    const res = await axios.post(`${BASE_URL}/Task`, body, { headers: { ...headers(), 'Content-Type': 'application/json' } });
+    return (res?.data?.data ?? res?.data ?? true) as any;
+  } catch {}
+  // METHOD fallback
+  try {
+    if (!METHOD_URL) throw new Error('METHOD_URL not configured');
+    const res = await axios.post(`${METHOD_URL}/frappe.client.insert`, { doc }, { headers: { ...headers(), 'Content-Type': 'application/json' } });
+    return res?.data?.message ?? true;
+  } catch (e) {
+    console.error('createTaskForLead failed', (e as any)?.response?.data || (e as any)?.message);
+    return null;
+  }
+}
+
+// Create an Event linked to a Lead
+export async function createEventForLead(args: { leadName: string; title: string; date?: string; time?: string; location?: string; notes?: string; category?: string; assignedTo?: string }): Promise<any | null> {
+  const { leadName, title, date, time, location, notes, category, assignedTo } = args;
+  const buildStarts = (): string | undefined => {
+    const d = String(date || '').trim();
+    const t = String(time || '').trim() || '09:00';
+    if (!d) return undefined;
+    return `${d} ${t}:00`;
+  };
+  const starts_on = buildStarts();
+  const doc: any = {
+    doctype: 'Event',
+    subject: title,
+    title,
+    description: notes || '',
+    // Map category heuristically: known ones go to event_type, others to event_category
+    event_type: category && ['Private','Public'].includes(category) ? category : 'Private',
+    event_category: category && !['Private','Public'].includes(category) ? category : undefined,
+    starts_on,
+    location,
+    reference_doctype: 'Lead',
+    reference_name: leadName,
+    link_doctype: 'Lead',
+    link_name: leadName,
+  };
+  if (assignedTo && String(assignedTo).trim()) {
+    (doc as any).event_participants = [
+      { reference_doctype: 'User', reference_docname: String(assignedTo).trim() }
+    ];
+  }
+  try {
+    const body = { ...doc };
+    delete body.doctype;
+    const res = await axios.post(`${BASE_URL}/Event`, body, { headers: { ...headers(), 'Content-Type': 'application/json' } });
+    return (res?.data?.data ?? res?.data ?? true) as any;
+  } catch {}
+  try {
+    if (!METHOD_URL) throw new Error('METHOD_URL not configured');
+    const res = await axios.post(`${METHOD_URL}/frappe.client.insert`, { doc }, { headers: { ...headers(), 'Content-Type': 'application/json' } });
+    return res?.data?.message ?? true;
+  } catch (e) {
+    console.error('createEventForLead failed', (e as any)?.response?.data || (e as any)?.message);
+    return null;
+  }
+}

@@ -13,10 +13,11 @@ import {
   Modal,
   KeyboardAvoidingView,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
-import { listLeads, type Lead as ERPLead } from '../../services/leadService';
+import { listLeads, type Lead as ERPLead, createTaskForLead, createEventForLead } from '../../services/leadService';
 import { launchImageLibrary, Asset } from 'react-native-image-picker';
 
 (Ionicons as any)?.loadFont?.();
@@ -336,6 +337,44 @@ function CreateTaskModal({ visible, onClose, lead }: { visible: boolean; onClose
   const [dueDate, setDueDate] = useState<string>('');
   const [notes, setNotes] = useState<string>('');
   const [files, setFiles] = useState<Attachment[]>([]);
+  const [creating, setCreating] = useState<boolean>(false);
+  const [priority, setPriority] = useState<'Low' | 'Medium' | 'High' | 'Urgent' | ''>('Medium');
+  const [status, setStatus] = useState<string>('Open');
+  // normalize date to YYYY-MM-DD expected by ERP
+  const toIsoDate = (v: string): string | null => {
+    const s = String(v || '').trim();
+    if (!s) return null;
+    // already ISO
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    // DD-MM-YYYY or DD/MM/YYYY
+    let m = s.match(/^(\d{2})[-\/](\d{2})[-\/]?(\d{4})$/);
+    if (m) {
+      const [_, dd, mm, yyyy] = m;
+      return `${yyyy}-${mm}-${dd}`;
+    }
+    // D-M-YYYY or D/M/YYYY
+    m = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/]?(\d{4})$/);
+    if (m) {
+      const dd = String(m[1]).padStart(2, '0');
+      const mm = String(m[2]).padStart(2, '0');
+      const yyyy = m[3];
+      return `${yyyy}-${mm}-${dd}`;
+    }
+    // YYYY/MM/DD
+    m = s.match(/^(\d{4})[\/]?(\d{2})[\/]?(\d{2})$/);
+    if (m) {
+      return `${m[1]}-${m[2]}-${m[3]}`;
+    }
+    // Last resort: Date parse
+    const d = new Date(s);
+    if (!isNaN(d.getTime())) {
+      const y = d.getFullYear();
+      const mm2 = String(d.getMonth() + 1).padStart(2, '0');
+      const dd2 = String(d.getDate()).padStart(2, '0');
+      return `${y}-${mm2}-${dd2}`;
+    }
+    return null;
+  };
 
   useEffect(() => {
     if (visible) {
@@ -373,6 +412,34 @@ function CreateTaskModal({ visible, onClose, lead }: { visible: boolean; onClose
             <Text style={styles.modalLabel}>Due Date</Text>
             <TextInput value={dueDate} onChangeText={setDueDate} placeholder="YYYY-MM-DD" style={styles.modalInput} />
           </View>
+          <View style={{ flexDirection: 'row' }}>
+            <View style={[styles.modalField, { flex: 1, marginRight: 6 }]}> 
+              <Text style={styles.modalLabel}>Priority</Text>
+              <View style={[styles.modalInput, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}> 
+                <Text style={{ color: '#111827' }}>{priority || 'Select priority'}</Text>
+                <View style={{ flexDirection: 'row' }}>
+                  {(['Low','Medium','High','Urgent'] as const).map(p => (
+                    <Pressable key={p} onPress={() => setPriority(p)} style={{ paddingHorizontal: 6, paddingVertical: 4, marginLeft: 4, backgroundColor: priority===p? '#0b0b1b':'#f3f4f6', borderRadius: 6, borderWidth: 1, borderColor: '#e5e7eb' }}>
+                      <Text style={{ color: priority===p? '#fff':'#111827', fontSize: 11, fontWeight: '700' }}>{p}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </View>
+            </View>
+            <View style={[styles.modalField, { flex: 1, marginLeft: 6 }]}> 
+              <Text style={styles.modalLabel}>Status</Text>
+              <View style={[styles.modalInput, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}> 
+                <Text style={{ color: '#111827' }}>{status || 'Open'}</Text>
+                <View style={{ flexDirection: 'row' }}>
+                  {(['Open','Working','Pending Review','Completed'] as const).map(s => (
+                    <Pressable key={s} onPress={() => setStatus(s)} style={{ paddingHorizontal: 6, paddingVertical: 4, marginLeft: 4, backgroundColor: status===s? '#0b0b1b':'#f3f4f6', borderRadius: 6, borderWidth: 1, borderColor: '#e5e7eb' }}>
+                      <Text style={{ color: status===s? '#fff':'#111827', fontSize: 11, fontWeight: '700' }}>{s}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </View>
+            </View>
+          </View>
           <View style={styles.modalField}> 
             <Text style={styles.modalLabel}>Notes</Text>
             <TextInput value={notes} onChangeText={setNotes} placeholder="Notes (optional)" style={[styles.modalInput, { height: 72 }]} multiline />
@@ -397,7 +464,22 @@ function CreateTaskModal({ visible, onClose, lead }: { visible: boolean; onClose
           </View>
           <View style={styles.modalActions}>
             <Pressable style={[styles.modalBtn, styles.modalBtnGhost]} onPress={onClose}><Text style={styles.modalBtnGhostText}>Cancel</Text></Pressable>
-            <Pressable style={[styles.modalBtn, styles.modalBtnPrimary]} onPress={onClose}><Text style={styles.modalBtnPrimaryText}>Create</Text></Pressable>
+            <Pressable style={[styles.modalBtn, styles.modalBtnPrimary]} disabled={creating || !title.trim() || !priority} onPress={async () => {
+  if (!lead?.id) return;
+  try {
+    setCreating(true);
+    const isoDue = dueDate.trim() ? toIsoDate(dueDate.trim()) : undefined;
+    if (dueDate.trim() && !isoDue) { Alert.alert('Task', 'Please enter Due Date as YYYY-MM-DD'); setCreating(false); return; }
+    const ok = await createTaskForLead({ leadName: lead.id, title: title.trim(), dueDate: isoDue, notes: notes.trim() || undefined, priority: priority || undefined, status: status || undefined });
+    if (!ok) throw new Error("Failed to create task");
+    Alert.alert("Task", "Task created");
+    onClose();
+  } catch (e) {
+    Alert.alert("Task", (e as any)?.message || "Failed to create task");
+  } finally { setCreating(false); }
+}}>
+  {creating ? <ActivityIndicator color="#fff" /> : <Text style={styles.modalBtnPrimaryText}>Create</Text>}
+</Pressable>
           </View>
         </KeyboardAvoidingView>
       </View>
@@ -409,16 +491,40 @@ function CreateEventModal({ visible, onClose, lead }: { visible: boolean; onClos
   const [title, setTitle] = useState<string>(lead ? `Call: ${lead?.name}` : '');
   const [date, setDate] = useState<string>('');
   const [time, setTime] = useState<string>('');
-  const [location, setLocation] = useState<string>('');
+  const [category, setCategory] = useState<string>('Private');
+  const CATEGORY_OPTIONS = ['Private','Public','Meeting','Call','Reminder','Other'];
+  const [catOpen, setCatOpen] = useState<boolean>(false);
+  const [assignedTo, setAssignedTo] = useState<string>('');
   const [notes, setNotes] = useState<string>('');
   const [files, setFiles] = useState<Attachment[]>([]);
+  const [creating, setCreating] = useState<boolean>(false);
+  const toIsoDate = (v: string): string | null => {
+    const s = String(v || '').trim();
+    if (!s) return null;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    let m = s.match(/^(\d{2})[-\/](\d{2})[-\/]?(\d{4})$/);
+    if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+    m = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/]?(\d{4})$/);
+    if (m) return `${m[3]}-${String(m[2]).padStart(2,'0')}-${String(m[1]).padStart(2,'0')}`;
+    m = s.match(/^(\d{4})[\/]?(\d{2})[\/]?(\d{2})$/);
+    if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+    const d = new Date(s);
+    if (!isNaN(d.getTime())) {
+      const y = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      return `${y}-${mm}-${dd}`;
+    }
+    return null;
+  };
 
   useEffect(() => {
     if (visible) {
       setTitle(lead ? `Call: ${lead?.name}` : '');
       setDate('');
       setTime('');
-      setLocation('');
+      setCategory('Private');
+      setCatOpen(false);
       setNotes('');
       setFiles([]);
     }
@@ -444,8 +550,26 @@ function CreateEventModal({ visible, onClose, lead }: { visible: boolean; onClos
           </View>
           <Text style={styles.modalHint} numberOfLines={1}>With: {lead?.name || '-'}</Text>
           <View style={styles.modalField}> 
-            <Text style={styles.modalLabel}>Title</Text>
-            <TextInput value={title} onChangeText={setTitle} placeholder="Event title" style={styles.modalInput} />
+            <Text style={styles.modalLabel}>Category</Text>
+            <Pressable onPress={() => setCatOpen(o => !o)} style={[styles.modalInput, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]} accessibilityRole="button">
+              <Text style={{ color: '#111827' }}>{category || 'Select category'}</Text>
+              <Ionicons name={catOpen ? 'chevron-up' : 'chevron-down'} size={16} color="#6b7280" />
+            </Pressable>
+            {catOpen && (
+              <View style={styles.dropdownPanel}>
+                <ScrollView nestedScrollEnabled style={{ maxHeight: 220 }}>
+                  {CATEGORY_OPTIONS.map(opt => (
+                    <Pressable key={opt} onPress={() => { setCategory(opt); setCatOpen(false); }} style={styles.optionItem}>
+                      <Text style={styles.optionText}>{opt}</Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
+          </View>
+          <View style={styles.modalField}> 
+            <Text style={styles.modalLabel}>Summary</Text>
+            <TextInput value={title} onChangeText={setTitle} placeholder="Summary" style={styles.modalInput} />
           </View>
           <View style={{ flexDirection: 'row' }}>
             <View style={[styles.modalField, { flex: 1, marginRight: 6 }]}> 
@@ -458,8 +582,8 @@ function CreateEventModal({ visible, onClose, lead }: { visible: boolean; onClos
             </View>
           </View>
           <View style={styles.modalField}> 
-            <Text style={styles.modalLabel}>Location</Text>
-            <TextInput value={location} onChangeText={setLocation} placeholder="Location (optional)" style={styles.modalInput} />
+            <Text style={styles.modalLabel}>Assigned To</Text>
+            <TextInput value={assignedTo} onChangeText={setAssignedTo} placeholder="user email or id (optional)" style={styles.modalInput} />
           </View>
           <View style={styles.modalField}> 
             <Text style={styles.modalLabel}>Notes</Text>
@@ -485,7 +609,34 @@ function CreateEventModal({ visible, onClose, lead }: { visible: boolean; onClos
           </View>
           <View style={styles.modalActions}>
             <Pressable style={[styles.modalBtn, styles.modalBtnGhost]} onPress={onClose}><Text style={styles.modalBtnGhostText}>Cancel</Text></Pressable>
-            <Pressable style={[styles.modalBtn, styles.modalBtnPrimary]} onPress={onClose}><Text style={styles.modalBtnPrimaryText}>Create</Text></Pressable>
+            <Pressable
+              style={[styles.modalBtn, styles.modalBtnPrimary]}
+              disabled={creating || !title.trim() || !date.trim()}
+              onPress={async () => {
+                if (!lead?.id) return;
+                try {
+                  setCreating(true);
+                  const isoDate = toIsoDate(date.trim());
+                  if (!isoDate) { Alert.alert('Event', 'Please enter Date as YYYY-MM-DD'); setCreating(false); return; }
+                  const ok = await createEventForLead({
+                    leadName: lead.id,
+                    title: title.trim(),
+                    date: isoDate,
+                    time: time.trim() || undefined,
+                    notes: notes.trim() || undefined,
+                    category,
+                    assignedTo: assignedTo.trim() || undefined,
+                  });
+                  if (!ok) throw new Error('Failed to create event');
+                  Alert.alert('Event', 'Event created');
+                  onClose();
+                } catch (e) {
+                  Alert.alert('Event', (e as any)?.message || 'Failed to create event');
+                } finally { setCreating(false); }
+              }}
+            >
+              {creating ? <ActivityIndicator color="#fff" /> : <Text style={styles.modalBtnPrimaryText}>Create</Text>}
+            </Pressable>
           </View>
         </KeyboardAvoidingView>
       </View>
@@ -560,9 +711,14 @@ const styles = StyleSheet.create({
   attachChipText: { marginLeft: 6, color: '#111827', fontSize: 11, maxWidth: 160 },
   attachAddBtn: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 16, paddingHorizontal: 8, paddingVertical: 6, marginTop: 8 },
   attachAddText: { marginLeft: 6, color: '#111827', fontSize: 11, fontWeight: '700' },
+  dropdownPanel: { marginTop: 6, backgroundColor: '#fff', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, overflow: 'hidden' },
+  optionItem: { paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
+  optionText: { color: '#111827', fontSize: 14 },
 
   // deprecated leftover styles removed
 });
+
+
 
 
 
