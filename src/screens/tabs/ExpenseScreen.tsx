@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ScrollView, Pressable, Animated, Easing, Layout
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import erpNextService, { fetchExpenseCategories } from '../../services/expenseClaim';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function ExpenseScreen() {
   (Ionicons as any)?.loadFont?.();
@@ -89,6 +90,96 @@ useEffect(() => {
   const onSegLayout = (e: LayoutChangeEvent) => {
     setSegWidth(e.nativeEvent.layout.width);
   };
+
+// const handleSubmit = async () => {
+//   if (!category || !amount || !expDate) {
+//     Alert.alert('Error', 'Please fill in all required fields');
+//     return;
+//   }
+//   try {
+//     const expenseData = {
+//       category,
+//       amount: parseFloat(amount),
+//       date: expDate,
+//       description: desc
+//     };
+
+//     console.log('Submitting expense:', JSON.stringify(expenseData, null, 2));
+//     const result = await erpNextService.submitExpenseClaim(expenseData);
+//     console.log('API Response:', JSON.stringify(result, null, 2));
+    
+//     if (result.success) {
+//       Alert.alert('Success', 'Expense submitted successfully!');
+//       setShowModal(false);
+//       setCategory('');
+//       setAmount('');
+//       setExpDate('');
+//       setDesc('');
+//     } else {
+//       Alert.alert('Error', result.message || 'Failed to submit expense');
+//     }
+//   } catch (error: any) {  // Add type annotation here
+//     console.error('Detailed error:', {
+//       message: error.message,
+//       response: error.response?.data,
+//       status: error.response?.status,
+//     });
+//     Alert.alert('Error', error.message || 'An error occurred while submitting the expense');
+//   }
+// };
+
+const handleSubmit = async () => {
+  if (!category || !amount || !expDate) {
+    Alert.alert('Error', 'Please fill in all required fields');
+    return;
+  }
+
+  try {
+    const employeeId = await AsyncStorage.getItem('employeeId');
+    console.log('Employee ID from storage:', employeeId); // Debug log
+    
+    if (!employeeId) {
+      Alert.alert('Error', 'Could not determine employee information. Please log in again.');
+      return;
+    }
+
+    const expenseData = {
+      employee: employeeId,
+      expense_type: category,
+      expenses: [{
+        expense_date: expDate,
+        description: desc,
+        amount: parseFloat(amount),
+      }],
+      company: 'Your Company Name', // Make sure to set this
+      posting_date: new Date().toISOString().split('T')[0], // Current date in YYYY-MM-DD
+    };
+
+    console.log('Submitting expense data:', JSON.stringify(expenseData, null, 2));
+    
+    const result = await erpNextService.submitExpenseClaim(expenseData);
+    console.log('API Response:', JSON.stringify(result, null, 2));
+    
+    if (result.success) {
+      Alert.alert('Success', 'Expense submitted successfully!');
+      setShowModal(false);
+      setCategory('');
+      setAmount('');
+      setExpDate('');
+      setDesc('');
+    } else {
+      Alert.alert('Error', result.message || 'Failed to submit expense');
+    }
+  } catch (error: any) {
+    console.error('Detailed error:', {
+      message: error.message,
+      response: error.response?.data,
+      status: error.response?.status,
+    });
+    Alert.alert('Error', error.message || 'An error occurred while submitting the expense');
+  }
+};
+
 
   return (
     <View style={styles.screen}>
@@ -301,16 +392,7 @@ useEffect(() => {
 
             <Pressable
               style={[styles.primaryBtn, { alignSelf: 'stretch', marginTop: 12 }]}
-              onPress={() => {
-                if (!category) return Alert.alert('Missing', 'Please select a category.');
-                if (!amount || isNaN(Number(amount))) return Alert.alert('Invalid Amount', 'Enter a valid amount.');
-                if (!expDate) return Alert.alert('Missing', 'Please enter expense date.');
-                if (!desc) return Alert.alert('Missing', 'Please enter a brief description.');
-                Alert.alert('Submitted', 'Your expense claim has been created.');
-                setShowModal(false);
-                setCategory(''); setAmount(''); setExpDate(''); setDesc('');
-                setReceiptName(''); setReceiptUri('');
-              }}
+         onPress={handleSubmit}
             >
               <Text style={styles.primaryBtnText}>Submit Claim</Text>
             </Pressable>
