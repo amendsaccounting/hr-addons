@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, StatusBar, ActivityIndicator, Platform, PermissionsAndroid, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, StatusBar, ActivityIndicator, Platform, Alert } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 (Ionicons as any)?.loadFont?.();
-import Geolocation from 'react-native-geolocation-service';
-import { listUserSuggestions, fetchLeadStatusOptions, listDocNamesSimple } from '../../services/leadService';
+// Geolocation removed; Building & Location will fetch from ERPNext dropdown
+import { listUserSuggestions, fetchLeadStatusOptions, listDocNamesSimple, createLead, prepareLeadPayload, getLocationDoctypeHint, searchDocNames, buildCommonLinkFilters, listBuildingLocations, fetchLeadFieldMeta } from '../../services/leadService';
 
 const HEADER_BG = '#0b0b1b';
 
@@ -17,6 +17,7 @@ type Props = {
 export default function LeadCreateScreen({ onCancel, onCreated }: Props) {
   const insets = useSafeAreaInsets();
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const sanitizeLocationName = (s: string) => String(s || '').replace(/,/g, ' ').replace(/\s+/g, ' ').trim();
   const [leadForm, setLeadForm] = useState({
     date: '',
     lead_owner: '',
@@ -46,7 +47,7 @@ export default function LeadCreateScreen({ onCancel, onCreated }: Props) {
       return prev;
     });
   };
-  const [locLoading, setLocLoading] = useState(false);
+  // No device location fetching; dropdown comes from ERPNext
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [ownerOpen, setOwnerOpen] = useState(false);
   const [ownerLoading, setOwnerLoading] = useState(false);
@@ -73,6 +74,15 @@ export default function LeadCreateScreen({ onCancel, onCreated }: Props) {
   const [territoryOpen, setTerritoryOpen] = useState(false);
   const [territoryOptions, setTerritoryOptions] = useState<string[]>([]);
   const [territoryLoading, setTerritoryLoading] = useState(false);
+  // Building & Location picker state
+  const [locSuggestOpen, setLocSuggestOpen] = useState(false);
+  const [locSuggestLoading, setLocSuggestLoading] = useState(false);
+  const [locSuggestOptions, setLocSuggestOptions] = useState<string[]>([]);
+  const [locSuggestInteracting, setLocSuggestInteracting] = useState(false);
+  const [locDoctype, setLocDoctype] = useState<string>('Building & Location');
+  const [locLinkField, setLocLinkField] = useState<string>('custom_building__location');
+  const [locPicked, setLocPicked] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   // Debounce Lead Owner suggestions when dropdown is open
   useEffect(() => {
@@ -108,36 +118,9 @@ export default function LeadCreateScreen({ onCancel, onCreated }: Props) {
     return new Date();
   };
 
-  const ensureLocationPermission = async (): Promise<boolean> => {
-    try {
-      if (Platform.OS === 'android') {
-        const fine = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION);
-        const coarse = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION);
-        return fine === PermissionsAndroid.RESULTS.GRANTED || coarse === PermissionsAndroid.RESULTS.GRANTED;
-      } else {
-        const status = await (Geolocation as any).requestAuthorization?.('whenInUse');
-        return status === 'granted';
-      }
-    } catch {
-      return false;
-    }
-  };
+  
 
-  const reverseGeocode = async (latitude: number, longitude: number): Promise<string> => {
-    try {
-      const nUrl = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}&accept-language=en`;
-      const nRes = await fetch(nUrl, { headers: { 'User-Agent': 'hr_addons/1.0 (reverse-geocode)', 'Accept-Language': 'en' } as any });
-      const nj = await nRes.json().catch(() => null as any);
-      const display = nj?.display_name as string | undefined;
-      if (display && display.length > 0) return display;
-      const a = nj?.address || {};
-      const parts = [a.name, a.road, a.suburb, a.city || a.town || a.village, a.state, a.country].filter(Boolean);
-      if (parts.length > 0) return parts.join(', ');
-    } catch {}
-    return `Lat ${latitude.toFixed(5)}, Lng ${longitude.toFixed(5)}`;
-  };
-
-  const handleSave = () => {
+  const handleSave = async () => {
     const labels: Record<string, string> = {
       date: 'Date',
       full_name: 'Full Name',
@@ -155,57 +138,61 @@ export default function LeadCreateScreen({ onCancel, onCreated }: Props) {
       website: 'Website',
       territory: 'Territory',
     };
-    const requiredKeys = Object.keys(labels);
+    const requiredKeys = Object.keys(labels).filter(k => k !== 'location');
     const nextErrors: Record<string, string> = {};
     for (const k of requiredKeys) {
       const v = (leadForm as any)[k];
       const s = typeof v === 'string' ? v.trim() : '';
       if (!s) nextErrors[k] = `${labels[k]} is required`;
     }
+    // Do not force a selection; backend will validate or omit invalid link
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) {
       Alert.alert('Missing Fields', 'Please complete all required fields.');
       return;
     }
-    onCreated?.();
+    // Build payload using ERP field names and safe custom aliases
+    const payload: Record<string, any> = {
+      lead_name: leadForm.full_name,
+      lead_owner: leadForm.lead_owner || undefined,
+      status: leadForm.status || 'Open',
+      source: leadForm.source || undefined,
+      email_id: leadForm.email_id || undefined,
+      mobile_no: leadForm.mobile_no || undefined,
+      website: leadForm.website || undefined,
+      territory: leadForm.territory || undefined,
+      gender: leadForm.gender || undefined,
+      // These will be mapped to custom_* by prepareLeadPayload
+      date: leadForm.date || undefined,
+      custom_building__location: sanitizeLocationName(leadForm.location) || undefined,
+      lead_type: leadForm.lead_type || undefined,
+      request_type: leadForm.request_type || undefined,
+      service_type: leadForm.service_type || undefined,
+      associate_details: leadForm.associate_details || undefined,
+    };
+    const body = prepareLeadPayload(payload);
+    try {
+      setSaving(true);
+      const res = await createLead(body);
+      try { console.log('Create Lead response body:', res); } catch {}
+      if (res) {
+        onCreated?.();
+      } else {
+        Alert.alert('Create Lead', 'Unable to create lead.');
+      }
+    } catch (e: any) {
+      try {
+        const server = (e && (e.response?.data ?? e.data)) ?? null;
+        if (server) console.log('Create Lead error body:', server);
+      } catch {}
+      try { console.error('Create Lead error', e?.message || e); } catch {}
+      Alert.alert('Create Lead', 'An error occurred while saving.');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleUseCurrentLocation = async () => {
-    const ok = await ensureLocationPermission();
-    if (!ok) {
-      Alert.alert('Permission Required', 'Location permission is not granted.');
-      return;
-    }
-    if (!Geolocation || typeof (Geolocation as any).getCurrentPosition !== 'function') {
-      Alert.alert('Location', 'Geolocation is not available on this device.');
-      return;
-    }
-    setLocLoading(true);
-    try {
-      Geolocation.getCurrentPosition(
-        async pos => {
-          const { latitude, longitude } = pos.coords;
-          // set coordinates immediately
-          setField('location')(`Lat ${latitude.toFixed(5)}, Lng ${longitude.toFixed(5)}`);
-          // then try to reverse-geocode (non-fatal)
-          try {
-            const addr = await reverseGeocode(latitude, longitude);
-            setField('location')(addr);
-          } catch {}
-          setLocLoading(false);
-        },
-        err => {
-          try { console.warn('Geolocation error', err); } catch {}
-          setLocLoading(false);
-          Alert.alert('Location', 'Unable to fetch current location.');
-        },
-        { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000, forceRequestLocation: true, showLocationDialog: true, forceLocationManager: true } as any
-      );
-    } catch (e) {
-      setLocLoading(false);
-      Alert.alert('Location', 'Location request failed.');
-    }
-  };
+  
 
   // Load Status options on mount
   useEffect(() => {
@@ -218,6 +205,68 @@ export default function LeadCreateScreen({ onCancel, onCreated }: Props) {
       finally { setStatusLoading(false); }
     })();
   }, []);
+
+  // Resolve Building & Location link metadata (doctype + fieldname)
+  useEffect(() => {
+    (async () => {
+      try {
+        // 1) Use server metadata to detect Link doctype and canonical fieldname
+        const meta = await fetchLeadFieldMeta(['custom_building__location','building__location','location','building_and_location']);
+        if (meta?.fieldtype === 'Link' && meta.options) {
+          setLocDoctype(String(meta.options));
+          if (meta.fieldname) setLocLinkField(String(meta.fieldname));
+        } else {
+          // 2) Fall back to env hint
+          const hint = getLocationDoctypeHint();
+          if (hint) setLocDoctype(hint);
+        }
+      } catch {
+        const hint = getLocationDoctypeHint();
+        if (hint) setLocDoctype(hint);
+      }
+    })();
+  }, []);
+
+  // Debounced search for Building & Location suggestions when open
+  useEffect(() => {
+    if (!locSuggestOpen) return;
+    const q = String(leadForm.location || '').trim();
+    const t = setTimeout(async () => {
+      try {
+        setLocSuggestLoading(true);
+        let names: string[] = [];
+        // Prefer server-aware link search so get_query filters apply
+        try {
+          const filters = await buildCommonLinkFilters(locDoctype);
+          names = await searchDocNames(
+            locDoctype,
+            q,
+            20,
+            {
+              reference_doctype: 'Lead',
+              reference_fieldname: locLinkField,
+              filters,
+            }
+          );
+        } catch {}
+        // If results look like generic container nodes, try broader fallback
+        const looksGeneric = Array.isArray(names) && names.length > 0 && names.length <= 3 && names.every((n) => /^(warehouse|office|stock|stores?)$/i.test(String(n)));
+        if (looksGeneric) {
+          try { names = await listBuildingLocations(q, 20); } catch {}
+        }
+        // If nothing found and no query, try common doctypes as a fallback
+        if ((!names || names.length === 0) && !q) {
+          try { names = await listBuildingLocations('', 20); } catch {}
+        }
+        setLocSuggestOptions(Array.isArray(names) ? names : []);
+      } catch {
+        setLocSuggestOptions([]);
+      } finally {
+        setLocSuggestLoading(false);
+      }
+    }, 250);
+    return () => clearTimeout(t);
+  }, [leadForm.location, locSuggestOpen, locDoctype, locLinkField]);
 
   // Load Source options on mount (Lead Source doctype)
   useEffect(() => {
@@ -486,14 +535,44 @@ export default function LeadCreateScreen({ onCancel, onCreated }: Props) {
 
           <Text style={styles.fieldLabel}>Building & Location</Text>
           <View style={styles.inputWrapper}>
-            <TextInput value={leadForm.location} onChangeText={setField('location')} placeholder="Building & Location" placeholderTextColor="#9CA3AF" style={[styles.input, styles.inputWithIcon, errors.location ? styles.inputError : null]} />
-            <Pressable style={styles.fieldIconBtn} onPress={handleUseCurrentLocation} accessibilityRole="button" accessibilityLabel="Use current location" disabled={locLoading}>
-              {locLoading ? (
-                <ActivityIndicator size="small" color="#6B7280" />
-              ) : (
-                <Ionicons name="locate-outline" size={18} color="#6B7280" />
-              )}
-            </Pressable>
+            <TextInput
+              value={leadForm.location}
+              onChangeText={(t) => { setField('location')(t); setLocPicked(null); }}
+              onFocus={() => setLocSuggestOpen(true)}
+              onBlur={() => { if (!locSuggestInteracting) setLocSuggestOpen(false); }}
+              placeholder="Building & Location"
+              placeholderTextColor="#9CA3AF"
+              style={[styles.input, errors.location ? styles.inputError : null]}
+            />
+            {locSuggestOpen && (
+              <View style={styles.suggestPanel}>
+                {locSuggestLoading ? (
+                  <View style={{ padding: 10, alignItems: 'center' }}>
+                    <ActivityIndicator size="small" color="#000" />
+                  </View>
+                ) : locSuggestOptions.length > 0 ? (
+                  <ScrollView
+                    keyboardShouldPersistTaps="always"
+                    keyboardDismissMode={Platform.OS === 'ios' ? 'on-drag' : 'none'}
+                    nestedScrollEnabled
+                    contentContainerStyle={{ paddingVertical: 4 }}
+                    style={{ height: 220 }}
+                    onTouchStart={() => setLocSuggestInteracting(true)}
+                    onTouchEnd={() => setTimeout(() => setLocSuggestInteracting(false), 100)}
+                  >
+                    {locSuggestOptions.map((name) => (
+                      <Pressable key={name} style={styles.suggestItem} onPress={() => { setField('location')(name); setLocPicked(name); setLocSuggestOpen(false); }} accessibilityRole="button">
+                        <Text style={styles.suggestText} numberOfLines={1}>{name}</Text>
+                      </Pressable>
+                    ))}
+                  </ScrollView>
+                ) : (
+                  <View style={{ padding: 10 }}>
+                    <Text style={{ color: '#6b7280' }}>No matches</Text>
+                  </View>
+                )}
+              </View>
+            )}
           </View>
           {errors.location ? <Text style={styles.errorText}>{errors.location}</Text> : null}
           <View style={styles.divider} />
@@ -556,8 +635,12 @@ export default function LeadCreateScreen({ onCancel, onCreated }: Props) {
         <Pressable style={styles.bottomBtnGhost} onPress={onCancel} accessibilityRole="button">
           <Text style={styles.bottomBtnGhostText}>Cancel</Text>
         </Pressable>
-        <Pressable style={styles.bottomBtnPrimary} onPress={handleSave} accessibilityRole="button">
-          <Text style={styles.bottomBtnPrimaryText}>Save</Text>
+        <Pressable style={styles.bottomBtnPrimary} onPress={handleSave} accessibilityRole="button" disabled={saving}>
+          {saving ? (
+            <ActivityIndicator color="#ffffff" />
+          ) : (
+            <Text style={styles.bottomBtnPrimaryText}>Save</Text>
+          )}
         </Pressable>
       </View>
     </View>

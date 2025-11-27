@@ -1,7 +1,8 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, Animated, Easing, LayoutChangeEvent, TextInput, Alert, Dimensions } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import erpNextService, { fetchExpenseCategories } from '../../services/expenseClaim';
 
 export default function ExpenseScreen() {
   (Ionicons as any)?.loadFont?.();
@@ -11,14 +12,33 @@ export default function ExpenseScreen() {
   const [segWidth, setSegWidth] = useState(0);
   const [showModal, setShowModal] = useState(false);
   const [headerHeight, setHeaderHeight] = useState(0);
-  // Modal form state
   const [categoryOpen, setCategoryOpen] = useState(false);
   const [category, setCategory] = useState<string>('');
+const [categories, setCategories] = useState<string[]>([]);
+const [loadingCategories, setLoadingCategories] = useState<boolean>(true);
   const [amount, setAmount] = useState<string>('');
   const [expDate, setExpDate] = useState<string>('');
   const [desc, setDesc] = useState<string>('');
   const [receiptName, setReceiptName] = useState<string>('');
   const [receiptUri, setReceiptUri] = useState<string>('');
+
+// Then in your useEffect, use it like this:
+useEffect(() => {
+  const loadCategories = async () => {
+    try {
+      setLoadingCategories(true);
+      const fetchedCategories = await erpNextService.fetchExpenseCategories();
+       console.log("fetchedCategories====>",fetchedCategories);
+      setCategories(Array.isArray(fetchedCategories) ? fetchedCategories : []);
+    } catch (error) {
+      console.error('Error loading categories:', error);
+      setCategories(['Travel', 'Meals', 'Office Supplies', 'Software', 'Other']);
+    } finally {
+      setLoadingCategories(false);
+    }
+  };
+  loadCategories();
+}, []);
 
   const pickReceipt = async () => {
     try {
@@ -152,7 +172,6 @@ export default function ExpenseScreen() {
           </>
         ) : (
           <>
-            {/* History list */}
             <ExpenseItem status="Approved" title="Travel" amount="$250.00" desc="Client meeting - Taxi fare" date="10/15/2025" submitted="10/16/2025" />
             <ExpenseItem status="Pending" title="Meals" amount="$45.50" desc="Team lunch during project meeting" date="10/18/2025" submitted="10/18/2025" />
             <ExpenseItem status="Rejected" title="Office Supplies" amount="$89.99" desc="Stationery and printer supplies" date="10/10/2025" submitted="10/11/2025" />
@@ -184,11 +203,28 @@ export default function ExpenseScreen() {
             </Pressable>
             {categoryOpen && (
               <View style={styles.dropdown}>
-                {['Travel','Meals','Office Supplies','Software','Other'].map((opt) => (
-                  <Pressable key={opt} style={styles.dropdownItem} onPress={() => { setCategory(opt); setCategoryOpen(false); }}>
-                    <Text style={styles.dropdownText}>{opt}</Text>
-                  </Pressable>
-                ))}
+                {loadingCategories ? (
+                  <View style={styles.dropdownItem}>
+                    <Text style={styles.dropdownText}>Loading categories...</Text>
+                  </View>
+                ) : categories.length > 0 ? (
+                  categories.map((opt) => (
+                    <Pressable 
+                      key={opt} 
+                      style={styles.dropdownItem} 
+                      onPress={() => { 
+                        setCategory(opt); 
+                        setCategoryOpen(false); 
+                      }}
+                    >
+                      <Text style={styles.dropdownText}>{opt}</Text>
+                    </Pressable>
+                  ))
+                ) : (
+                  <View style={styles.dropdownItem}>
+                    <Text style={styles.dropdownText}>No categories found</Text>
+                  </View>
+                )}
               </View>
             )}
 

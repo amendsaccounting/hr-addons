@@ -33,7 +33,9 @@ async function fetchDocFieldsViaGetDoctype(parentDoctype: string): Promise<any[]
   } catch (err: any) {
     const server = err?.response?.data;
     const s = typeof server === 'string' ? server : JSON.stringify(server || '');
-    if (!s?.includes('PermissionError') && !s?.includes("has no attribute")) {
+    // Suppress noisy logs for common non-actionable errors
+    const suppress = s?.includes('PermissionError') || s?.includes('has no attribute') || s?.includes('DoesNotExistError') || s?.includes('not found');
+    if (!suppress) {
       try { console.warn('getdoctype fetch failed', server || err?.message); } catch {}
     }
     return [];
@@ -78,27 +80,13 @@ export async function listLeads({
 }): Promise<Lead[]> {
   const f = new Array<any>();
   if (status && status !== 'All') f.push(['status', '=', status]);
-  const fieldList = fields && fields.length > 0 ? fields : [
-    'name',
-    'lead_name',
-    'company_name',
-    'email_id',
-    'mobile_no',
-    'phone',
-    'website',
-    'status',
-    'source',
-    'territory',
-    'creation',
-    'modified',
-    'custom_whatsapp',
-    'custom_date',
-    'custom_building__location',
-    'custom_lead_type',
-    'custom_request_type',
-    'custom_service_type',
-    'custom_notes',
+  // Use a conservative field list for /api/resource to avoid
+  // "Field not permitted in query" errors on hardened servers.
+  const SAFE_RESOURCE_FIELDS = [
+    'name', 'lead_name', 'company_name', 'email_id', 'mobile_no', 'phone', 'website', 'status', 'source', 'territory', 'creation', 'modified',
   ];
+  const fieldList = (fields && fields.length > 0 ? fields : SAFE_RESOURCE_FIELDS)
+    .filter((k) => SAFE_RESOURCE_FIELDS.includes(k));
 
   // Try resource endpoint first
   try {
@@ -444,8 +432,15 @@ export async function buildCommonLinkFilters(doctype: string): Promise<Record<st
     const set: Record<string, any> = {};
     if (names.includes('disabled')) set.disabled = 0;
     if (names.includes('is_active')) set.is_active = 1;
-    // Common in tree doctypes like Territory: only leaf (non-group) nodes
+    // Common in tree doctypes like Territory/Location: only leaf (non-group) nodes
     if (names.includes('is_group')) set.is_group = 0;
+    if (Object.keys(set).length) return set;
+  } catch {}
+  // Heuristic fallback when DocField metadata is restricted
+  try {
+    const dt = String(doctype || '').toLowerCase();
+    const set: Record<string, any> = {};
+    if (dt.includes('location')) set.is_group = 0;
     return Object.keys(set).length ? set : undefined;
   } catch {
     return undefined;
@@ -771,6 +766,44 @@ export function prepareLeadPayload(input: Record<string, any>): Record<string, a
   return out;
 }
 
+// Create a new Lead document (resource first, method fallback)
+export async function createLead(input: Record<string, any>): Promise<Lead | true | null> {
+  // Ensure payload maps UI aliases to ERP fields
+  const payload = prepareLeadPayload(input);
+
+  // Try REST resource API first
+  if (BASE_URL) {
+    try {
+      const body: any = { ...payload };
+      // Resource endpoint does not require doctype key
+      delete body.doctype;
+      const res = await axios.post(`${BASE_URL}/Lead`, body, {
+        headers: { ...headers(), 'Content-Type': 'application/json' },
+      });
+      const data = (res?.data?.data ?? res?.data ?? true) as any;
+      return data as Lead | true;
+    } catch (err1: any) {
+      const server = err1?.response?.data;
+      try { console.warn('createLead resource failed', server || err1?.message); } catch {}
+    }
+  }
+
+  // Fallback to method API
+  try {
+    if (!METHOD_URL) throw new Error('METHOD_URL not configured');
+    const doc = { doctype: 'Lead', ...payload } as any;
+    const res = await axios.post(`${METHOD_URL}/frappe.client.insert`, { doc }, {
+      headers: { ...headers(), 'Content-Type': 'application/json' },
+    });
+    const created = (res?.data?.message ?? true) as any;
+    return created as Lead | true;
+  } catch (err2: any) {
+    const server = err2?.response?.data;
+    console.error('createLead method failed', server || err2?.message);
+    return null;
+  }
+}
+
 // Fetch meta for a Lead DocField. Returns fieldtype and options (for Select, the options string; for Link, the linked doctype name).
 export async function fetchLeadFieldMeta(fieldnames: string | string[]): Promise<{ fieldname?: string; fieldtype?: string; options?: string } | null> {
   const names = Array.isArray(fieldnames) ? fieldnames : [fieldnames];
@@ -861,142 +894,6 @@ export async function updateLeadSmart(name: string, updatedFields: Record<string
   } catch (err2: any) {
     const server = err2?.response?.data;
     console.error('updateLeadSmart method failed', server || err2?.message);
-    return null;
-  }
-}
-
-// Create a new Lead
-export async function createLead(payload: Record<string, any>): Promise<Lead | true | null> {
-  let validLocation: string | null = null;
-
-  const hasLocationInput = !!((payload as any)?.custom_building__location || (payload as any)?.location);
-  if (hasLocationInput) {
-    try {
-      const candidates: string[] = [];
-      const forcedDt = pickEnv("ERP_LOCATION_DOCTYPE", "ERP_LOCATION_DT");
-      if (forcedDt) { candidates.push(forcedDt); }
-      else { candidates.push("Location"); candidates.push("Building & Location"); }
-
-    const ensureValid = async (name?: string | null, locDt?: string): Promise<string | null> => {
-      const n = String(name || "").trim();
-      if (!n) return null;
-      try { return (await existsDocName(locDt!, n)) ? n : null; } catch { return null; }
-    };
-
-    const requestedRaw = (payload as any)?.custom_building__location || (payload as any)?.location || '';
-    const rawCandidates: string[] = Array.from(new Set([
-      String(requestedRaw || '').trim(),
-      String(String(requestedRaw || '').split(',')[0] || '').trim(),
-    ].filter((x) => x && x.length > 0)));
-
-    console.info('Lead create: location candidates', candidates, 'requested', requestedRaw);
-    for (const locDt of candidates) {
-      // Validate user-provided raw candidates (full string and first comma-separated token)
-      for (const rc of rawCandidates) {
-        validLocation = await ensureValid(rc, locDt);
-        if (validLocation) break;
-      }
-      // If not valid and user typed a value, try to auto-create without env gate for urgent unblock
-      if (!validLocation && rawCandidates.length > 0) {
-        try {
-          const created = await createDocNameIfPossible(locDt!, rawCandidates[0]);
-          if (created) validLocation = created;
-        } catch {}
-      }
-      if (validLocation) break;
-
-      // Validate default env
-      const fallback = pickEnv("ERP_LOCATION_DEFAULT", "ERP_LOCATION_DEFAULT_NAME", "DEFAULT_LOCATION");
-      validLocation = await ensureValid(fallback, locDt);
-      if (validLocation) break;
-
-      // Validate first available option
-      try {
-        const names = await listDocNamesSimple(locDt, 1);
-        if (names && names.length > 0) {
-          validLocation = names[0];
-          break;
-        }
-      } catch {}
-    }
-
-    // If still not resolved, try forced default (validate or create)
-    if (!validLocation) {
-      const forcedDefault = pickEnv('ERP_LOCATION_DEFAULT', 'ERP_LOCATION_DEFAULT_NAME', 'DEFAULT_LOCATION') || '';
-      const fd = forcedDefault.trim();
-      if (fd.length > 0) {
-        const tryList = forcedDt ? [forcedDt] : candidates;
-        for (const dt of tryList) {
-          validLocation = await ensureValid(fd, dt);
-          if (validLocation) break;
-          try {
-            const created = await createDocNameIfPossible(dt!, fd);
-            if (created) { validLocation = created; break; }
-          } catch {}
-        }
-      }
-    }
-    // If still not resolved, pick the first available from the primary doctype list
-    if (!validLocation) {
-      const primary = forcedDt || 'Location';
-      try {
-        const names = await listDocNamesSimple(primary, 1);
-        if (names && names.length > 0) validLocation = names[0];
-      } catch {}
-    }
-    // If still not resolved, keep the originally requested raw value to satisfy mandatory
-    if (!validLocation) {
-      const requestedRaw = (payload as any)?.custom_building__location || (payload as any)?.location || '';
-      if (requestedRaw && String(requestedRaw).trim().length > 0) validLocation = String(requestedRaw).trim();
-    }
-
-    // Apply only to custom_building__location as requested; ensure plain 'location' is not sent
-    if (validLocation) {
-      console.info('Lead create: using location', { name: validLocation });
-      (payload as any).custom_building__location = validLocation;
-      delete (payload as any).location;
-    } else {
-      delete (payload as any).custom_building__location;
-      delete (payload as any).location;
-    }
-    } catch (e) {
-      console.warn("Location validation error", e);
-      delete (payload as any).custom_building__location;
-      delete (payload as any).location;
-    }
-  } else {
-    // Caller did not provide any location; do not attempt defaults. Avoid LinkValidationError.
-    delete (payload as any).custom_building__location;
-    delete (payload as any).location;
-  }
-
-  // ================================
-  // Attempt REST resource insert
-  // ================================
-  try {
-    const res = await axios.post(`${BASE_URL}/Lead`, payload, {
-      headers: { ...headers(), "Content-Type": "application/json" }
-    });
-    return (res?.data?.data ?? res?.data ?? true) as any;
-  } catch (err1: any) {
-    console.warn("createLead resource failed", err1?.response?.data || err1?.message);
-  }
-
-  // ================================
-  // Fallback to frappe.client.insert
-  // ================================
-  try {
-    if (!METHOD_URL) throw new Error("METHOD_URL not configured");
-
-    const doc = { doctype: "Lead", ...payload };
-    const res = await axios.post(`${METHOD_URL}/frappe.client.insert`,
-      { doc },
-      { headers: { ...headers(), "Content-Type": "application/json" } }
-    );
-
-    return (res?.data?.message ?? true) as any;
-  } catch (err2: any) {
-    console.error("createLead method failed", err2?.response?.data || err2?.message);
     return null;
   }
 }
