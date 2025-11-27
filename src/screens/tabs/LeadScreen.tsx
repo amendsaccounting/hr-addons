@@ -17,7 +17,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
-import { listLeads, type Lead as ERPLead, createTaskForLead, createEventForLead, countLeads, listUserSuggestions } from '../../services/leadService';
+import { listLeads, type Lead as ERPLead, createTaskForLead, createEventForLead, countLeads, listUserSuggestions, fetchLeadStatusOptions } from '../../services/leadService';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { launchImageLibrary, Asset } from 'react-native-image-picker';
 
@@ -43,15 +43,17 @@ type LeadItem = {
   added?: string;
 };
 
-const FILTERS: Array<'All' | 'New' | 'Contacted' | 'Qualified' | 'Prospect' | 'Converted' | 'Lost'> = [
-  'All', 'New', 'Contacted', 'Qualified', 'Prospect', 'Converted', 'Lost'
-];
+// Status filters are loaded dynamically from the server; we prepend 'All'
+// to show every lead when selected. Fallback list covers common statuses.
+const DEFAULT_STATUS_OPTIONS = ['Open', 'New', 'Contacted', 'Qualified', 'Prospect', 'Converted', 'Lost'];
 
 export default function LeadScreen({ onOpenLead, onCreateLead, refreshKey }: Props) {
   const insets = useSafeAreaInsets();
   const [query, setQuery] = useState('');
   const [searchText, setSearchText] = useState('');
-  const [filter, setFilter] = useState<typeof FILTERS[number]>('All');
+  const [statusOptions, setStatusOptions] = useState<string[]>(DEFAULT_STATUS_OPTIONS);
+  const filters = useMemo(() => ['All', ...statusOptions], [statusOptions]);
+  const [filter, setFilter] = useState<string>('All');
   const [items, setItems] = useState<LeadItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -67,6 +69,23 @@ export default function LeadScreen({ onOpenLead, onCreateLead, refreshKey }: Pro
     const t = setTimeout(() => setQuery(searchText), 200);
     return () => clearTimeout(t);
   }, [searchText]);
+
+  // Load available Lead.status options from the server so chips match
+  // actual configured values (improves filtering accuracy across sites).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const opts = await fetchLeadStatusOptions();
+        if (!cancelled && Array.isArray(opts) && opts.length > 0) {
+          setStatusOptions(opts);
+          // If current filter is no longer valid, reset to 'All'
+          if (filter !== 'All' && !opts.includes(filter)) setFilter('All');
+        }
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const data = items;
 
@@ -169,7 +188,7 @@ export default function LeadScreen({ onOpenLead, onCreateLead, refreshKey }: Pro
         </View>
         <View style={[styles.filtersWrap, { marginTop: 10 }]}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters}>
-            {FILTERS.map(f => {
+            {filters.map(f => {
               const active = filter === f;
               return (
                 <Pressable key={f} onPress={() => setFilter(f)} style={[styles.chip, active && styles.chipActive]} accessibilityRole="button" accessibilityLabel={`Filter ${f}`}>
@@ -788,6 +807,5 @@ const styles = StyleSheet.create({
 
   // deprecated leftover styles removed
 });
-
 
 

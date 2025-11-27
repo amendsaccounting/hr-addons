@@ -16,6 +16,7 @@ type Props = {
 
 export default function LeadCreateScreen({ onCancel, onCreated }: Props) {
   const insets = useSafeAreaInsets();
+  const [errors, setErrors] = useState<Record<string, string>>({});
   const [leadForm, setLeadForm] = useState({
     date: '',
     lead_owner: '',
@@ -33,7 +34,18 @@ export default function LeadCreateScreen({ onCancel, onCreated }: Props) {
     website: '',
     territory: '',
   });
-  const setField = (k: string) => (v: string) => setLeadForm((p) => ({ ...p, [k]: v }));
+  const setField = (k: string) => (v: string) => {
+    setLeadForm((p) => ({ ...p, [k]: v }));
+    setErrors((prev) => {
+      if (!prev[k]) return prev;
+      const val = String(v || '').trim();
+      if (val) {
+        const { [k]: _omit, ...rest } = prev;
+        return rest;
+      }
+      return prev;
+    });
+  };
   const [locLoading, setLocLoading] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [ownerOpen, setOwnerOpen] = useState(false);
@@ -52,6 +64,15 @@ export default function LeadCreateScreen({ onCancel, onCreated }: Props) {
   const [associateOpen, setAssociateOpen] = useState(false);
   const [associateOptions, setAssociateOptions] = useState<Array<{ email: string; fullName: string | null }>>([]);
   const [associateLoading, setAssociateLoading] = useState(false);
+  const [serviceTypeOpen, setServiceTypeOpen] = useState(false);
+  const [serviceTypeOptions, setServiceTypeOptions] = useState<string[]>([]);
+  const [serviceTypeLoading, setServiceTypeLoading] = useState(false);
+  const [requestTypeOpen, setRequestTypeOpen] = useState(false);
+  const [requestTypeOptions, setRequestTypeOptions] = useState<string[]>([]);
+  const [requestTypeLoading, setRequestTypeLoading] = useState(false);
+  const [territoryOpen, setTerritoryOpen] = useState(false);
+  const [territoryOptions, setTerritoryOptions] = useState<string[]>([]);
+  const [territoryLoading, setTerritoryLoading] = useState(false);
 
   // Debounce Lead Owner suggestions when dropdown is open
   useEffect(() => {
@@ -114,6 +135,39 @@ export default function LeadCreateScreen({ onCancel, onCreated }: Props) {
       if (parts.length > 0) return parts.join(', ');
     } catch {}
     return `Lat ${latitude.toFixed(5)}, Lng ${longitude.toFixed(5)}`;
+  };
+
+  const handleSave = () => {
+    const labels: Record<string, string> = {
+      date: 'Date',
+      full_name: 'Full Name',
+      lead_owner: 'Lead Owner',
+      gender: 'Gender',
+      status: 'Status',
+      source: 'Source',
+      lead_type: 'Lead Type',
+      associate_details: 'Associate Details',
+      request_type: 'Request Type',
+      location: 'Building & Location',
+      service_type: 'Service Type',
+      email_id: 'Email',
+      mobile_no: 'Mobile Number',
+      website: 'Website',
+      territory: 'Territory',
+    };
+    const requiredKeys = Object.keys(labels);
+    const nextErrors: Record<string, string> = {};
+    for (const k of requiredKeys) {
+      const v = (leadForm as any)[k];
+      const s = typeof v === 'string' ? v.trim() : '';
+      if (!s) nextErrors[k] = `${labels[k]} is required`;
+    }
+    setErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) {
+      Alert.alert('Missing Fields', 'Please complete all required fields.');
+      return;
+    }
+    onCreated?.();
   };
 
   const handleUseCurrentLocation = async () => {
@@ -189,6 +243,42 @@ export default function LeadCreateScreen({ onCancel, onCreated }: Props) {
     })();
   }, []);
 
+  // Load Service Type options on mount (Service Type doctype)
+  useEffect(() => {
+    (async () => {
+      try {
+        setServiceTypeLoading(true);
+        const names = await listDocNamesSimple('Service Type', 20);
+        if (Array.isArray(names) && names.length > 0) setServiceTypeOptions(names);
+      } catch {}
+      finally { setServiceTypeLoading(false); }
+    })();
+  }, []);
+
+  // Load Request Type options on mount (Request Type doctype)
+  useEffect(() => {
+    (async () => {
+      try {
+        setRequestTypeLoading(true);
+        const names = await listDocNamesSimple('Request Type', 20);
+        if (Array.isArray(names) && names.length > 0) setRequestTypeOptions(names);
+      } catch {}
+      finally { setRequestTypeLoading(false); }
+    })();
+  }, []);
+
+  // Load Territory options on mount (Territory doctype)
+  useEffect(() => {
+    (async () => {
+      try {
+        setTerritoryLoading(true);
+        const names = await listDocNamesSimple('Territory', 50);
+        if (Array.isArray(names) && names.length > 0) setTerritoryOptions(names);
+      } catch {}
+      finally { setTerritoryLoading(false); }
+    })();
+  }, []);
+
   // Load Associate Details options on mount (use User suggestions for names/emails)
   useEffect(() => {
     (async () => {
@@ -221,7 +311,7 @@ export default function LeadCreateScreen({ onCancel, onCreated }: Props) {
           <Text style={styles.fieldLabel}>Date</Text>
           <Pressable
             onPress={() => setShowDatePicker(v => !v)}
-            style={styles.pickerInput}
+            style={[styles.pickerInput, errors.date ? styles.inputError : null]}
             accessibilityRole="button"
             accessibilityLabel="Select date"
           >
@@ -239,10 +329,12 @@ export default function LeadCreateScreen({ onCancel, onCreated }: Props) {
               }}
             />
           )}
+          {errors.date ? <Text style={styles.errorText}>{errors.date}</Text> : null}
           <View style={styles.divider} />
 
           <Text style={styles.fieldLabel}>Full Name</Text>
-          <TextInput value={leadForm.full_name} onChangeText={setField('full_name')} placeholder="Full Name" placeholderTextColor="#9CA3AF" style={styles.input} />
+          <TextInput value={leadForm.full_name} onChangeText={setField('full_name')} placeholder="Full Name" placeholderTextColor="#9CA3AF" style={[styles.input, errors.full_name ? styles.inputError : null]} />
+          {errors.full_name ? <Text style={styles.errorText}>{errors.full_name}</Text> : null}
           <View style={styles.divider} />
 
           <Text style={styles.fieldLabel}>Lead Owner</Text>
@@ -252,7 +344,7 @@ export default function LeadCreateScreen({ onCancel, onCreated }: Props) {
               onChangeText={setField('lead_owner')}
               placeholder="owner email or name"
               placeholderTextColor="#9CA3AF"
-              style={styles.input}
+              style={[styles.input, errors.lead_owner ? styles.inputError : null]}
               onFocus={() => setOwnerOpen(true)}
               onBlur={() => { if (!ownerInteracting) setOwnerOpen(false); }}
             />
@@ -289,6 +381,7 @@ export default function LeadCreateScreen({ onCancel, onCreated }: Props) {
               </View>
             )}
           </View>
+          {errors.lead_owner ? <Text style={styles.errorText}>{errors.lead_owner}</Text> : null}
           <View style={styles.divider} />
 
           <Text style={styles.fieldLabel}>Gender</Text>
@@ -299,10 +392,11 @@ export default function LeadCreateScreen({ onCancel, onCreated }: Props) {
               </Pressable>
             ))}
           </View>
+          {errors.gender ? <Text style={styles.errorText}>{errors.gender}</Text> : null}
           <View style={styles.divider} />
 
           <Text style={styles.fieldLabel}>Status</Text>
-          <Pressable onPress={() => setStatusOpen(v => !v)} style={styles.pickerInput} accessibilityRole="button" accessibilityLabel="Select status">
+          <Pressable onPress={() => setStatusOpen(v => !v)} style={[styles.pickerInput, errors.status ? styles.inputError : null]} accessibilityRole="button" accessibilityLabel="Select status">
             <Text style={{ color: leadForm.status ? '#111827' : '#9CA3AF' }}>{leadForm.status || (statusLoading ? 'Loading…' : 'Select status')}</Text>
             <Ionicons style={styles.fieldChevron} name={statusOpen ? 'chevron-up' : 'chevron-down'} size={16} color="#6b7280" />
           </Pressable>
@@ -315,10 +409,11 @@ export default function LeadCreateScreen({ onCancel, onCreated }: Props) {
               ))}
             </View>
           )}
+          {errors.status ? <Text style={styles.errorText}>{errors.status}</Text> : null}
           <View style={styles.divider} />
 
           <Text style={styles.fieldLabel}>Source</Text>
-          <Pressable onPress={() => setSourceOpen(v => !v)} style={styles.pickerInput} accessibilityRole="button" accessibilityLabel="Select source">
+          <Pressable onPress={() => setSourceOpen(v => !v)} style={[styles.pickerInput, errors.source ? styles.inputError : null]} accessibilityRole="button" accessibilityLabel="Select source">
             <Text style={{ color: leadForm.source ? '#111827' : '#9CA3AF' }}>{leadForm.source || (sourceLoading ? 'Loading…' : 'Select source')}</Text>
             <Ionicons style={styles.fieldChevron} name={sourceOpen ? 'chevron-up' : 'chevron-down'} size={16} color="#6b7280" />
           </Pressable>
@@ -331,10 +426,11 @@ export default function LeadCreateScreen({ onCancel, onCreated }: Props) {
               ))}
             </View>
           )}
+          {errors.source ? <Text style={styles.errorText}>{errors.source}</Text> : null}
           <View style={styles.divider} />
 
           <Text style={styles.fieldLabel}>Lead Type</Text>
-          <Pressable onPress={() => setLeadTypeOpen(v => !v)} style={styles.pickerInput} accessibilityRole="button" accessibilityLabel="Select lead type">
+          <Pressable onPress={() => setLeadTypeOpen(v => !v)} style={[styles.pickerInput, errors.lead_type ? styles.inputError : null]} accessibilityRole="button" accessibilityLabel="Select lead type">
             <Text style={{ color: leadForm.lead_type ? '#111827' : '#9CA3AF' }}>{leadForm.lead_type || (leadTypeLoading ? 'Loading…' : 'Select lead type')}</Text>
             <Ionicons style={styles.fieldChevron} name={leadTypeOpen ? 'chevron-up' : 'chevron-down'} size={16} color="#6b7280" />
           </Pressable>
@@ -347,10 +443,11 @@ export default function LeadCreateScreen({ onCancel, onCreated }: Props) {
               ))}
             </View>
           )}
+          {errors.lead_type ? <Text style={styles.errorText}>{errors.lead_type}</Text> : null}
           <View style={styles.divider} />
 
           <Text style={styles.fieldLabel}>Associate Details</Text>
-          <Pressable onPress={() => setAssociateOpen(v => !v)} style={styles.pickerInput} accessibilityRole="button" accessibilityLabel="Select associate">
+          <Pressable onPress={() => setAssociateOpen(v => !v)} style={[styles.pickerInput, errors.associate_details ? styles.inputError : null]} accessibilityRole="button" accessibilityLabel="Select associate">
             <Text style={{ color: leadForm.associate_details ? '#111827' : '#9CA3AF' }}>{leadForm.associate_details || (associateLoading ? 'Loading…' : 'Select associate')}</Text>
             <Ionicons style={styles.fieldChevron} name={associateOpen ? 'chevron-up' : 'chevron-down'} size={16} color="#6b7280" />
           </Pressable>
@@ -367,15 +464,29 @@ export default function LeadCreateScreen({ onCancel, onCreated }: Props) {
               )}
             </View>
           )}
+          {errors.associate_details ? <Text style={styles.errorText}>{errors.associate_details}</Text> : null}
           <View style={styles.divider} />
 
           <Text style={styles.fieldLabel}>Request Type</Text>
-          <TextInput value={leadForm.request_type} onChangeText={setField('request_type')} placeholder="Request Type" placeholderTextColor="#9CA3AF" style={styles.input} />
+          <Pressable onPress={() => setRequestTypeOpen(v => !v)} style={[styles.pickerInput, errors.request_type ? styles.inputError : null]} accessibilityRole="button" accessibilityLabel="Select request type">
+            <Text style={{ color: leadForm.request_type ? '#111827' : '#9CA3AF' }}>{leadForm.request_type || (requestTypeLoading ? 'Loading…' : 'Select request type')}</Text>
+            <Ionicons style={styles.fieldChevron} name={requestTypeOpen ? 'chevron-up' : 'chevron-down'} size={16} color="#6b7280" />
+          </Pressable>
+          {requestTypeOpen && (
+            <View style={styles.dropdownPanel}>
+              {(requestTypeOptions.length > 0 ? requestTypeOptions : ['New Request','Upgrade','Support','Cancellation']).map((opt) => (
+                <Pressable key={opt} style={styles.optionItem} onPress={() => { setField('request_type')(opt); setRequestTypeOpen(false); }}>
+                  <Text style={styles.optionText}>{opt}</Text>
+                </Pressable>
+              ))}
+            </View>
+          )}
+          {errors.request_type ? <Text style={styles.errorText}>{errors.request_type}</Text> : null}
           <View style={styles.divider} />
 
           <Text style={styles.fieldLabel}>Building & Location</Text>
           <View style={styles.inputWrapper}>
-            <TextInput value={leadForm.location} onChangeText={setField('location')} placeholder="Building & Location" placeholderTextColor="#9CA3AF" style={[styles.input, styles.inputWithIcon]} />
+            <TextInput value={leadForm.location} onChangeText={setField('location')} placeholder="Building & Location" placeholderTextColor="#9CA3AF" style={[styles.input, styles.inputWithIcon, errors.location ? styles.inputError : null]} />
             <Pressable style={styles.fieldIconBtn} onPress={handleUseCurrentLocation} accessibilityRole="button" accessibilityLabel="Use current location" disabled={locLoading}>
               {locLoading ? (
                 <ActivityIndicator size="small" color="#6B7280" />
@@ -384,26 +495,59 @@ export default function LeadCreateScreen({ onCancel, onCreated }: Props) {
               )}
             </Pressable>
           </View>
+          {errors.location ? <Text style={styles.errorText}>{errors.location}</Text> : null}
           <View style={styles.divider} />
 
           <Text style={styles.fieldLabel}>Service Type</Text>
-          <TextInput value={leadForm.service_type} onChangeText={setField('service_type')} placeholder="Service Type" placeholderTextColor="#9CA3AF" style={styles.input} />
+          <Pressable onPress={() => setServiceTypeOpen(v => !v)} style={[styles.pickerInput, errors.service_type ? styles.inputError : null]} accessibilityRole="button" accessibilityLabel="Select service type">
+            <Text style={{ color: leadForm.service_type ? '#111827' : '#9CA3AF' }}>{leadForm.service_type || (serviceTypeLoading ? 'Loading…' : 'Select service type')}</Text>
+            <Ionicons style={styles.fieldChevron} name={serviceTypeOpen ? 'chevron-up' : 'chevron-down'} size={16} color="#6b7280" />
+          </Pressable>
+          {serviceTypeOpen && (
+            <View style={styles.dropdownPanel}>
+              {(serviceTypeOptions.length > 0 ? serviceTypeOptions : ['Installation','Maintenance','Support']).map((opt) => (
+                <Pressable key={opt} style={styles.optionItem} onPress={() => { setField('service_type')(opt); setServiceTypeOpen(false); }}>
+                  <Text style={styles.optionText}>{opt}</Text>
+                </Pressable>
+              ))}
+            </View>
+          )}
+          {errors.service_type ? <Text style={styles.errorText}>{errors.service_type}</Text> : null}
           <View style={styles.divider} />
 
           <Text style={styles.fieldLabel}>Email</Text>
-          <TextInput value={leadForm.email_id} onChangeText={setField('email_id')} placeholder="Email" placeholderTextColor="#9CA3AF" style={styles.input} keyboardType="email-address" autoCapitalize="none" />
+          <TextInput value={leadForm.email_id} onChangeText={setField('email_id')} placeholder="Email" placeholderTextColor="#9CA3AF" style={[styles.input, errors.email_id ? styles.inputError : null]} keyboardType="email-address" autoCapitalize="none" />
+          {errors.email_id ? <Text style={styles.errorText}>{errors.email_id}</Text> : null}
           <View style={styles.divider} />
 
           <Text style={styles.fieldLabel}>Mobile Number</Text>
-          <TextInput value={leadForm.mobile_no} onChangeText={setField('mobile_no')} placeholder="Mobile Number" placeholderTextColor="#9CA3AF" style={styles.input} keyboardType="phone-pad" />
+          <TextInput value={leadForm.mobile_no} onChangeText={setField('mobile_no')} placeholder="Mobile Number" placeholderTextColor="#9CA3AF" style={[styles.input, errors.mobile_no ? styles.inputError : null]} keyboardType="phone-pad" />
+          {errors.mobile_no ? <Text style={styles.errorText}>{errors.mobile_no}</Text> : null}
           <View style={styles.divider} />
 
           <Text style={styles.fieldLabel}>Website</Text>
-          <TextInput value={leadForm.website} onChangeText={setField('website')} placeholder="Website" placeholderTextColor="#9CA3AF" style={styles.input} autoCapitalize="none" />
+          <TextInput value={leadForm.website} onChangeText={setField('website')} placeholder="Website" placeholderTextColor="#9CA3AF" style={[styles.input, errors.website ? styles.inputError : null]} autoCapitalize="none" />
+          {errors.website ? <Text style={styles.errorText}>{errors.website}</Text> : null}
           <View style={styles.divider} />
 
           <Text style={styles.fieldLabel}>Territory</Text>
-          <TextInput value={leadForm.territory} onChangeText={setField('territory')} placeholder="Territory" placeholderTextColor="#9CA3AF" style={styles.input} />
+          <Pressable onPress={() => setTerritoryOpen(v => !v)} style={[styles.pickerInput, errors.territory ? styles.inputError : null]} accessibilityRole="button" accessibilityLabel="Select territory">
+            <Text style={{ color: leadForm.territory ? '#111827' : '#9CA3AF' }}>{leadForm.territory || (territoryLoading ? 'Loading…' : 'Select territory')}</Text>
+            <Ionicons style={styles.fieldChevron} name={territoryOpen ? 'chevron-up' : 'chevron-down'} size={16} color="#6b7280" />
+          </Pressable>
+          {territoryOpen && (
+            <View style={styles.dropdownPanel}>
+              {(territoryOptions.length > 0 ? territoryOptions : []).map((opt) => (
+                <Pressable key={opt} style={styles.optionItem} onPress={() => { setField('territory')(opt); setTerritoryOpen(false); }}>
+                  <Text style={styles.optionText}>{opt}</Text>
+                </Pressable>
+              ))}
+              {(!territoryLoading && territoryOptions.length === 0) && (
+                <View style={styles.optionItem}><Text style={[styles.optionText, { color: '#6b7280' }]}>No territories</Text></View>
+              )}
+            </View>
+          )}
+          {errors.territory ? <Text style={styles.errorText}>{errors.territory}</Text> : null}
         </View>
       </ScrollView>
 
@@ -412,7 +556,7 @@ export default function LeadCreateScreen({ onCancel, onCreated }: Props) {
         <Pressable style={styles.bottomBtnGhost} onPress={onCancel} accessibilityRole="button">
           <Text style={styles.bottomBtnGhostText}>Cancel</Text>
         </Pressable>
-        <Pressable style={styles.bottomBtnPrimary} onPress={onCreated} accessibilityRole="button">
+        <Pressable style={styles.bottomBtnPrimary} onPress={handleSave} accessibilityRole="button">
           <Text style={styles.bottomBtnPrimaryText}>Save</Text>
         </Pressable>
       </View>
@@ -437,6 +581,8 @@ const styles = StyleSheet.create({
   fieldIconBtn: { position: 'absolute', right: 8, top: 8, width: 24, height: 24, alignItems: 'center', justifyContent: 'center' },
   pickerInput: { borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 8, paddingVertical: 12, paddingHorizontal: 10, backgroundColor: '#FFFFFF', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   fieldChevron: { marginLeft: 8 },
+  inputError: { borderColor: '#ef4444' },
+  errorText: { color: '#ef4444', fontSize: 12, marginTop: 4 },
   // Suggest dropdown for Lead Owner
   suggestPanel: { position: 'absolute', top: 46, left: 0, right: 0, backgroundColor: '#fff', borderWidth: 1, borderColor: '#e5e7eb', borderTopWidth: 0, borderBottomLeftRadius: 10, borderBottomRightRadius: 10, height: 220, zIndex: 20, elevation: 6, overflow: 'hidden' },
   suggestItem: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 6, borderBottomWidth: 1, borderColor: '#f3f4f6' },
