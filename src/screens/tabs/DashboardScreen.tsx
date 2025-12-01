@@ -31,34 +31,36 @@ export default function DashboardScreen({ onOpenMenu }: Props) {
 
   return (
     <View style={styles.screen}>
-      {/* Header */}
-      <View style={[styles.headerCard, { paddingTop: insets.top + 12 }]}>
-        <View style={styles.headerTopRow}>
-          <View style={styles.headerLeftRow}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Open menu"
-              onPress={onOpenMenu}
-              style={styles.headerMenu}
-            >
-              {profileImage ? (
-                <Image source={{ uri: profileImage }} style={styles.headerAvatar} />
-              ) : (
-                <Ionicons name="person-circle-outline" size={22} color="#111827" />
-              )}
-            </Pressable>
-            <Text style={styles.headerTitle}>Welcome Back,</Text>
+      {/* Legacy header removed in favor of AppHeader */}
+      {false && (
+        <View style={[styles.headerCard, { paddingTop: insets.top + 12 }]}>
+          <View style={styles.headerTopRow}>
+            <View style={styles.headerLeftRow}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Open menu"
+                onPress={onOpenMenu}
+                style={styles.headerMenu}
+              >
+                {profileImage ? (
+                  <Image source={{ uri: profileImage }} style={styles.headerAvatar} />
+                ) : (
+                  <Ionicons name="person-circle-outline" size={22} color="#111827" />
+                )}
+              </Pressable>
+              <Text style={styles.headerTitle}>Welcome Back,</Text>
+            </View>
+            <View style={styles.badge}>
+              <Ionicons name="notifications-outline" size={16} color="#fff" />
+              <View style={styles.badgeDot}><Text style={styles.badgeDotText}>3</Text></View>
+            </View>
           </View>
-          <View style={styles.badge}>
-            <Ionicons name="notifications-outline" size={16} color="#fff" />
-            <View style={styles.badgeDot}><Text style={styles.badgeDotText}>3</Text></View>
+          <Text style={styles.headerName}>{username || 'John Doe'}</Text>
+          <View style={styles.rowBetween}>
+            <Text style={styles.empId}>Employee ID: EMP-2024-001</Text>
           </View>
         </View>
-        <Text style={styles.headerName}>{username || 'John Doe'}</Text>
-        <View style={styles.rowBetween}>
-          <Text style={styles.empId}>Employee ID: EMP-2024-001</Text>
-        </View>
-      </View>
+      )}
 
       <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
         {/* Quick Overview */}

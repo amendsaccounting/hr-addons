@@ -6,9 +6,11 @@ import LoginScreen from '../screens/auth/LoginScreen';
 import RegisterScreen from '../screens/auth/RegisterScreen';
 import AppLockScreen from '../screens/AppLockScreen';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import OnboardingScreen from '../screens/auth/OnboardingScreen';
 
 export default function RootNavigator() {
-  const [stage, setStage] = useState<'splash' | 'lock' | 'login' | 'register' | 'tabs'>('splash');
+  // const [stage, setStage] = useState<'splash' | 'lock' | 'login' | 'register' | 'tabs'>('splash');
+  const [stage, setStage] = useState<'splash' | 'lock' | 'onboarding' | 'login' | 'register' | 'tabs'>('splash');
   const [initialTab, setInitialTab] = useState<TabName>('Dashboard');
   const nextAfterLockRef = useRef<'login' | 'tabs'>('login');
   const unlockedRef = useRef<boolean>(false);
@@ -19,12 +21,25 @@ export default function RootNavigator() {
     return () => clearTimeout(t);
   }, [stage]);
 
-  // On splash finish, decide next route and insert lock stage first
   const handleSplashFinish = async (tab: 'Dashboard' | 'Login') => {
     nextAfterLockRef.current = tab === 'Dashboard' ? 'tabs' : 'login';
-    // Always show App Lock first; it will be in setup mode if no PIN exists
     setStage('lock');
   };
+
+//   const handleSplashFinish = async () => {
+//   try {
+//     const userEmail = await AsyncStorage.getItem('userEmail');
+//     if (!userEmail) {
+//       setStage('onboarding');
+//       return;
+//     }
+//     nextAfterLockRef.current = 'tabs';
+//     setStage('lock');
+//   } catch (err) {
+//     console.log('AsyncStorage error:', err);
+//     setStage('login');
+//   }
+// };
 
   // Lock the app on returning to foreground if a PIN exists
   useEffect(() => {
@@ -78,6 +93,15 @@ export default function RootNavigator() {
       />
     );
   }
+
+  if (stage === 'onboarding') {
+  return (
+    <OnboardingScreen
+      onContinue={() => setStage('login')} // After completing onboarding, go to login
+    />
+  );
+}
+
 
   return <TabNavigator initialTab={initialTab} />;
 }

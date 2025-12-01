@@ -24,6 +24,7 @@ useEffect(() => {
 
   Animated.timing(progressAnim, { toValue: 1, duration: 2000, useNativeDriver: false }).start(async () => {
     let next: 'Dashboard' | 'Login' = 'Login';
+    // let next: 'Dashboard' | 'Onboarding' = 'Onboarding';
     try {
       if (AsyncStorageMod) {
         const userEmail = await AsyncStorageMod.getItem('userEmail');

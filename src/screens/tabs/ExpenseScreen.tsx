@@ -183,20 +183,22 @@ const handleSubmit = async () => {
 
   return (
     <View style={styles.screen}>
-      {/* Fixed header */}
-      <View style={[styles.headerCard, { paddingTop: insets.top + 12 }]} onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}>
-        <View style={styles.headerRow}>
-          <Ionicons name="card-outline" size={18} color="#fff" style={{ marginRight: 8 }} />
-          <Text style={styles.headerTitle}>Expense Reimbursement</Text>
-        </View>
-        <Text style={styles.headerSubtitle}>Submit and track your expense claims</Text>
+      {/* Legacy header removed in favor of AppHeader */}
+      {false && (
+        <View style={[styles.headerCard, { paddingTop: insets.top + 12 }]} onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}>
+          <View style={styles.headerRow}>
+            <Ionicons name="card-outline" size={18} color="#fff" style={{ marginRight: 8 }} />
+            <Text style={styles.headerTitle}>Expense Reimbursement</Text>
+          </View>
+          <Text style={styles.headerSubtitle}>Submit and track your expense claims</Text>
 
-        <View style={styles.metricRow}>
-          <Metric label="Total" value="$385.49" />
-          <Metric label="Pending" value="$45.50" accent="#f59e0b" />
-          <Metric label="Approved" value="$250.00" accent="#059669" />
+          <View style={styles.metricRow}>
+            <Metric label="Total" value="$385.49" />
+            <Metric label="Pending" value="$45.50" accent="#f59e0b" />
+            <Metric label="Approved" value="$250.00" accent="#059669" />
+          </View>
         </View>
-      </View>
+      )}
 
       {/* Scrollable content filling remaining space */}
       <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>

@@ -532,24 +532,29 @@ const AttendanceScreen = () => {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#0b0b1b" animated />
-      <View style={{ height: insets.top, backgroundColor: '#0b0b1b' }} />
-      <LinearGradient
-        colors={["#0b0b1b", "#161a2e"]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={[styles.headerCard, { paddingTop: 14 }]}
-      >
-        <View style={styles.headerRow}>
-          <View style={styles.headerLeftRow}>
-            <View style={styles.headerIconWrap}>
-              <Ionicons name="stopwatch-outline" size={18} color="#111827" />
+      {/* Legacy header removed in favor of AppHeader */}
+      {false && (
+        <>
+          <StatusBar barStyle="light-content" backgroundColor="#0b0b1b" animated />
+          <View style={{ height: insets.top, backgroundColor: '#0b0b1b' }} />
+          <LinearGradient
+            colors={["#0b0b1b", "#161a2e"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={[styles.headerCard, { paddingTop: 14 }]}
+          >
+            <View style={styles.headerRow}>
+              <View style={styles.headerLeftRow}>
+                <View style={styles.headerIconWrap}>
+                  <Ionicons name="stopwatch-outline" size={18} color="#111827" />
+                </View>
+                <Text style={styles.headerTitle}>Attendance</Text>
+              </View>
             </View>
-            <Text style={styles.headerTitle}>Attendance</Text>
-          </View>
-        </View>
-        <Text style={styles.headerDate}>Track your work hours</Text>
-      </LinearGradient>
+            <Text style={styles.headerDate}>Track your work hours</Text>
+          </LinearGradient>
+        </>
+      )}
       <View style={styles.wrapper}>
         <View style={styles.clockCard}>
           <Text style={styles.timeText}>{currentTime}</Text>

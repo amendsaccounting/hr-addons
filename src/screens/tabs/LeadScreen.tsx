@@ -151,23 +151,26 @@ export default function LeadScreen({ onOpenLead, onCreateLead, refreshKey }: Pro
 
   return (
     <View style={styles.screen}>
-      <StatusBar barStyle="light-content" backgroundColor="#0b0b1b" />
+      {/* Legacy header removed in favor of AppHeader */}
+      {false && (
+        <>
+          <StatusBar barStyle="light-content" backgroundColor="#0b0b1b" />
+          <View style={[styles.header, { paddingTop: insets.top + 12 }]}> 
+            <View style={styles.headerRow}>
+              <Ionicons name="trending-up" size={18} color="#fff" style={{ marginRight: 8 }} />
+              <Text style={styles.headerTitle}>Sales Leads</Text>
+            </View>
+            <Text style={styles.headerSubtitle}>Track and manage sales opportunities</Text>
 
-      {/* Header */}
-      <View style={[styles.header, { paddingTop: insets.top + 12 }]}> 
-        <View style={styles.headerRow}>
-          <Ionicons name="trending-up" size={18} color="#fff" style={{ marginRight: 8 }} />
-          <Text style={styles.headerTitle}>Sales Leads</Text>
-        </View>
-        <Text style={styles.headerSubtitle}>Track and manage sales opportunities</Text>
-
-        {/* Stats inside header */}
-        <View style={[styles.statsRow, { marginTop: 6 }]}> 
-          <StatCard label="Total Leads" value={totalCount != null ? String(totalCount) : `${data.length}${hasMore ? '+' : ''}`} />
-          <StatCard label="Pipeline Value" value="$150k" />
-          <StatCard label="Won" value="$0k" />
-        </View>
-      </View>
+            {/* Stats inside header */}
+            <View style={[styles.statsRow, { marginTop: 6 }]}> 
+              <StatCard label="Total Leads" value={totalCount != null ? String(totalCount) : `${data.length}${hasMore ? '+' : ''}`} />
+              <StatCard label="Pipeline Value" value="$150k" />
+              <StatCard label="Won" value="$0k" />
+            </View>
+          </View>
+        </>
+      )}
 
       {/* Controls just below black background */}
       <View style={styles.topControls}>
@@ -807,5 +810,4 @@ const styles = StyleSheet.create({
 
   // deprecated leftover styles removed
 });
-
 

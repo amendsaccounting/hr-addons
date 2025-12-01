@@ -2,15 +2,17 @@ import React, { useEffect, useRef, useState } from 'react';
 import { 
   View, Text, StyleSheet, Platform, StyleProp, ViewStyle, 
   KeyboardAvoidingView, Alert, StatusBar, ScrollView, Keyboard, 
-  TouchableWithoutFeedback, Image 
+  TouchableWithoutFeedback, Image, 
+  Pressable
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { validateEmail } from '../../utils/validators';
 import { getUserByEmail, getEmployeeByEmail } from '../../services/erpApi';
-import { logo } from '../../assets/images';
+import { logo, microsoft } from '../../assets/images';
 import TextField from '../../components/ui/TextField';
 import Button from '../../components/ui/Button';
+import { loginWithMicrosoft } from '../../services/microsoftAuth';
 
 type Props = {
   onSignedIn?: () => void;
@@ -70,6 +72,64 @@ export default function LoginScreen({ onSignedIn, onRegister }: Props) {
       setLoading(false);
     }
   };
+
+//   const handleMicrosoftLogin = async () => {
+//   try {
+//     const result = await loginWithMicrosoft();
+//     const email = result.additionalParameters?.email || '';
+//     if (!email.endsWith('@yourcompany.com')) {
+//       Alert.alert('Unauthorized', 'Please use your company email.');
+//       return;
+//     }
+
+//     await AsyncStorage.setItem('userEmail', email);
+
+//     const employee = await getEmployeeByEmail(email);
+//     if (employee) {
+//       await AsyncStorage.setItem('employeeId', employee.name);
+//     }
+
+//     onSignedIn && onSignedIn();
+//   } catch (err) {
+//     Alert.alert('Login Failed', 'Could not sign in with Microsoft.');
+//   }
+// };
+
+const handleMicrosoftLogin = async () => {
+  try {
+    // Call your Microsoft login function
+    const result = await loginWithMicrosoft();
+
+    // Log the full response
+    console.log('Microsoft login result:', result);
+
+    // Extract email from additionalParameters (if provided)
+    const email = result.additionalParameters?.email || '';
+    console.log('Extracted email:', email);
+
+    // Check company domain
+    if (!email.endsWith('@yourcompany.com')) {
+      Alert.alert('Unauthorized', 'Please use your company email.');
+      return;
+    }
+
+    // Store email locally
+    await AsyncStorage.setItem('userEmail', email);
+
+    // Fetch employee info
+    const employee = await getEmployeeByEmail(email);
+    if (employee) {
+      await AsyncStorage.setItem('employeeId', employee.name);
+    }
+
+    // Call signed in callback
+    onSignedIn && onSignedIn();
+  } catch (err) {
+    console.log('Microsoft login error:', err); // log the error for debugging
+    Alert.alert('Login Failed', 'Could not sign in with Microsoft.');
+  }
+};
+
 
   return (
     <View style={styles.container}>
@@ -135,11 +195,18 @@ export default function LoginScreen({ onSignedIn, onRegister }: Props) {
                 <View style={styles.line} />
               </View>
 
-              <Button
-                title="📷  Mark Attendance with Face"
-                variant="secondary"
-                style={{ marginTop: 4 }}
-              />
+       <Pressable
+  onPress={handleMicrosoftLogin}
+  style={({ pressed }) => [
+    styles.outlookButton,
+    pressed && styles.outlookButtonPressed,
+  ]}
+>
+  <View style={styles.outlookContent}>
+    <Image source={microsoft} style={styles.outlookLogo} />
+    <Text style={styles.outlookText}>Sign in with Outlook</Text>
+  </View>
+</Pressable>
 
               <View style={{ alignItems: 'center', marginTop: 16 }}>
                 <Text style={{ color: '#6b7280' }}>
@@ -170,4 +237,32 @@ const styles = StyleSheet.create({
   line: { flex: 1, height: 1, backgroundColor: '#e5e7eb' },
   or: { color: '#6b7280', marginHorizontal: 10 },
   link: { color: '#0b6dff', fontWeight: '700' },
+    outlookButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#0078D4',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 6,
+    marginTop: 4,
+  },
+  outlookButtonPressed: {
+    opacity: 0.7,
+  },
+  outlookContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  outlookLogo: {
+    width: 20,
+    height: 20,
+    marginRight: 8,
+  },
+  outlookText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+
 });

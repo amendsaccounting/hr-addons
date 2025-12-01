@@ -155,11 +155,16 @@ export default function LeaveScreen() {
 
   return (
     <View style={styles.screen}>
-      <StatusBar barStyle="light-content" backgroundColor="#090a1a" animated />
-      <View style={[styles.headerCard, { paddingTop: insets.top + 12 }]}> 
-        <Text style={styles.headerTitle}>Leave Management</Text>
-        <Text style={styles.headerSub}>Apply and track your leave</Text>
-      </View>
+      {/* Legacy header removed in favor of AppHeader */}
+      {false && (
+        <>
+          <StatusBar barStyle="light-content" backgroundColor="#090a1a" animated />
+          <View style={[styles.headerCard, { paddingTop: insets.top + 12 }]}> 
+            <Text style={styles.headerTitle}>Leave Management</Text>
+            <Text style={styles.headerSub}>Apply and track your leave</Text>
+          </View>
+        </>
+      )}
 
       <FlatList
         style={styles.content}
