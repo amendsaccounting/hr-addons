@@ -16,10 +16,7 @@ export default function RootNavigator() {
   const unlockedRef = useRef<boolean>(false);
   const appState = useRef(AppState.currentState);
 
-  useEffect(() => {
-    const t = setTimeout(() => { if (stage === 'splash') setStage('login'); }, 2800);
-    return () => clearTimeout(t);
-  }, [stage]);
+  // Show splash until navigation is explicitly triggered; no auto-advance
 
   const handleSplashFinish = async (tab: 'Dashboard' | 'Login') => {
     nextAfterLockRef.current = tab === 'Dashboard' ? 'tabs' : 'login';
@@ -47,6 +44,8 @@ export default function RootNavigator() {
       const prevState = appState.current;
       appState.current = nextState;
       if (prevState.match(/inactive|background/) && nextState === 'active') {
+        // While on splash, do not trigger lock routing
+        if (stage === 'splash') return;
         try {
           const pin = await AsyncStorage.getItem('app_lock_pin');
           if (pin) { unlockedRef.current = false; setStage('lock'); }
@@ -55,13 +54,11 @@ export default function RootNavigator() {
     };
     const sub = AppState.addEventListener('change', onChange);
     return () => { sub.remove(); };
-  }, []);
+  }, [stage]);
 
   if (stage === 'splash') {
     return (
-      <SplashScreen
-        onFinish={(tab) => { setInitialTab(tab === 'Dashboard' ? 'Dashboard' : 'Dashboard'); handleSplashFinish(tab); }}
-      />
+      <SplashScreen />
     );
   }
 
