@@ -1,129 +1,136 @@
-import * as React from 'react';
-import { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, StatusBar, Animated, Dimensions, Image } from 'react-native';
-import { logo } from '../assets/images';
-import { getSessionSidCookie } from '../services/secureStore';
+import React from 'react'
+import { View, StyleSheet, Image, StatusBar, Text } from 'react-native'
+import LinearGradient from 'react-native-linear-gradient'
+import { colors } from '../styles/theme'
+import { logo } from '../assets/images'
 
-const { height } = Dimensions.get('window');
+const BG_TOP = '#1b2445'
+const BG_BOTTOM = '#161f39'
+const ACCENT = '#61C9FF'
+// Sizing for the concentric logo wrapper
+const HALO = 116
+const RING = 96
+const CIRCLE = 82
 
-export default function SplashScreen({ onFinish }: { onFinish?: (nextTab: 'Dashboard' | 'Login') => void }) {
-  let LinearGradientComp: any = null;
-  let IoniconsComp: any = null;
-  let AsyncStorageMod: any = null;
-  try { LinearGradientComp = require('react-native-linear-gradient').default; } catch {}
-  try { IoniconsComp = require('react-native-vector-icons/Ionicons').default; } catch {}
-  try { AsyncStorageMod = require('@react-native-async-storage/async-storage').default; } catch {}
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const scaleAnim = useRef(new Animated.Value(0.5)).current;
-  const progressAnim = useRef(new Animated.Value(0)).current;
-
-
-useEffect(() => {
-  Animated.parallel([
-    Animated.timing(fadeAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
-    Animated.spring(scaleAnim, { toValue: 1, tension: 20, friction: 7, useNativeDriver: true }),
-  ]).start();
-
-  Animated.timing(progressAnim, { toValue: 1, duration: 2000, useNativeDriver: false }).start(async () => {
-    let next: 'Dashboard' | 'Login' = 'Login';
-    // let next: 'Dashboard' | 'Onboarding' = 'Onboarding';
-    try {
-      // Prefer secure session cookie if present
-      const sid = await getSessionSidCookie();
-      console.log('[splash] SID cookie from secure store:', sid ? 'present' : 'missing');
-      if (sid) {
-        next = 'Dashboard';
-      } else if (AsyncStorageMod) {
-        const userEmail = await AsyncStorageMod.getItem('userEmail');
-        if (userEmail) next = 'Dashboard';
-      }
-    } catch (err) {
-      console.log('AsyncStorage read error:', err);
-    }
-    onFinish && onFinish(next);
-  });
-}, [fadeAnim, scaleAnim, progressAnim, onFinish]);
-
-  const progressWidth = progressAnim.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] });
-
+const SplashScreen = () => {
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#1a1f36" />
-      {LinearGradientComp ? (
-        <LinearGradientComp colors={["#1a1f36", "#2d3561", "#1a1f36"]} style={StyleSheet.absoluteFillObject} />
-      ) : (
-        <View style={[StyleSheet.absoluteFillObject, { backgroundColor: '#1a1f36' }]} />
-      )}
+    <LinearGradient colors={[BG_TOP, BG_BOTTOM]} style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor={BG_TOP} />
 
-      <View style={styles.topSection}>
-<Animated.View style={[styles.logoContainer, { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }]}>
-  <View style={styles.logoCircle}>
-    <Image
-      source={logo}
-      style={{
-        width: 100,
-        height: 100,   
-        borderRadius: 50, 
-        resizeMode: 'cover',
-      }}
-    />
-  </View>
-</Animated.View>
-      </View>
-      <View style={styles.middleSection}>
-        <Animated.View style={[styles.textContainer, { opacity: fadeAnim }]}>
-          <Text style={styles.appName}>ADDON-S HR</Text>
-          <View style={styles.divider} />
-          <Text style={styles.tagline}>Employee Management System</Text>
-        </Animated.View>
-      </View>
-
-      <View style={styles.bottomSection}>
-        <Animated.View style={[styles.loadingContainer, { opacity: fadeAnim }]}>
-          <View style={styles.progressBarContainer}>
-            <Animated.View style={[styles.progressBar, { width: progressWidth }]} />
+      {/* Top logo with soft glow */}
+      <View style={styles.topArea} accessible accessibilityLabel="App logo">
+        <View style={styles.glowWrap}>
+          <View style={styles.halo} />
+          <View style={styles.logoRing}>
+            <View style={styles.logoCircle}>
+              <Image
+                source={logo}
+                style={styles.logo}
+                resizeMode="contain"
+                accessibilityIgnoresInvertColors
+                accessibilityLabel="Company logo"
+              />
+            </View>
           </View>
-          <Text style={styles.loadingText}>Loading...</Text>
-        </Animated.View>
-        <Animated.View style={[styles.footer, { opacity: fadeAnim }]}>
-          <Text style={styles.poweredBy}>Powered by ERPNext</Text>
-          <Text style={styles.version}>Version 1.0.0</Text>
-        </Animated.View>
+        </View>
       </View>
-    </View>
-  );
+
+      {/* Middle content */}
+      <View style={styles.centerArea}>
+        <Text style={styles.appName}>ADDON-S HR</Text>
+        <View style={styles.nameUnderline} />
+        <Text style={styles.subtitle}>Employee Management System</Text>
+        <Text style={styles.loading}>Loading...</Text>
+      </View>
+
+      {/* Footer */}
+      <View style={styles.footer}>
+        <Text style={styles.powered}>Powered by ERPNext</Text>
+      </View>
+    </LinearGradient>
+  )
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#1a1f36' },
-  topSection: { flex: 4, justifyContent: 'center', alignItems: 'center', paddingTop: height * 0.1 },
-  logoContainer: { justifyContent: 'center', alignItems: 'center' },
-logoCircle: {
-  width: 120,  // reduced from 140
-  height: 120, // reduced from 140
-  borderRadius: 60, // half of width/height
-  backgroundColor: 'rgba(255,255,255,0.1)',
-  justifyContent: 'center',
-  alignItems: 'center',
-  borderWidth: 3,
-  borderColor: 'rgba(255,255,255,0.2)',
-  shadowColor: '#fff',
-  shadowOffset: { width: 0, height: 0 },
-  shadowOpacity: 0.3,
-  shadowRadius: 20,
-  elevation: 10,
-},
-  middleSection: { flex: 4, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40 },
-  textContainer: { alignItems: 'center' },
-  appName: { fontSize: 34, fontWeight: 'bold', color: '#ffffff', letterSpacing: 1, marginBottom: 16 },
-  divider: { width: 60, height: 3, backgroundColor: '#64b5f6', borderRadius: 2, marginBottom: 16 },
-  tagline: { fontSize: 16, color: '#b0bec5', letterSpacing: 0.5, fontWeight: '400' },
-  bottomSection: { flex: 2, justifyContent: 'space-between', alignItems: 'center', paddingBottom: 40 },
-  loadingContainer: { width: '100%', alignItems: 'center', paddingHorizontal: 60 },
-  progressBarContainer: { width: '100%', height: 4, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 2, overflow: 'hidden', marginBottom: 16 },
-  progressBar: { height: '100%', backgroundColor: '#64b5f6', borderRadius: 2 },
-  loadingText: { fontSize: 14, color: '#90a4ae', fontWeight: '500', letterSpacing: 1 },
-  footer: { alignItems: 'center' },
-  poweredBy: { fontSize: 12, color: '#78909c', fontWeight: '400' },
-  version: { fontSize: 11, color: '#546e7a', fontWeight: '300' },
-});
+  container: {
+    flex: 1,
+    paddingTop: 56,
+    paddingBottom: 28,
+    paddingHorizontal: 24,
+    justifyContent: 'space-between',
+  },
+  topArea: {
+    alignItems: 'center',
+  },
+  glowWrap: {
+    width: HALO,
+    height: HALO,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  halo: {
+    position: 'absolute',
+    width: HALO,
+    height: HALO,
+    borderRadius: HALO / 2,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  logoRing: {
+    width: RING,
+    height: RING,
+    borderRadius: RING / 2,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logoCircle: {
+    width: CIRCLE,
+    height: CIRCLE,
+    borderRadius: CIRCLE / 2,
+    overflow: 'hidden',
+    backgroundColor: '#0b2a7a',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logo: {
+    width: '100%',
+    height: '100%',
+    borderRadius: CIRCLE / 2,
+  },
+  centerArea: {
+    alignItems: 'center',
+  },
+  appName: {
+    color: colors.white,
+    fontSize: 24,
+    fontWeight: '800',
+    letterSpacing: 1,
+  },
+  nameUnderline: {
+    marginTop: 10,
+    width: 64,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: ACCENT,
+  },
+  subtitle: {
+    marginTop: 12,
+    color: '#c6d0e1',
+    fontSize: 14,
+    letterSpacing: 0.2,
+  },
+  loading: {
+    marginTop: 32,
+    color: '#9aa5b1',
+    fontSize: 14,
+  },
+  footer: {
+    alignItems: 'center',
+  },
+  powered: {
+    color: '#8e9ab3',
+    fontSize: 12,
+  },
+})
+
+export default SplashScreen

@@ -20,8 +20,12 @@ export default function RootNavigator() {
   const stageRef = useRef(stage);
   useEffect(() => { stageRef.current = stage; try { console.log('[root] stage →', stage); } catch {} }, [stage]);
 
+  // Stay on splash; no auto-navigation to login
+  // (Removed timer that moved from 'splash' to 'login')
+  // Navigate to Login after 3 seconds when on splash
   useEffect(() => {
-    const t = setTimeout(() => { if (stage === 'splash') setStage('login'); }, 2800);
+    if (stage !== 'splash') return;
+    const t = setTimeout(() => setStage('login'), 3000);
     return () => clearTimeout(t);
   }, [stage]);
 
@@ -81,11 +85,7 @@ export default function RootNavigator() {
   }, [stage]);
 
   if (stage === 'splash') {
-    return (
-      <SplashScreen
-        onFinish={(tab) => { setInitialTab(tab === 'Dashboard' ? 'HomeScreen' as TabName : 'HomeScreen' as TabName); handleSplashFinish(tab); }}
-      />
-    );
+    return <SplashScreen />;
   }
 
   if (stage === 'lock') {
