@@ -22,10 +22,10 @@ export default function RootNavigator() {
     try { console.log('[root] stage →', stage); } catch {}
   }, [stage]);
 
-  // Navigate to Login after 3 seconds when on splash
+  // Advance from splash after 3 seconds
   useEffect(() => {
     if (stage !== 'splash') return;
-    const t = setTimeout(() => setStage('login'), 3000);
+    const t = setTimeout(() => setStage('tabs'), 3000);
     return () => clearTimeout(t);
   }, [stage]);
 
@@ -95,4 +95,3 @@ export default function RootNavigator() {
 
   return <TabNavigator initialTab={initialTab} />;
 }
-

@@ -10,6 +10,15 @@ import { enableScreens } from 'react-native-screens';
 enableScreens(true);
 
 import { AppRegistry } from 'react-native';
+// React 19 compatibility for libs expecting `react.default`
+try {
+  // Deliberately import after native shims, before App
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const React = require('react');
+  if (React && !('default' in React)) {
+    React.default = React;
+  }
+} catch {}
 import App from './App';
 import { name as appName } from './app.json';
 AppRegistry.registerComponent(appName, () => App);
