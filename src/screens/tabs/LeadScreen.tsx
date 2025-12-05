@@ -19,7 +19,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { listLeads, type Lead as ERPLead, createTaskForLead, createEventForLead, countLeads, listUserSuggestions, fetchLeadStatusOptions } from '../../services/leadService';
-import DateTimePicker from '@react-native-community/datetimepicker';
+// import DateTimePicker from '@react-native-community/datetimepicker';
 import { launchImageLibrary, Asset } from 'react-native-image-picker';
 
 (Ionicons as any)?.loadFont?.();
