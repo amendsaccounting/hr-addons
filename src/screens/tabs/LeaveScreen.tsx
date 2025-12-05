@@ -22,7 +22,7 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 
 (Ionicons as any)?.loadFont?.();
 import { computeLeaveBalances, fetchLeaveHistory, applyLeave } from '../../services/leave';
-import DateTimePicker from '@react-native-community/datetimepicker';
+// import DateTimePicker from '@react-native-community/datetimepicker';
 
 // Types and sample data kept outside to avoid redeclaration on re-renders
 type ReqItem = {
