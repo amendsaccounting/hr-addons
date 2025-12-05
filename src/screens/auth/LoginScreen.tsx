@@ -1,4 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
+import * as React from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { 
   View, Text, StyleSheet, Platform, StyleProp, ViewStyle, 
   KeyboardAvoidingView, Alert, StatusBar, ScrollView, Keyboard, 
@@ -6,13 +7,14 @@ import {
   Pressable
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { validateEmail, validateRequired } from '../../utils/validators';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { validateEmail } from '../../utils/validators';
-import { getUserByEmail, getEmployeeByEmail } from '../../services/erpApi';
-import { logo, microsoft } from '../../assets/images';
+import { logo } from '../../assets/images';
 import TextField from '../../components/ui/TextField';
 import Button from '../../components/ui/Button';
-import { loginWithMicrosoft } from '../../services/microsoftAuth';
+import { loginWithPassword, isPasswordAuthConfigured } from '../../services/authentication';
+import { getEmployeeByEmail, getEmployeeIdByEmail } from '../../services/erpApi';
+import { storeSessionSidCookie } from '../../services/secureStore';
 
 type Props = {
   onSignedIn?: () => void;
@@ -28,6 +30,9 @@ export default function LoginScreen({ onSignedIn, onRegister }: Props) {
 
   const [email, setEmail] = useState('');
   const [emailError, setEmailError] = useState<string | null>(null);
+  const [password, setPassword] = useState('');
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -48,26 +53,52 @@ export default function LoginScreen({ onSignedIn, onRegister }: Props) {
       setEmailError(err); 
       return; 
     }
+    const perr = validateRequired('Password', password);
+    if (perr) {
+      setPasswordError(perr);
+      return;
+    }
+
+    if (!isPasswordAuthConfigured()) {
+      Alert.alert('Not Configured', 'Password login is not configured. Please set ERP_URL_METHOD or ERP_URL_RESOURCE in .env.');
+      return;
+    }
 
     setLoading(true);
     try {
-      const user = await getUserByEmail(email.trim());
-      if (!user) {
-        setEmailError('Email does not exist.');
-        return;
+      const res = await loginWithPassword(email.trim(), password);
+      console.log('[login] loginWithPassword response', res);
+      if (res.ok) {
+        if (res.cookie) {
+          const saved = await storeSessionSidCookie(res.cookie);
+          console.log('[login] stored SID cookie in secure storage:', saved);
+        }
+        try {
+          await AsyncStorage.setItem('userEmail', email.trim());
+          if (res.fullName) { await AsyncStorage.setItem('userFullName', res.fullName); }
+          if (res.userImage) { await AsyncStorage.setItem('userImage', res.userImage); }
+          if (res.userId) { await AsyncStorage.setItem('userId', res.userId); }
+          let empId = await getEmployeeIdByEmail(email.trim());
+          if (!empId) {
+            const employee = await getEmployeeByEmail(email.trim());
+            empId = employee?.name ? String(employee.name) : null;
+          }
+          if (empId) {
+            await AsyncStorage.setItem('employeeId', empId);
+            console.log('[login] stored employeeId:', empId);
+          } else {
+            console.log('[login] employee not found for email, continuing without employeeId');
+          }
+        } catch (e) {
+          console.log('[login] failed storing user/employee info:', e);
+        }
+        onSignedIn && onSignedIn();
+      } else {
+        Alert.alert('Login Failed', res.error || 'Invalid credentials');
       }
-
-      await AsyncStorage.setItem('userEmail', user.email);
-
-      const employee = await getEmployeeByEmail(user.email);
-      if (employee) {
-        await AsyncStorage.setItem('employeeId', employee.name);
-      }
-
-      onSignedIn && onSignedIn();
     } catch (error) {
-      console.log('Login error:', error);
-      Alert.alert('Error', 'Something went wrong. Please try again.');
+      console.log('Password login error:', error);
+      Alert.alert('Login Failed', 'Something went wrong. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -95,40 +126,7 @@ export default function LoginScreen({ onSignedIn, onRegister }: Props) {
 //   }
 // };
 
-const handleMicrosoftLogin = async () => {
-  try {
-    // Call your Microsoft login function
-    const result = await loginWithMicrosoft();
-
-    // Log the full response
-    console.log('Microsoft login result:', result);
-
-    // Extract email from additionalParameters (if provided)
-    const email = result.additionalParameters?.email || '';
-    console.log('Extracted email:', email);
-
-    // Check company domain
-    if (!email.endsWith('@yourcompany.com')) {
-      Alert.alert('Unauthorized', 'Please use your company email.');
-      return;
-    }
-
-    // Store email locally
-    await AsyncStorage.setItem('userEmail', email);
-
-    // Fetch employee info
-    const employee = await getEmployeeByEmail(email);
-    if (employee) {
-      await AsyncStorage.setItem('employeeId', employee.name);
-    }
-
-    // Call signed in callback
-    onSignedIn && onSignedIn();
-  } catch (err) {
-    console.log('Microsoft login error:', err); // log the error for debugging
-    Alert.alert('Login Failed', 'Could not sign in with Microsoft.');
-  }
-};
+// Microsoft login removed for password-based authentication
 
 
   return (
@@ -171,6 +169,7 @@ const handleMicrosoftLogin = async () => {
             ]}>
               
               <TextField
+                label="Email"
                 value={email}
                 onChangeText={(t) => { setEmail(t); if (emailError) setEmailError(null); }}
                 onBlur={() => setEmailError(validateEmail(email))}
@@ -178,35 +177,35 @@ const handleMicrosoftLogin = async () => {
                 keyboardType="email-address"
                 autoCapitalize="none"
                 autoComplete="email"
-                error={emailError || undefined}
-                icon="📧"
+                errorText={emailError || undefined}
+                leftIcon="mail-outline"
+              />
+
+              <View style={{ height: 12 }} />
+
+              <TextField
+                label="Password"
+                value={password}
+                onChangeText={(t) => { setPassword(t); if (passwordError) setPasswordError(null); }}
+                onBlur={() => setPasswordError(validateRequired('Password', password))}
+                placeholder="Enter your password"
+                secureTextEntry={!showPassword}
+                autoCapitalize="none"
+                autoComplete="password"
+                errorText={passwordError || undefined}
+                leftIcon="lock-closed-outline"
+                rightIcon={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                onRightPress={() => setShowPassword(p => !p)}
               />
 
               <Button
-                title={loading ? 'Please wait…' : 'Continue'}
+                title={loading ? 'Please wait…' : 'Login'}
                 onPress={onContinue}
                 disabled={loading}
                 style={{ marginTop: 12 }}
               />
 
-              <View style={styles.dividerRow}>
-                <View style={styles.line} />
-                <Text style={styles.or}>OR</Text>
-                <View style={styles.line} />
-              </View>
-
-       <Pressable
-  onPress={handleMicrosoftLogin}
-  style={({ pressed }) => [
-    styles.outlookButton,
-    pressed && styles.outlookButtonPressed,
-  ]}
->
-  <View style={styles.outlookContent}>
-    <Image source={microsoft} style={styles.outlookLogo} />
-    <Text style={styles.outlookText}>Sign in with Outlook</Text>
-  </View>
-</Pressable>
+              {/* Removed Microsoft login for password-based authentication */}
 
               <View style={{ alignItems: 'center', marginTop: 16 }}>
                 <Text style={{ color: '#6b7280' }}>

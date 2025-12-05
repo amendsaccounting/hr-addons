@@ -1,4 +1,5 @@
-import React, { useMemo, useState, useCallback, useEffect } from 'react';
+import * as React from 'react';
+import { useMemo, useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -810,4 +811,3 @@ const styles = StyleSheet.create({
 
   // deprecated leftover styles removed
 });
-

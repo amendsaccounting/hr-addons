@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import * as React from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, Animated, Easing, LayoutChangeEvent, TextInput, Alert, Dimensions } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -12,7 +13,8 @@ export default function ExpenseScreen() {
   const segAnim = useRef(new Animated.Value(0)).current; // 0 -> Submit, 1 -> History
   const [segWidth, setSegWidth] = useState(0);
   const [showModal, setShowModal] = useState(false);
-  const [headerHeight, setHeaderHeight] = useState(0);
+  // Use a consistent gap below the AppHeader
+  const headerGap = insets.top + 56 + 8; // safe area + header height + small spacing
   const [categoryOpen, setCategoryOpen] = useState(false);
   const [category, setCategory] = useState<string>('');
 const [categories, setCategories] = useState<string[]>([]);
@@ -129,63 +131,57 @@ useEffect(() => {
 // };
 
 const handleSubmit = async () => {
-  if (!category || !amount || !expDate) {
-    Alert.alert('Error', 'Please fill in all required fields');
+  // Basic required validations
+  if (!category?.trim() || !amount?.trim() || !expDate?.trim() || !desc?.trim()) {
+    Alert.alert('Missing Fields', 'Please fill in category, amount, date and description.');
     return;
   }
 
   try {
     const employeeId = await AsyncStorage.getItem('employeeId');
-    console.log('Employee ID from storage:', employeeId); // Debug log
-    
     if (!employeeId) {
       Alert.alert('Error', 'Could not determine employee information. Please log in again.');
       return;
     }
 
-    const expenseData = {
-      employee: employeeId,
-      expense_type: category,
-      expenses: [{
-        expense_date: expDate,
-        description: desc,
-        amount: parseFloat(amount),
-      }],
-      company: 'Your Company Name', // Make sure to set this
-      posting_date: new Date().toISOString().split('T')[0], // Current date in YYYY-MM-DD
-    };
+    // Build input for service
+    const input = {
+      employeeId: String(employeeId),
+      category: String(category),
+      amount: String(amount),
+      expenseDate: String(expDate), // expected DD/MM/YYYY by service
+      description: String(desc),
+      receiptUri: receiptUri || undefined,
+      receiptName: receiptName || undefined,
+    } as const;
 
-    console.log('Submitting expense data:', JSON.stringify(expenseData, null, 2));
-    
-    const result = await erpNextService.submitExpenseClaim(expenseData);
-    console.log('API Response:', JSON.stringify(result, null, 2));
-    
-    if (result.success) {
-      Alert.alert('Success', 'Expense submitted successfully!');
+    console.log('[expense] submit input', input);
+    const result = await erpNextService.submitExpenseClaim(input as any);
+    console.log('[expense] submit result', result);
+
+    if (result?.success) {
+      Alert.alert('Success', result.message || 'Expense submitted successfully!');
       setShowModal(false);
       setCategory('');
       setAmount('');
       setExpDate('');
       setDesc('');
+      setReceiptUri('');
+      setReceiptName('');
     } else {
-      Alert.alert('Error', result.message || 'Failed to submit expense');
+      Alert.alert('Error', result?.message || 'Failed to submit expense');
     }
   } catch (error: any) {
-    console.error('Detailed error:', {
-      message: error.message,
-      response: error.response?.data,
-      status: error.response?.status,
-    });
-    Alert.alert('Error', error.message || 'An error occurred while submitting the expense');
+    console.error('[expense] submit error', error);
+    Alert.alert('Error', error?.message || 'An error occurred while submitting the expense');
   }
 };
 
 
   return (
     <View style={styles.screen}>
-      {/* Legacy header removed in favor of AppHeader */}
       {false && (
-        <View style={[styles.headerCard, { paddingTop: insets.top + 12 }]} onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}>
+        <View style={[styles.headerCard, { paddingTop: insets.top + 12 }]}>
           <View style={styles.headerRow}>
             <Ionicons name="card-outline" size={18} color="#fff" style={{ marginRight: 8 }} />
             <Text style={styles.headerTitle}>Expense Reimbursement</Text>
@@ -271,12 +267,11 @@ const handleSubmit = async () => {
           </>
         )}
       </ScrollView>
-      {/* Modal */}
       {showModal && (
-        <View style={[styles.modalOverlay, { top: headerHeight }]}>
+        <View style={[styles.modalOverlay, { top: headerGap }]}>
           <View style={[
             styles.modalCard,
-            { paddingBottom: insets.bottom + 12, maxHeight: Math.max(320, Math.round(Dimensions.get('window').height - headerHeight - insets.bottom - 8)) }
+            { paddingBottom: insets.bottom + 12, maxHeight: Math.max(320, Math.round(Dimensions.get('window').height - headerGap - insets.bottom - 8)) }
           ]}>
             <ScrollView contentContainerStyle={styles.modalContent} showsVerticalScrollIndicator={false}>
             <View style={styles.modalHeader}>
@@ -286,8 +281,6 @@ const handleSubmit = async () => {
               </Pressable>
             </View>
             <Text style={styles.modalSubtitle}>Submit a new expense reimbursement request</Text>
-
-            {/* Category */}
             <Text style={styles.fieldLabel}>Category <Text style={{ color: '#ef4444' }}>*</Text></Text>
             <Pressable style={styles.inputRow} onPress={() => setCategoryOpen((v) => !v)}>
               <Ionicons name="list-outline" size={16} color="#6b7280" style={{ marginRight: 6 }} />
@@ -320,8 +313,6 @@ const handleSubmit = async () => {
                 )}
               </View>
             )}
-
-            {/* Amount */}
             <Text style={styles.fieldLabel}>Amount <Text style={{ color: '#ef4444' }}>*</Text></Text>
             <View style={styles.inputRow}>
               <Ionicons name="cash-outline" size={16} color="#6b7280" style={{ marginRight: 6 }} />

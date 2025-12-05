@@ -30,6 +30,10 @@ export type EmployeeProfile = {
   branch?: string | null;
   designation?: string | null;
   image?: string | null;
+  company?: string | null;
+  reports_to?: string | null;
+  employment_type?: string | null;
+  grade?: string | null;
 };
 
 export type ProfileView = {
@@ -42,6 +46,10 @@ export type ProfileView = {
   joinDate?: string | null;
   location?: string | null;
   role?: string | null;
+  company?: string | null;
+  reportsTo?: string | null;
+  employmentType?: string | null;
+  grade?: string | null;
 };
 
 function mapToView(e: EmployeeProfile): ProfileView {
@@ -67,6 +75,10 @@ function mapToView(e: EmployeeProfile): ProfileView {
     joinDate: e.date_of_joining || null,
     location: e.branch || null,
     role: e.designation || null,
+    company: e.company || null,
+    reportsTo: e.reports_to || null,
+    employmentType: e.employment_type || null,
+    grade: e.grade || null,
   };
 }
 
@@ -90,7 +102,7 @@ export async function fetchEmployeeProfile(employeeId: string): Promise<ProfileV
       params: {
         filters: JSON.stringify([["name", "=", id]]),
         fields: JSON.stringify([
-          'name','full_name','company_email','personal_email','mobile_no','department','date_of_joining','branch','designation','image'
+          'name','full_name','company_email','personal_email','mobile_no','department','date_of_joining','branch','designation','image','company','reports_to','employment_type','grade'
         ]),
         limit_page_length: 1,
       },
