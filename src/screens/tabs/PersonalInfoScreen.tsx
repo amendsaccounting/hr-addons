@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import * as React from 'react';
+import { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, StatusBar, Image, TextInput, Alert, Platform, Linking } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -172,7 +173,6 @@ const styles = StyleSheet.create({
   smallLabel: { color: '#6b7280', fontSize: 12 },
   input: { borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 8, paddingHorizontal: 10, paddingVertical: Platform.OS === 'ios' ? 10 : 6, color: '#111827' },
 });
-
 
 
 

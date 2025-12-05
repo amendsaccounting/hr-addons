@@ -1,4 +1,4 @@
-import React from 'react';
+import * as React from 'react';
 import { View, TextInput, Text, StyleSheet, TextInputProps, Pressable } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { colors, radii, spacing } from '../../styles/theme';
@@ -8,9 +8,11 @@ type Props = TextInputProps & {
   leftIcon?: string;
   errorText?: string | null;
   onPress?: () => void; // Optional press handler to make field behave like a picker
+  rightIcon?: string;
+  onRightPress?: () => void;
 };
 
-export default function TextField({ label, leftIcon, errorText, style, onPress, ...inputProps }: Props) {
+export default function TextField({ label, leftIcon, rightIcon, onRightPress, errorText, style, onPress, ...inputProps }: Props) {
   const Row: any = onPress ? Pressable : View;
   return (
     <View>
@@ -26,6 +28,11 @@ export default function TextField({ label, leftIcon, errorText, style, onPress, 
           pointerEvents={onPress ? 'none' as any : undefined}
           {...inputProps}
         />
+        {rightIcon ? (
+          <Pressable onPress={onRightPress} accessibilityRole="button" hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Ionicons name={rightIcon as any} size={18} color={colors.textMuted} style={styles.rightIcon} />
+          </Pressable>
+        ) : null}
       </Row>
       {errorText ? <Text style={styles.errorText}>{errorText}</Text> : null}
     </View>
@@ -45,5 +52,6 @@ const styles = StyleSheet.create({
   },
   leftIcon: { marginLeft: spacing.lg, marginRight: spacing.sm, color: colors.textMuted },
   input: { flex: 1, paddingHorizontal: spacing.sm, color: colors.text },
+  rightIcon: { marginRight: spacing.lg, marginLeft: spacing.sm, color: colors.textMuted },
   errorText: { color: colors.error, marginTop: spacing.xs },
 });

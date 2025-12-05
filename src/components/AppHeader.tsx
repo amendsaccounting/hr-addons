@@ -1,12 +1,13 @@
-import React from 'react';
-import { View, Text, StyleSheet, Pressable, Image, Platform, ViewStyle, TextStyle, ImageSourcePropType } from 'react-native';
+import * as React from 'react';
+import { View, Text, StyleSheet, Pressable, Image, Platform, ViewStyle, TextStyle, ImageSourcePropType, StatusBar } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 (Ionicons as any)?.loadFont?.();
+import { back as BackImage } from '../assets/images';
 
 type RightItem =
   | { type: 'bell'; onPress?: () => void; badgeCount?: number }
-  | { type: 'avatar'; onPress?: () => void; uri?: string; source?: ImageSourcePropType }
+  | { type: 'avatar'; onPress?: () => void; uri?: string; source?: ImageSourcePropType; label?: string }
   | { type: 'custom'; element: React.ReactNode };
 
 type Props = {
@@ -20,7 +21,7 @@ type Props = {
   subtitleStyle?: TextStyle;
   bottomBorder?: boolean;
   variant?: 'light' | 'dark';
-  backgroundColor?: string; // overrides variant color
+  backgroundColor?: string;
 };
 
 export default function AppHeader({
@@ -57,6 +58,7 @@ export default function AppHeader({
         containerStyle,
       ]}
     >
+      <StatusBar animated barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={bg} />
       <View style={styles.row}>
         <View style={styles.leftRow}>
           {showBack && (
@@ -64,9 +66,10 @@ export default function AppHeader({
               accessibilityRole="button"
               accessibilityLabel="Go back"
               onPress={onBack}
-              style={[styles.iconBtn, { borderColor: ringColor, backgroundColor: isDark ? 'transparent' : '#fff' }]}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              style={styles.backPlain}
             >
-              <Ionicons name="chevron-back" size={20} color={iconColor} />
+              <Image source={BackImage as any} style={[styles.backImage, { tintColor: iconColor }]} />
             </Pressable>
           )}
           <View style={styles.titleBox}>
@@ -111,9 +114,11 @@ export default function AppHeader({
                 >
                   {avatar ? (
                     <Image source={avatar} style={styles.avatar} />
+                  ) : (item.label ? (
+                    <Text style={[styles.avatarInitial, { color: iconColor }]}>{String(item.label).slice(0,1).toUpperCase()}</Text>
                   ) : (
                     <Ionicons name="person-outline" size={18} color={iconColor} />
-                  )}
+                  ))}
                 </Pressable>
               );
             }
@@ -137,7 +142,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   leftRow: { flexDirection: 'row', alignItems: 'center', flex: 1, minWidth: 0 },
-  titleBox: { marginLeft: 2, flexShrink: 1 },
+  titleBox: { marginLeft: 10, flexShrink: 1 },
   title: { fontSize: 20, fontWeight: '700', color: '#111827' },
   subtitle: { fontSize: 12, color: '#6b7280', marginTop: 2 },
   rightRow: { flexDirection: 'row', alignItems: 'center' },
@@ -152,12 +157,15 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#e5e7eb',
   },
+  backPlain: { paddingHorizontal: 4, paddingVertical: 6, marginRight: 4 },
+  backImage: { width: 20, height: 20, resizeMode: 'contain' },
   iconPlain: {
     position: 'relative',
     alignItems: 'center',
     justifyContent: 'center',
   },
   avatar: { width: 22, height: 22, borderRadius: 11 },
+  avatarInitial: { fontSize: 12, fontWeight: '700' },
   badge: {
     position: 'absolute',
     top: -2,

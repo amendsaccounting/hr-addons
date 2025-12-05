@@ -1,6 +1,8 @@
-import React, { useEffect, useRef } from 'react';
+import * as React from 'react';
+import { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, StatusBar, Animated, Dimensions, Image } from 'react-native';
 import { logo } from '../assets/images';
+import { getSessionSidCookie } from '../services/secureStore';
 
 const { height } = Dimensions.get('window');
 
@@ -26,12 +28,14 @@ useEffect(() => {
     let next: 'Dashboard' | 'Login' = 'Login';
     // let next: 'Dashboard' | 'Onboarding' = 'Onboarding';
     try {
-      if (AsyncStorageMod) {
+      // Prefer secure session cookie if present
+      const sid = await getSessionSidCookie();
+      console.log('[splash] SID cookie from secure store:', sid ? 'present' : 'missing');
+      if (sid) {
+        next = 'Dashboard';
+      } else if (AsyncStorageMod) {
         const userEmail = await AsyncStorageMod.getItem('userEmail');
-        const employeeId = await AsyncStorageMod.getItem('employeeId');
-        if (userEmail) {
-          next = 'Dashboard';
-        }
+        if (userEmail) next = 'Dashboard';
       }
     } catch (err) {
       console.log('AsyncStorage read error:', err);

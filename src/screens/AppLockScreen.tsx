@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import * as React from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, Pressable, Alert, KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard, ScrollView, Animated, Easing } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -9,7 +10,7 @@ type Mode = 'verify' | 'setup';
 export default function AppLockScreen({ onUnlocked, onCancel }: { onUnlocked: () => void; onCancel?: () => void }) {
   // TEMP: App lock disabled — immediately unlock and skip PIN UI
   // Commenting out logic by short-circuiting the component render.
-  React.useEffect(() => { onUnlocked(); }, []);
+  useEffect(() => { onUnlocked(); }, []);
   return null;
 
   const insets = useSafeAreaInsets();

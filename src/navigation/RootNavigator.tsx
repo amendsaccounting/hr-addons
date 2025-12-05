@@ -1,4 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
+import * as React from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
 import SplashScreen from '../screens/SplashScreen';
 import TabNavigator, { TabName } from './TabNavigator';
@@ -7,11 +8,12 @@ import RegisterScreen from '../screens/auth/RegisterScreen';
 import AppLockScreen from '../screens/AppLockScreen';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import OnboardingScreen from '../screens/auth/OnboardingScreen';
+import { addLogoutListener } from '../services/session';
 
 export default function RootNavigator() {
   // const [stage, setStage] = useState<'splash' | 'lock' | 'login' | 'register' | 'tabs'>('splash');
   const [stage, setStage] = useState<'splash' | 'lock' | 'onboarding' | 'login' | 'register' | 'tabs'>('splash');
-  const [initialTab, setInitialTab] = useState<TabName>('Dashboard');
+  const [initialTab, setInitialTab] = useState<TabName>('HomeScreen');
   const nextAfterLockRef = useRef<'login' | 'tabs'>('login');
   const unlockedRef = useRef<boolean>(false);
   const appState = useRef(AppState.currentState);
@@ -20,6 +22,15 @@ export default function RootNavigator() {
     const t = setTimeout(() => { if (stage === 'splash') setStage('login'); }, 2800);
     return () => clearTimeout(t);
   }, [stage]);
+
+  // Listen for global logout requests
+  useEffect(() => {
+    const off = addLogoutListener(() => {
+      try { console.log('[root] received logout request; navigating to login'); } catch {}
+      setStage('login');
+    });
+    return () => { try { off(); } catch {} };
+  }, []);
 
   const handleSplashFinish = async (tab: 'Dashboard' | 'Login') => {
     nextAfterLockRef.current = tab === 'Dashboard' ? 'tabs' : 'login';
@@ -60,7 +71,7 @@ export default function RootNavigator() {
   if (stage === 'splash') {
     return (
       <SplashScreen
-        onFinish={(tab) => { setInitialTab(tab === 'Dashboard' ? 'Dashboard' : 'Dashboard'); handleSplashFinish(tab); }}
+        onFinish={(tab) => { setInitialTab(tab === 'Dashboard' ? 'HomeScreen' as TabName : 'HomeScreen' as TabName); handleSplashFinish(tab); }}
       />
     );
   }
@@ -79,7 +90,7 @@ export default function RootNavigator() {
   if (stage === 'login') {
     return (
       <LoginScreen
-        onSignedIn={() => { setInitialTab('Dashboard'); setStage('tabs'); }}
+        onSignedIn={() => { setInitialTab('HomeScreen' as TabName); setStage('tabs'); }}
         onRegister={() => { setStage('register'); }}
       />
     );
@@ -89,7 +100,7 @@ export default function RootNavigator() {
     return (
       <RegisterScreen
         onLogin={() => setStage('login')}
-        onRegistered={() => { setInitialTab('Dashboard'); setStage('tabs'); }}
+        onRegistered={() => { setInitialTab('HomeScreen' as TabName); setStage('tabs'); }}
       />
     );
   }

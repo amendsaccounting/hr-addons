@@ -1,4 +1,4 @@
-import React from 'react';
+import * as React from 'react';
 import { Pressable, Text, StyleSheet, ActivityIndicator, ViewStyle, StyleProp } from 'react-native';
 import { colors, radii, spacing } from '../../styles/theme';
 
@@ -49,4 +49,3 @@ const styles = StyleSheet.create({
   },
   text: { fontWeight: '700' },
 });
-
