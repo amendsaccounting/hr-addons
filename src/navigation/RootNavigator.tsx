@@ -7,21 +7,21 @@ import LoginScreen from '../screens/auth/LoginScreen';
 import RegisterScreen from '../screens/auth/RegisterScreen';
 let AsyncStorage: any = null;
 try { AsyncStorage = require('@react-native-async-storage/async-storage').default; } catch {}
-import OnboardingScreen from '../screens/auth/OnboardingScreen';
 import { addLogoutListener } from '../services/session';
 
 export default function RootNavigator() {
-  // const [stage, setStage] = useState<'splash' | 'lock' | 'login' | 'register' | 'tabs'>('splash');
-  const [stage, setStage] = useState<'splash' | 'lock' | 'onboarding' | 'login' | 'register' | 'tabs'>('splash');
+  const [stage, setStage] = useState<'splash' | 'lock' | 'login' | 'register' | 'tabs'>('splash');
   const [initialTab, setInitialTab] = useState<TabName>('HomeScreen');
   const nextAfterLockRef = useRef<'login' | 'tabs'>('login');
   const unlockedRef = useRef<boolean>(false);
   const appState = useRef(AppState.currentState);
   const stageRef = useRef(stage);
-  useEffect(() => { stageRef.current = stage; try { console.log('[root] stage →', stage); } catch {} }, [stage]);
 
-  // Stay on splash; no auto-navigation to login
-  // (Removed timer that moved from 'splash' to 'login')
+  useEffect(() => {
+    stageRef.current = stage;
+    try { console.log('[root] stage →', stage); } catch {}
+  }, [stage]);
+
   // Navigate to Login after 3 seconds when on splash
   useEffect(() => {
     if (stage !== 'splash') return;
@@ -38,32 +38,14 @@ export default function RootNavigator() {
     return () => { try { off(); } catch {} };
   }, []);
 
-  const handleSplashFinish = async (tab: 'Dashboard' | 'Login') => {
-    nextAfterLockRef.current = tab === 'Dashboard' ? 'tabs' : 'login';
-    setStage('lock');
-  };
-
-//   const handleSplashFinish = async () => {
-//   try {
-//     const userEmail = await AsyncStorage.getItem('userEmail');
-//     if (!userEmail) {
-//       setStage('onboarding');
-//       return;
-//     }
-//     nextAfterLockRef.current = 'tabs';
-//     setStage('lock');
-//   } catch (err) {
-//     console.log('AsyncStorage error:', err);
-//     setStage('login');
-//   }
-// };
-
   // Lock the app on returning to foreground if a PIN exists
   useEffect(() => {
     const onChange = async (nextState: AppStateStatus) => {
       const prevState = appState.current;
       appState.current = nextState;
       if (prevState.match(/inactive|background/) && nextState === 'active') {
+        // While on splash, do not trigger lock routing
+        if (stage === 'splash') return;
         try {
           const pin = await AsyncStorage.getItem('app_lock_pin');
           if (pin) { unlockedRef.current = false; setStage('lock'); }
@@ -72,7 +54,7 @@ export default function RootNavigator() {
     };
     const sub = AppState.addEventListener('change', onChange);
     return () => { sub.remove(); };
-  }, []);
+  }, [stage]);
 
   // Watchdog: if we remain on 'lock' for too long, auto-advance
   useEffect(() => {
@@ -89,14 +71,8 @@ export default function RootNavigator() {
   }
 
   if (stage === 'lock') {
-    return (
-      <AppLockScreen
-        onUnlocked={() => {
-          unlockedRef.current = true;
-          setStage(nextAfterLockRef.current);
-        }}
-      />
-    );
+    // Show nothing while the watchdog advances to next stage
+    return null;
   }
 
   if (stage === 'login') {
@@ -117,14 +93,6 @@ export default function RootNavigator() {
     );
   }
 
-  if (stage === 'onboarding') {
-  return (
-    <OnboardingScreen
-      onContinue={() => setStage('login')} // After completing onboarding, go to login
-    />
-  );
-}
-
-
   return <TabNavigator initialTab={initialTab} />;
 }
+
