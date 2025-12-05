@@ -1,5 +1,10 @@
 import axios from 'axios';
-import Config from 'react-native-config';
+// Load react-native-config defensively to avoid native module null on startup
+let Config: any = {};
+try {
+  const mod = require('react-native-config');
+  Config = mod?.default ?? mod ?? {};
+} catch {}
 
 function pickEnv(...keys: string[]): string {
   for (const k of keys) {

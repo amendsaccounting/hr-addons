@@ -13,7 +13,13 @@ import ProfileScreen from '../screens/tabs/ProfileScreen'
 import HomeScreen from '../screens/tabs/HomeScreen';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { fetchEmployeeProfile } from '../services/profile';
-import Config from 'react-native-config';
+// Load react-native-config defensively to avoid native-module crash on startup
+let Config: any = {};
+try {
+  // Some setups export default, others export named values
+  const mod = require('react-native-config');
+  Config = mod?.default ?? mod ?? {};
+} catch {}
 // Timesheet screens are used as overlays from Home; not part of tabs
 
 export type TabName = 'HomeScreen' | 'Attendance' | 'Leaves' | 'Expense' | 'Leads';

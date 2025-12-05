@@ -5,8 +5,8 @@ import SplashScreen from '../screens/SplashScreen';
 import TabNavigator, { TabName } from './TabNavigator';
 import LoginScreen from '../screens/auth/LoginScreen';
 import RegisterScreen from '../screens/auth/RegisterScreen';
-import AppLockScreen from '../screens/AppLockScreen';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+let AsyncStorage: any = null;
+try { AsyncStorage = require('@react-native-async-storage/async-storage').default; } catch {}
 import OnboardingScreen from '../screens/auth/OnboardingScreen';
 import { addLogoutListener } from '../services/session';
 
@@ -17,6 +17,8 @@ export default function RootNavigator() {
   const nextAfterLockRef = useRef<'login' | 'tabs'>('login');
   const unlockedRef = useRef<boolean>(false);
   const appState = useRef(AppState.currentState);
+  const stageRef = useRef(stage);
+  useEffect(() => { stageRef.current = stage; try { console.log('[root] stage →', stage); } catch {} }, [stage]);
 
   useEffect(() => {
     const t = setTimeout(() => { if (stage === 'splash') setStage('login'); }, 2800);
@@ -67,6 +69,16 @@ export default function RootNavigator() {
     const sub = AppState.addEventListener('change', onChange);
     return () => { sub.remove(); };
   }, []);
+
+  // Watchdog: if we remain on 'lock' for too long, auto-advance
+  useEffect(() => {
+    if (stage !== 'lock') return;
+    const id = setTimeout(() => {
+      try { console.log('[root] lock watchdog firing →', nextAfterLockRef.current); } catch {}
+      setStage(nextAfterLockRef.current);
+    }, 2000);
+    return () => clearTimeout(id);
+  }, [stage]);
 
   if (stage === 'splash') {
     return (

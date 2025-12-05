@@ -67,7 +67,6 @@ export default function HomeScreen() {
               <Text style={styles.link}>View List</Text>
             </Pressable>
             <Pressable style={styles.primaryBtn} onPress={() => {
-              // Only open the sheet. We fetch location on Confirm.
               openSheet();
             }} accessibilityRole="button">
               <Ionicons name="log-in-outline" size={18} color="#fff" style={{ marginRight: 8 }} />
@@ -296,12 +295,18 @@ function getGreeting(d: Date): string {
   if (h < 17) return 'Good afternoon';
   return 'Good evening';
 }
-  const safeAlert = useCallback((title: string, message: string) => {
-    try {
-      if (AppState.currentState === 'active') {
-        Alert.alert(title, message);
-      } else {
-        setTimeout(() => { try { if (AppState.currentState === 'active') Alert.alert(title, message); } catch {} }, 300);
-      }
-    } catch (e) { try { console.log('[checkin] alert error', e); } catch {} }
-  }, []);
+
+// Note: Hooks cannot be used at module scope. This helper does not need hooks.
+function safeAlert(title: string, message: string) {
+  try {
+    if (AppState.currentState === 'active') {
+      Alert.alert(title, message);
+    } else {
+      setTimeout(() => {
+        try { if (AppState.currentState === 'active') Alert.alert(title, message); } catch {}
+      }, 300);
+    }
+  } catch (e) {
+    try { console.log('[checkin] alert error', e); } catch {}
+  }
+}

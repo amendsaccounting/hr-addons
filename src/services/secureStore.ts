@@ -1,4 +1,11 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+function getAsyncStorage() {
+  try {
+    const mod = require('@react-native-async-storage/async-storage');
+    return mod?.default ?? mod;
+  } catch {
+    return null;
+  }
+}
 
 const SERVICE = 'erp.session';
 const STORAGE_KEY = 'secure:erp:sid';
@@ -25,7 +32,8 @@ export async function storeSessionSidCookie(cookie: string | null | undefined): 
     }
   } catch {}
   try {
-    await AsyncStorage.setItem(STORAGE_KEY, value);
+    const AS = getAsyncStorage();
+    if (AS?.setItem) await AS.setItem(STORAGE_KEY, value);
     return true;
   } catch {
     return false;
@@ -41,7 +49,8 @@ export async function getSessionSidCookie(): Promise<string | null> {
     }
   } catch {}
   try {
-    const v = await AsyncStorage.getItem(STORAGE_KEY);
+    const AS = getAsyncStorage();
+    const v = AS?.getItem ? await AS.getItem(STORAGE_KEY) : null;
     return v || null;
   } catch {
     return null;
@@ -56,6 +65,5 @@ export async function clearSessionSidCookie(): Promise<void> {
       return;
     }
   } catch {}
-  try { await AsyncStorage.removeItem(STORAGE_KEY); } catch {}
+  try { const AS = getAsyncStorage(); if (AS?.removeItem) await AS.removeItem(STORAGE_KEY); } catch {}
 }
-
