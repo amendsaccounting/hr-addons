@@ -22,12 +22,7 @@ export default function RootNavigator() {
     try { console.log('[root] stage →', stage); } catch {}
   }, [stage]);
 
-  // Advance from splash after 3 seconds
-  useEffect(() => {
-    if (stage !== 'splash') return;
-    const t = setTimeout(() => setStage('login'), 3000);
-    return () => clearTimeout(t);
-  }, [stage]);
+  // Splash routing moved into SplashScreen via onReady callback.
 
   // Listen for global logout requests
   useEffect(() => {
@@ -67,7 +62,7 @@ export default function RootNavigator() {
   }, [stage]);
 
   if (stage === 'splash') {
-    return <SplashScreen />;
+    return <SplashScreen onReady={(next) => setStage(next)} />;
   }
 
   if (stage === 'lock') {

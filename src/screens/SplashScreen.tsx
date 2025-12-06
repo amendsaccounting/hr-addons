@@ -1,12 +1,36 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { View, Image, StyleSheet, StatusBar, Text, Platform } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import { colors } from '../styles/theme';
+let AsyncStorage: any = null;
+try { AsyncStorage = require('@react-native-async-storage/async-storage').default; } catch {}
 
 // Existing app logo
 const logo = require('../assets/images/logo/logo.png');
 
-export default function SplashScreen() {
+type Props = {
+  onReady?: (next: 'login' | 'tabs') => void;
+};
+
+export default function SplashScreen({ onReady }: Props) {
+  useEffect(() => {
+    let mounted = true;
+    const id = setTimeout(() => {
+      (async () => {
+        try {
+          const sid = AsyncStorage && typeof AsyncStorage.getItem === 'function'
+            ? await AsyncStorage.getItem('sid')
+            : null;
+          if (!mounted) return;
+          onReady?.(sid ? 'tabs' : 'login');
+        } catch {
+          if (!mounted) return;
+          onReady?.('login');
+        }
+      })();
+    }, 1000);
+    return () => { mounted = false; clearTimeout(id); };
+  }, [onReady]);
   return (
     <LinearGradient
       colors={["#141D35", "#1D2B4C", "#14223E"]}

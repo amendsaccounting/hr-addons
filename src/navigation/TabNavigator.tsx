@@ -11,6 +11,7 @@ import LeadScreen from '../screens/tabs/LeadScreen';
 import AppHeader from '../components/AppHeader';
 import ProfileScreen from '../screens/tabs/ProfileScreen'
 import HomeScreen from '../screens/tabs/HomeScreen';
+import CustomTabBar from '../components/CustomTabBar';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { fetchEmployeeProfile } from '../services/profile';
 // Load react-native-config defensively to avoid native-module crash on startup
@@ -114,21 +115,8 @@ export default function TabNavigator({ initialTab = 'HomeScreen' }: Props) {
             variant="dark"
           />
         ),
-        tabBarActiveTintColor: '#111827',
-        tabBarInactiveTintColor: '#6b7280',
-        tabBarLabelStyle: { fontSize: 11 },
-        tabBarStyle: {
-          borderTopWidth: Platform.OS === 'ios' ? 0.5 : 0.8,
-          borderTopColor: '#e5e7eb',
-          backgroundColor: '#fff',
-          paddingBottom: Platform.OS === 'ios' ? 6 : 4,
-          paddingTop: 4,
-          height: Platform.OS === 'ios' ? 64 : 60,
-        },
-        tabBarIcon: ({ focused, color, size }) => (
-          <Ionicons name={iconForRoute(route.name as TabName, focused)} size={focused ? 24 : 22} color={color} />
-        ),
       })}
+      tabBar={(props) => <CustomTabBar {...props} />}
     >
       <Tab.Screen name="HomeScreen" component={HomeScreen} options={{ title: 'Home' }} />
       <Tab.Screen name="Attendance" component={AttendanceScreen} />

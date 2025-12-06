@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,9 @@ import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view
 import LinearGradient from 'react-native-linear-gradient';
 import { colors, spacing, radii } from '../../styles/theme';
 import TextField from '../../components/ui/TextField';
+import { loginWithPassword } from '../../services/authentication';
+let AsyncStorage: any = null;
+try { AsyncStorage = require('@react-native-async-storage/async-storage').default; } catch {}
 const logo = require('../../assets/images/logo/logo.png');
 
 type Props = {
@@ -22,13 +25,52 @@ type Props = {
 export default function LoginScreen({ onSignedIn, onRegister }: Props) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [serverError, setServerError] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
 
-  const disabled = useMemo(() => email.trim().length === 0 || password.length === 0, [email, password]);
-
-  const handleLogin = () => {
-    if (disabled) return;
-    // Placeholder: call your auth here, then notify parent
-    onSignedIn?.();
+  const handleLogin = async () => {
+    setServerError(null);
+    const usr = String(email || '').trim();
+    const pwd = String(password || '');
+    if (!usr || !pwd) { setServerError('Email and password are required'); return; }
+    const isEmailLike = /.+@.+\..+/.test(usr);
+    if (!isEmailLike) { setServerError('Enter a valid email'); return; }
+    setLoading(true);
+    try {
+      const result = await loginWithPassword(usr, pwd);
+      console.log("result===>",result); 
+      if (result.ok) {
+        try {
+          const pairs: [string, string][] = [];
+          const rawCookie = result.cookie || '';
+          if (rawCookie) {
+            const m = /^sid=([^;]+)/i.exec(rawCookie);
+            const sidVal = m && m[1] ? m[1] : rawCookie.replace(/^sid=/i, '');
+            pairs.push(['sid', sidVal]);
+          }
+          if (result.userImage) pairs.push(['user_image', String(result.userImage)]);
+          if (result.userId) pairs.push(['user_id', String(result.userId)]);
+          if (result.fullName) pairs.push(['full_name', String(result.fullName)]);
+          if (pairs.length) {
+            if (AsyncStorage && typeof AsyncStorage.multiSet === 'function') {
+              await AsyncStorage.multiSet(pairs);
+            } else {
+              try { console.log('[login] AsyncStorage unavailable; skipping persist'); } catch {}
+            }
+          }
+        } catch (storeErr) {
+          try { console.log('[login] failed to persist session data', storeErr); } catch {}
+        }
+        onSignedIn?.();
+      } else {
+        setServerError(result.error || result.message || 'Login failed');
+      }
+    } catch (e: any) {
+      setServerError(e?.message || 'Login failed');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -39,7 +81,6 @@ export default function LoginScreen({ onSignedIn, onRegister }: Props) {
       style={styles.container}
     >
       <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
-      {/* Content scrolls to focused fields */}
       <KeyboardAwareScrollView
         contentContainerStyle={styles.scrollContent}
         enableOnAndroid
@@ -64,8 +105,8 @@ export default function LoginScreen({ onSignedIn, onRegister }: Props) {
           <TextField
             label="Email"
             value={email}
-            onChangeText={setEmail}
-            placeholder="name@example.com"
+            onChangeText={(t) => { setEmail(t); if (serverError) setServerError(null); }}
+            placeholder="Enter your email"
             placeholderTextColor="rgba(255,255,255,0.6)"
             keyboardType="email-address"
             autoCapitalize="none"
@@ -80,18 +121,24 @@ export default function LoginScreen({ onSignedIn, onRegister }: Props) {
           <TextField
             label="Password"
             value={password}
-            onChangeText={setPassword}
-            placeholder="••••••••"
+            onChangeText={(t) => { setPassword(t); if (serverError) setServerError(null); }}
+            placeholder="Enter your password"
             placeholderTextColor="rgba(255,255,255,0.6)"
-            secureTextEntry
+            secureTextEntry={!showPassword}
             rowStyle={styles.tfRow}
             labelStyle={styles.tfLabel}
             style={styles.tfInput}
+            rightIcon={showPassword ? 'eye-off' : 'eye'}
+            onRightPress={() => setShowPassword((v) => !v)}
           />
 
           {/* Login button */}
-          <TouchableOpacity onPress={handleLogin} activeOpacity={0.8} disabled={disabled} style={[styles.button, disabled && styles.buttonDisabled]}>
-            <Text style={styles.buttonText}>Login</Text>
+          {serverError ? (
+            <Text style={{ color: '#ff6b6b', marginTop: spacing.sm }}>{serverError}</Text>
+          ) : null}
+
+          <TouchableOpacity onPress={handleLogin} disabled={loading} activeOpacity={0.8} style={[styles.button, loading && styles.buttonDisabled]}>
+            <Text style={styles.buttonText}>{loading ? 'Logging in...' : 'Login'}</Text>
           </TouchableOpacity>
 
           {/* Register link */}
