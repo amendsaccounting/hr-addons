@@ -109,9 +109,9 @@ export default function AppHeader({
                   accessibilityLabel="Profile"
                   onPress={item.onPress}
                   style={[
-                    styles.iconBtn,
-                    { marginLeft: idx === 0 ? 0 : 16, borderColor: ringColor, backgroundColor: isDark ? 'transparent' : '#fff' },
-                    hasNameOnly && styles.namePill,
+                    hasNameOnly
+                      ? [styles.iconBtn, { marginLeft: idx === 0 ? 0 : 16, borderColor: ringColor, backgroundColor: isDark ? 'transparent' : '#fff' }, styles.namePill]
+                      : [styles.iconPlain, { marginLeft: idx === 0 ? 0 : 16 }],
                   ]}
                 >
                   {avatar ? (

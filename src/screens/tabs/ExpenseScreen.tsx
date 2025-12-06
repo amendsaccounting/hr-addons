@@ -1,10 +1,10 @@
 import * as React from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Animated, Easing, LayoutChangeEvent, TextInput, Alert, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, Animated, Easing, LayoutChangeEvent, TextInput, Alert, Dimensions, Image, ActivityIndicator } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { submitExpenseClaim, fetchExpenseCategories } from '../../services/expenseClaim';
+import { submitExpenseClaim, fetchExpenseCategories, fetchExpenseHistory } from '../../services/expenseClaim';
 import { onboardingService } from '../../services/onboardingService';
 
 export default function ExpenseScreen() {
@@ -25,12 +25,21 @@ export default function ExpenseScreen() {
   const [receiptUri, setReceiptUri] = useState<string>('');
   const [loadingCategories, setLoadingCategories] = useState<boolean>(false);
   const [submitting, setSubmitting] = useState<boolean>(false);
+  const [history, setHistory] = useState<Array<{ name: string; status: string; total: number; currency?: string | null; date?: string | null; created?: string | null; category?: string | null; description?: string | null }>>([]);
+  const [loadingHistory, setLoadingHistory] = useState<boolean>(false);
+  const didLoadHistory = useRef(false);
 
   // No category fetching in UI-only mode
 
   const pickReceipt = useCallback(() => {
     setReceiptUri('placeholder://receipt');
     setReceiptName('receipt.jpg');
+  }, []);
+
+  // Ensure amount input contains only digits and decimal point (no currency symbol)
+  const onAmountChange = useCallback((t: string) => {
+    const cleaned = String(t || '').replace(/[^0-9.]/g, '');
+    setAmount(cleaned);
   }, []);
 
   const onTabChange = useCallback((tab: 'Submit' | 'History') => {
@@ -52,8 +61,10 @@ export default function ExpenseScreen() {
     if (loadingCategories) return;
     try {
       setLoadingCategories(true);
-      const list = await fetchExpenseCategories().catch(() => [] as string[]);
+      try { console.log('[expense] loadCategories start'); } catch {}
+      const list = await fetchExpenseCategories().catch((e) => { try { console.warn('[expense] loadCategories error', e?.response?.data || e?.message || e); } catch {}; return [] as string[]; });
       setCategories(Array.isArray(list) ? list : []);
+      try { console.log('[expense] loadCategories success', { count: Array.isArray(list) ? list.length : 0 }); } catch {}
     } catch (err) {
       try { console.warn('Expense categories load failed', err); } catch {}
       setCategories([]);
@@ -68,12 +79,108 @@ export default function ExpenseScreen() {
     }
   }, [showModal, categories.length, loadCategories]);
 
+  // Helpers for history view
+  const formatAmount = useCallback((n: number, currency?: string | null): string => {
+    const v = Number(n || 0);
+    const symbol = currency && typeof currency === 'string' && currency.length <= 4 ? `${currency} ` : '$ ';
+    try { return symbol + v.toFixed(2); } catch { return symbol + String(v); }
+  }, []);
+
+  const toMmDdYyyy = useCallback((s?: string | null): string => {
+    if (!s) return '';
+    try {
+      const d = new Date(String(s).replace(' ', 'T'));
+      if (isNaN(d.getTime())) return String(s);
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      const yyyy = String(d.getFullYear());
+      return `${mm}/${dd}/${yyyy}`;
+    } catch { return String(s); }
+  }, []);
+
+  const resolveEmployeeId = useCallback(async (): Promise<string | null> => {
+    try { console.log('[expense] resolveEmployeeId start'); } catch {}
+    let employeeId = await AsyncStorage.getItem('employeeId');
+    if (!employeeId) {
+      try {
+        const raw = await AsyncStorage.getItem('employeeData');
+        if (raw) {
+          const obj = JSON.parse(raw);
+          employeeId = [
+            obj?.name,
+            obj?.employee,
+            obj?.employee_id,
+            obj?.employeeId,
+            obj?.data?.name,
+            obj?.data?.employee,
+            obj?.data?.employee_id,
+            obj?.data?.employeeId,
+          ].find((v: any) => typeof v === 'string' && v.trim().length > 0) || null;
+        }
+      } catch {}
+    }
+    if (!employeeId) {
+      const email = (await AsyncStorage.getItem('user_id')) || (await AsyncStorage.getItem('userEmail'));
+      if (email) {
+        try {
+          const { getEmployeeIdByEmail, getEmployeeByEmail } = require('../../services/erpApi');
+          let empId = await getEmployeeIdByEmail(email);
+          if (!empId) {
+            const emp = await getEmployeeByEmail(email);
+            empId = emp?.name ? String(emp.name) : '';
+          }
+          if (empId) {
+            employeeId = empId;
+            try { await AsyncStorage.setItem('employeeId', employeeId); } catch {}
+          }
+        } catch {}
+      }
+    }
+    try { console.log('[expense] resolveEmployeeId done', employeeId); } catch {}
+    return employeeId || null;
+  }, []);
+
+  const loadHistory = useCallback(async () => {
+    if (loadingHistory) return;
+    setLoadingHistory(true);
+    try {
+      const employeeId = await resolveEmployeeId();
+      if (!employeeId) { setHistory([]); return; }
+      try { console.log('[expense] loadHistory start', { employeeId }); } catch {}
+      const rows = await fetchExpenseHistory(employeeId, 50).catch((e) => { try { console.warn('[expense] loadHistory error', e?.response?.data || e?.message || e); } catch {}; return [] as any[]; });
+      try { console.log('[expense] loadHistory rows', rows); } catch {}
+      const mapped = (rows || []).map((r: any) => ({
+        name: r.name,
+        status: String(r.status || 'Pending'),
+        total: Number(r.total || 0) || 0,
+        currency: r.currency || null,
+        date: r.posting_date || r.modified || r.creation || null,
+        created: r.creation || null,
+        category: r.expense_type || null,
+        description: r.description || null,
+      }));
+      try { console.log('[expense] loadHistory mapped', mapped); } catch {}
+      setHistory(mapped);
+      try { console.log('[expense] loadHistory success', { count: mapped.length }); } catch {}
+    } finally { setLoadingHistory(false); }
+  }, [resolveEmployeeId, loadingHistory]);
+
+  useEffect(() => {
+    if (activeTab === 'History' && !didLoadHistory.current) {
+      didLoadHistory.current = true;
+      loadHistory();
+    }
+  }, [activeTab, loadHistory]);
+
+  
+
   const handleSubmit = useCallback(async () => {
     if (submitting) return;
     const cat = String(category || '').trim();
     const amt = Number(String(amount || '').replace(/[^0-9.\-]/g, '')) || 0;
     const rawDate = String(expDate || '').trim();
     const description = String(desc || '').trim();
+    try { console.log('[expense] submit click', { cat, amt, rawDate, hasReceipt: !!receiptUri }); } catch {}
 
     if (!cat) { Alert.alert('Missing field', 'Please choose a category.'); return; }
     if (!amt || !(amt > 0)) { Alert.alert('Invalid amount', 'Please enter a valid amount greater than 0.'); return; }
@@ -102,6 +209,7 @@ export default function ExpenseScreen() {
 
     try {
       setSubmitting(true);
+      try { console.log('[expense] resolving employeeId'); } catch {}
       // Resolve employeeId from storage
       let employeeId = await AsyncStorage.getItem('employeeId');
       if (!employeeId) {
@@ -140,6 +248,7 @@ export default function ExpenseScreen() {
           } catch {}
         }
       }
+      try { console.log('[expense] employeeId resolved', employeeId); } catch {}
       if (!employeeId) { Alert.alert('Not ready', 'Employee ID not found.'); return; }
 
       // Resolve company for employee (used by ERP to infer default accounts)
@@ -148,8 +257,9 @@ export default function ExpenseScreen() {
         const c = await onboardingService.getEmployeeCompany(String(employeeId));
         if (c) company = String(c);
       } catch {}
+      try { console.log('[expense] employee company', company || null); } catch {}
 
-      await submitExpenseClaim({
+      const payload = {
         employee: String(employeeId),
         expense_type: cat,
         amount: amt,
@@ -157,7 +267,10 @@ export default function ExpenseScreen() {
         description,
         company,
         // receipt info is currently UI-only; uploading can be added later
-      });
+      } as const;
+      try { console.log('[expense] submit payload', payload); } catch {}
+      const result = await submitExpenseClaim(payload as any);
+      try { console.log('[expense] submit result', result); } catch {}
 
       Alert.alert('Submitted', 'Your expense claim has been submitted.');
       setShowModal(false);
@@ -167,7 +280,15 @@ export default function ExpenseScreen() {
       setDesc('');
       setReceiptUri('');
       setReceiptName('');
+      // Refresh history tab after successful submit
+      try {
+        didLoadHistory.current = false;
+        setActiveTab('History');
+        // Kick off load explicitly for immediate refresh
+        loadHistory();
+      } catch {}
     } catch (err: any) {
+      try { console.error('[expense] submit error', err?.response?.data || err?.message || err); } catch {}
       const raw = err?.response?.data || err;
       const msg = raw?.message || err?.message || 'Submission failed';
       const text = typeof msg === 'string' ? msg : JSON.stringify(msg);
@@ -268,9 +389,36 @@ export default function ExpenseScreen() {
           </>
         ) : (
           <>
-            <ExpenseItem status="Approved" title="Travel" amount="$250.00" desc="Client meeting - Taxi fare" date="10/15/2025" submitted="10/16/2025" />
-            <ExpenseItem status="Pending" title="Meals" amount="$45.50" desc="Team lunch during project meeting" date="10/18/2025" submitted="10/18/2025" />
-            <ExpenseItem status="Rejected" title="Office Supplies" amount="$89.99" desc="Stationery and printer supplies" date="10/10/2025" submitted="10/11/2025" />
+            {loadingHistory ? (
+              <View style={styles.emptyWrap}>
+                <ActivityIndicator size="small" color="#6b7280" />
+                <Text style={[styles.cardSubtitle, { marginTop: 8 }]}>Loading history...</Text>
+              </View>
+            ) : history.length === 0 ? (
+              <View style={styles.emptyWrap}>
+                <View style={[styles.card, { alignItems: 'center', paddingVertical: 28, alignSelf: 'stretch', marginHorizontal: 16, borderWidth: 0, borderColor: 'transparent', backgroundColor: 'transparent' }] }>
+                  <Image
+                    source={require('../../assets/images/expense/expense.png')}
+                    style={{ width: 120, height: 120, opacity: 0.18 }}
+                    resizeMode="contain"
+                  />
+                  <Text style={[styles.cardTitle, { marginTop: 12 }]}>No expense history</Text>
+                  <Text style={[styles.cardSubtitle, { textAlign: 'center' }]}>Your expense claims will appear here.</Text>
+                </View>
+              </View>
+            ) : (
+              history.map((h) => (
+                <ExpenseItem
+                  key={h.name}
+                  status={/approved/i.test(h.status) ? 'Approved' : /reject/i.test(h.status) ? 'Rejected' : 'Pending'}
+                  title={h.category || 'Expense Claim'}
+                  amount={`${formatAmount(h.total, h.currency)}`}
+                  desc={h.description ? String(h.description) : ''}
+                  date={toMmDdYyyy(h.date || h.modified || h.creation || null)}
+                  submitted={toMmDdYyyy(h.created || h.modified || h.date || null)}
+                />
+              ))
+            )}
           </>
         )}
       </ScrollView>
@@ -325,8 +473,8 @@ export default function ExpenseScreen() {
               <Ionicons name="cash-outline" size={16} color="#6b7280" style={{ marginRight: 6 }} />
               <TextInput
                 value={amount}
-                onChangeText={setAmount}
-                placeholder="$ 0.00"
+                onChangeText={onAmountChange}
+                placeholder="0.00"
                 placeholderTextColor="#9ca3af"
                 keyboardType="decimal-pad"
                 style={styles.textInput}
@@ -428,10 +576,12 @@ function ExpenseItem({ status, title, amount, desc, date, submitted }: { status:
     <View style={styles.historyCard}>
       <View style={styles.historyTop}>
         <View style={{ flex: 1 }}>
-          <Text style={styles.historyTitle}>{title}</Text>
-          <View style={[styles.statusPill, { backgroundColor: s.bg }] }>
-            <Ionicons name={s.icon} size={14} color={s.color} />
-            <Text style={[styles.statusText, { color: s.color }]}>{status}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Text style={styles.historyTitle}>{title}</Text>
+            <View style={[styles.statusPill, { backgroundColor: s.bg, marginLeft: 8, marginTop: 0 }]}>
+              <Ionicons name={s.icon} size={14} color={s.color} />
+              <Text style={[styles.statusText, { color: s.color }]}>{status}</Text>
+            </View>
           </View>
         </View>
         <Text style={styles.amount}>{amount}</Text>
@@ -535,4 +685,5 @@ const styles = StyleSheet.create({
   dropdown: { borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 8, backgroundColor: '#fff', marginTop: 6, overflow: 'hidden' },
   dropdownItem: { paddingHorizontal: 12, paddingVertical: 10 },
   dropdownText: { color: '#111827' },
+  emptyWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16 },
 });

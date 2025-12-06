@@ -51,7 +51,6 @@ export default function LoginScreen({ onSignedIn, onRegister }: Props) {
           }
           if (result.userImage) pairs.push(['user_image', String(result.userImage)]);
           if (result.userId) pairs.push(['user_id', String(result.userId)]);
-          // Persist the email used for login as a reliable fallback
           pairs.push(['userEmail', usr]);
           if (result.employeeId) pairs.push(['employeeId', String(result.employeeId)]);
           if (result.fullName) pairs.push(['full_name', String(result.fullName)]);
