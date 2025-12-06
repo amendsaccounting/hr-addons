@@ -1,84 +1,39 @@
 import * as React from 'react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, Animated, Easing, LayoutChangeEvent, TextInput, Alert, Dimensions } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import erpNextService, { fetchExpenseCategories } from '../../services/expenseClaim';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { submitExpenseClaim, fetchExpenseCategories } from '../../services/expenseClaim';
+import { onboardingService } from '../../services/onboardingService';
 
 export default function ExpenseScreen() {
   (Ionicons as any)?.loadFont?.();
   const insets = useSafeAreaInsets();
   const [activeTab, setActiveTab] = useState<'Submit' | 'History'>('Submit');
-  const segAnim = useRef(new Animated.Value(0)).current; // 0 -> Submit, 1 -> History
+  const segAnim = useRef(new Animated.Value(0)).current;
   const [segWidth, setSegWidth] = useState(0);
   const [showModal, setShowModal] = useState(false);
-  // Use a consistent gap below the AppHeader
-  const headerGap = insets.top + 56 + 8; // safe area + header height + small spacing
+  const headerGap = insets.top + 56 + 8; 
   const [categoryOpen, setCategoryOpen] = useState(false);
   const [category, setCategory] = useState<string>('');
-const [categories, setCategories] = useState<string[]>([]);
-const [loadingCategories, setLoadingCategories] = useState<boolean>(true);
+  const [categories, setCategories] = useState<string[]>([]);
   const [amount, setAmount] = useState<string>('');
   const [expDate, setExpDate] = useState<string>('');
   const [desc, setDesc] = useState<string>('');
   const [receiptName, setReceiptName] = useState<string>('');
   const [receiptUri, setReceiptUri] = useState<string>('');
+  const [loadingCategories, setLoadingCategories] = useState<boolean>(false);
+  const [submitting, setSubmitting] = useState<boolean>(false);
 
-// Then in your useEffect, use it like this:
-useEffect(() => {
-  const loadCategories = async () => {
-    try {
-      setLoadingCategories(true);
-      const fetchedCategories = await erpNextService.fetchExpenseCategories();
-       console.log("fetchedCategories====>",fetchedCategories);
-      setCategories(Array.isArray(fetchedCategories) ? fetchedCategories : []);
-    } catch (error) {
-      console.error('Error loading categories:', error);
-      setCategories(['Travel', 'Meals', 'Office Supplies', 'Software', 'Other']);
-    } finally {
-      setLoadingCategories(false);
-    }
-  };
-  loadCategories();
-}, []);
+  // No category fetching in UI-only mode
 
-  const pickReceipt = async () => {
-    try {
-      // Try DocumentPicker first
-      try {
-        const DPmod: any = (require('react-native-document-picker') as any);
-        const DocumentPicker = DPmod?.default || DPmod;
-        if (DocumentPicker?.pickSingle) {
-          const res = await DocumentPicker.pickSingle({ type: [DocumentPicker.types.images, DocumentPicker.types.pdf] });
-          const uri = res?.uri || '';
-          const name = res?.name || (uri ? uri.split('/').pop() : 'file');
-          if (uri) { setReceiptUri(uri); setReceiptName(String(name || 'file')); return; }
-        }
-      } catch (e: any) {
-        // ignore and fall back
-      }
+  const pickReceipt = useCallback(() => {
+    setReceiptUri('placeholder://receipt');
+    setReceiptName('receipt.jpg');
+  }, []);
 
-      // Fallback to ImagePicker (photo library)
-      try {
-        const IP: any = require('react-native-image-picker');
-        const launchImageLibrary = IP?.launchImageLibrary;
-        if (launchImageLibrary) {
-          const resp = await launchImageLibrary({ mediaType: 'photo', selectionLimit: 1 });
-          const asset = resp?.assets?.[0];
-          if (asset?.uri) { setReceiptUri(asset.uri); setReceiptName(asset.fileName || 'photo'); return; }
-        }
-      } catch (e) {
-        // ignore
-      }
-
-      Alert.alert('Setup Needed', 'Please install react-native-document-picker or react-native-image-picker to pick a receipt file.');
-    } catch (err) {
-      Alert.alert('Error', 'Could not open file picker.');
-    }
-  };
-
-  const onTabChange = (tab: 'Submit' | 'History') => {
+  const onTabChange = useCallback((tab: 'Submit' | 'History') => {
     if (tab === activeTab) return;
     setActiveTab(tab);
     Animated.timing(segAnim, {
@@ -87,80 +42,124 @@ useEffect(() => {
       easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
     }).start();
-  };
+  }, [activeTab, segAnim]);
 
-  const onSegLayout = (e: LayoutChangeEvent) => {
+  const onSegLayout = useCallback((e: LayoutChangeEvent) => {
     setSegWidth(e.nativeEvent.layout.width);
-  };
+  }, []);
 
-// const handleSubmit = async () => {
-//   if (!category || !amount || !expDate) {
-//     Alert.alert('Error', 'Please fill in all required fields');
-//     return;
-//   }
-//   try {
-//     const expenseData = {
-//       category,
-//       amount: parseFloat(amount),
-//       date: expDate,
-//       description: desc
-//     };
-
-//     console.log('Submitting expense:', JSON.stringify(expenseData, null, 2));
-//     const result = await erpNextService.submitExpenseClaim(expenseData);
-//     console.log('API Response:', JSON.stringify(result, null, 2));
-    
-//     if (result.success) {
-//       Alert.alert('Success', 'Expense submitted successfully!');
-//       setShowModal(false);
-//       setCategory('');
-//       setAmount('');
-//       setExpDate('');
-//       setDesc('');
-//     } else {
-//       Alert.alert('Error', result.message || 'Failed to submit expense');
-//     }
-//   } catch (error: any) {  // Add type annotation here
-//     console.error('Detailed error:', {
-//       message: error.message,
-//       response: error.response?.data,
-//       status: error.response?.status,
-//     });
-//     Alert.alert('Error', error.message || 'An error occurred while submitting the expense');
-//   }
-// };
-
-const handleSubmit = async () => {
-  // Basic required validations
-  if (!category?.trim() || !amount?.trim() || !expDate?.trim() || !desc?.trim()) {
-    Alert.alert('Missing Fields', 'Please fill in category, amount, date and description.');
-    return;
-  }
-
-  try {
-    const employeeId = await AsyncStorage.getItem('employeeId');
-    if (!employeeId) {
-      Alert.alert('Error', 'Could not determine employee information. Please log in again.');
-      return;
+  const loadCategories = useCallback(async () => {
+    if (loadingCategories) return;
+    try {
+      setLoadingCategories(true);
+      const list = await fetchExpenseCategories().catch(() => [] as string[]);
+      setCategories(Array.isArray(list) ? list : []);
+    } catch (err) {
+      try { console.warn('Expense categories load failed', err); } catch {}
+      setCategories([]);
+    } finally {
+      setLoadingCategories(false);
     }
+  }, [loadingCategories]);
 
-    // Build input for service
-    const input = {
-      employeeId: String(employeeId),
-      category: String(category),
-      amount: String(amount),
-      expenseDate: String(expDate), // expected DD/MM/YYYY by service
-      description: String(desc),
-      receiptUri: receiptUri || undefined,
-      receiptName: receiptName || undefined,
-    } as const;
+  useEffect(() => {
+    if (showModal && categories.length === 0) {
+      loadCategories();
+    }
+  }, [showModal, categories.length, loadCategories]);
 
-    console.log('[expense] submit input', input);
-    const result = await erpNextService.submitExpenseClaim(input as any);
-    console.log('[expense] submit result', result);
+  const handleSubmit = useCallback(async () => {
+    if (submitting) return;
+    const cat = String(category || '').trim();
+    const amt = Number(String(amount || '').replace(/[^0-9.\-]/g, '')) || 0;
+    const rawDate = String(expDate || '').trim();
+    const description = String(desc || '').trim();
 
-    if (result?.success) {
-      Alert.alert('Success', result.message || 'Expense submitted successfully!');
+    if (!cat) { Alert.alert('Missing field', 'Please choose a category.'); return; }
+    if (!amt || !(amt > 0)) { Alert.alert('Invalid amount', 'Please enter a valid amount greater than 0.'); return; }
+    if (!rawDate) { Alert.alert('Missing field', 'Please enter the expense date.'); return; }
+
+    // Accept dd/mm/yyyy or yyyy-mm-dd; normalize to YYYY-MM-DD
+    const toIsoDate = (s: string) => {
+      const t = s.trim();
+      const m1 = t.match(/^([0-3]?\d)[/.-]([0-1]?\d)[/.-](\d{4})$/); // dd/mm/yyyy
+      if (m1) {
+        const dd = m1[1].padStart(2, '0');
+        const mm = m1[2].padStart(2, '0');
+        const yyyy = m1[3];
+        return `${yyyy}-${mm}-${dd}`;
+      }
+      const m2 = t.match(/^(\d{4})[-/.]([0-1]?\d)[-/.]([0-3]?\d)$/); // yyyy-mm-dd
+      if (m2) {
+        const yyyy = m2[1];
+        const mm = m2[2].padStart(2, '0');
+        const dd = m2[3].padStart(2, '0');
+        return `${yyyy}-${mm}-${dd}`;
+      }
+      return t; // as-is; backend may validate
+    };
+    const expense_date = toIsoDate(rawDate);
+
+    try {
+      setSubmitting(true);
+      // Resolve employeeId from storage
+      let employeeId = await AsyncStorage.getItem('employeeId');
+      if (!employeeId) {
+        try {
+          const raw = await AsyncStorage.getItem('employeeData');
+          if (raw) {
+            const obj = JSON.parse(raw);
+            employeeId = [
+              obj?.name,
+              obj?.employee,
+              obj?.employee_id,
+              obj?.employeeId,
+              obj?.data?.name,
+              obj?.data?.employee,
+              obj?.data?.employee_id,
+              obj?.data?.employeeId,
+            ].find((v: any) => typeof v === 'string' && v.trim().length > 0) || null;
+          }
+        } catch {}
+      }
+      // Try resolving via user email if still missing (same pattern as HomeScreen)
+      if (!employeeId) {
+        const email = (await AsyncStorage.getItem('user_id')) || (await AsyncStorage.getItem('userEmail'));
+        if (email) {
+          try {
+            const { getEmployeeIdByEmail, getEmployeeByEmail } = require('../../services/erpApi');
+            let empId = await getEmployeeIdByEmail(email);
+            if (!empId) {
+              const emp = await getEmployeeByEmail(email);
+              empId = emp?.name ? String(emp.name) : '';
+            }
+            if (empId) {
+              employeeId = empId;
+              try { await AsyncStorage.setItem('employeeId', employeeId); } catch {}
+            }
+          } catch {}
+        }
+      }
+      if (!employeeId) { Alert.alert('Not ready', 'Employee ID not found.'); return; }
+
+      // Resolve company for employee (used by ERP to infer default accounts)
+      let company: string | undefined = undefined;
+      try {
+        const c = await onboardingService.getEmployeeCompany(String(employeeId));
+        if (c) company = String(c);
+      } catch {}
+
+      await submitExpenseClaim({
+        employee: String(employeeId),
+        expense_type: cat,
+        amount: amt,
+        expense_date,
+        description,
+        company,
+        // receipt info is currently UI-only; uploading can be added later
+      });
+
+      Alert.alert('Submitted', 'Your expense claim has been submitted.');
       setShowModal(false);
       setCategory('');
       setAmount('');
@@ -168,14 +167,22 @@ const handleSubmit = async () => {
       setDesc('');
       setReceiptUri('');
       setReceiptName('');
-    } else {
-      Alert.alert('Error', result?.message || 'Failed to submit expense');
+    } catch (err: any) {
+      const raw = err?.response?.data || err;
+      const msg = raw?.message || err?.message || 'Submission failed';
+      const text = typeof msg === 'string' ? msg : JSON.stringify(msg);
+      if (/set the default account for the\s*expense claim type/i.test(text)) {
+        Alert.alert(
+          'Setup Required',
+          'Please set a Default Account for this Expense Claim Type in ERPNext (Expense Claim Type > Accounts), then try again.'
+        );
+      } else {
+        Alert.alert('Failed', String(text));
+      }
+    } finally {
+      setSubmitting(false);
     }
-  } catch (error: any) {
-    console.error('[expense] submit error', error);
-    Alert.alert('Error', error?.message || 'An error occurred while submitting the expense');
-  }
-};
+  }, [submitting, category, amount, expDate, desc]);
 
 
   return (
@@ -237,7 +244,7 @@ const handleSubmit = async () => {
               </View>
               <Text style={styles.cardTitle}>Submit New Expense</Text>
               <Text style={styles.cardSubtitle}>Create a reimbursement request for your business expenses</Text>
-              <Pressable style={styles.primaryBtn} onPress={() => setShowModal(true)}>
+              <Pressable style={styles.primaryBtn} onPress={() => { setCategory(''); setAmount(''); setExpDate(''); setDesc(''); setReceiptUri(''); setReceiptName(''); setShowModal(true); }}>
                 <Ionicons name="add" size={16} color="#fff" />
                 <Text style={styles.primaryBtnText}>New Expense Claim</Text>
               </Pressable>
@@ -384,10 +391,14 @@ const handleSubmit = async () => {
             </View>
 
             <Pressable
-              style={[styles.primaryBtn, { alignSelf: 'stretch', marginTop: 12 }]}
-         onPress={handleSubmit}
+              style={[
+                styles.primaryBtn,
+                { alignSelf: 'stretch', marginTop: 12, opacity: submitting ? 0.6 : 1 },
+              ]}
+              onPress={handleSubmit}
+              disabled={submitting}
             >
-              <Text style={styles.primaryBtnText}>Submit Claim</Text>
+              <Text style={styles.primaryBtnText}>{submitting ? 'Submitting...' : 'Submit Claim'}</Text>
             </Pressable>
             </ScrollView>
           </View>

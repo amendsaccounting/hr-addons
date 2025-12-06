@@ -1,5 +1,6 @@
 import axios from 'axios';
 import Config from 'react-native-config';
+import { getEmployeeByEmail, getEmployeeIdByEmail } from './erpApi';
 
 function pickEnv(...keys: string[]): string {
   for (const k of keys) {
@@ -25,6 +26,8 @@ export type PasswordLoginResult = {
   fullName?: string | null;
   userImage?: string | null;
   userId?: string | null;
+  employeeId?: string | null;
+  employee?: any | null;
 };
 
 function extractSidCookie(setCookieHeader?: string | string[] | null): string | null {
@@ -40,7 +43,9 @@ function extractSidCookie(setCookieHeader?: string | string[] | null): string | 
 function extractCookieValue(setCookieHeader: string | string[] | null | undefined, name: string): string | null {
   if (!setCookieHeader) return null;
   const list = Array.isArray(setCookieHeader) ? setCookieHeader : [setCookieHeader];
-  const re = new RegExp(`(?:^|;\\s*)${name}=([^;]+)`, 'i');
+  // Support either multiple Set-Cookie headers or a single header string with cookies comma-joined.
+  // Allow both semicolon and comma as boundaries, but stop at semicolon to avoid Expires commas.
+  const re = new RegExp(`(?:^|[;,]\\s*)${name}=([^;]+)`, 'i');
   for (const c of list) {
     const m = re.exec(String(c));
     if (m && m[1]) return decodeURIComponent(m[1]);
@@ -77,11 +82,31 @@ export async function loginWithPassword(usr: string, pwd: string): Promise<Passw
     const cookie = extractSidCookie(setCookie);
     const fullName = extractCookieValue(setCookie, 'full_name') || (res?.data?.full_name ? String(res.data.full_name) : null);
     const userImage = extractCookieValue(setCookie, 'user_image');
-    const userId = extractCookieValue(setCookie, 'user_id');
+    let userId = extractCookieValue(setCookie, 'user_id');
+    // Fallback: if not present, use provided usr when it looks like an email
+    if (!userId && /.+@.+\..+/.test(String(usr || ''))) userId = String(usr).trim();
     const message = (res?.data?.message ?? res?.data?.full_name ?? res?.data) as any;
     // Success if we have a cookie or a positive message
     const ok = !!cookie || /logged\s*in/i.test(String(message || '')) || res.status === 200;
     const result: PasswordLoginResult = { ok, cookie: cookie || null, message: message ? String(message) : null, error: ok ? null : 'Login failed', fullName: fullName || null, userImage: userImage || null, userId: userId || null };
+    // Resolve employeeId using email if available
+    try {
+      const email = result.userId || String(usr || '').trim();
+      if (email) {
+        let empId = await getEmployeeIdByEmail(email);
+        let emp: any = null;
+        if (!empId) {
+          emp = await getEmployeeByEmail(email).catch(() => null);
+          empId = emp?.name ? String(emp.name) : null;
+        } else {
+          emp = await getEmployeeByEmail(email).catch(() => null);
+        }
+        if (empId) result.employeeId = empId;
+        if (emp) result.employee = emp;
+      }
+    } catch (e) {
+      try { console.log('[auth] loginWithPassword employee resolve failed', e); } catch {}
+    }
     console.log('[auth] loginWithPassword → result', result);
     return result;
   } catch (err: any) {

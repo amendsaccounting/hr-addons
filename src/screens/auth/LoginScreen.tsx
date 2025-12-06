@@ -51,6 +51,9 @@ export default function LoginScreen({ onSignedIn, onRegister }: Props) {
           }
           if (result.userImage) pairs.push(['user_image', String(result.userImage)]);
           if (result.userId) pairs.push(['user_id', String(result.userId)]);
+          // Persist the email used for login as a reliable fallback
+          pairs.push(['userEmail', usr]);
+          if (result.employeeId) pairs.push(['employeeId', String(result.employeeId)]);
           if (result.fullName) pairs.push(['full_name', String(result.fullName)]);
           if (pairs.length) {
             if (AsyncStorage && typeof AsyncStorage.multiSet === 'function') {
@@ -59,6 +62,12 @@ export default function LoginScreen({ onSignedIn, onRegister }: Props) {
               try { console.log('[login] AsyncStorage unavailable; skipping persist'); } catch {}
             }
           }
+          // Store employee object if returned by login
+          try {
+            if (result.employee && typeof AsyncStorage.setItem === 'function') {
+              await AsyncStorage.setItem('employeeData', JSON.stringify(result.employee));
+            }
+          } catch {}
         } catch (storeErr) {
           try { console.log('[login] failed to persist session data', storeErr); } catch {}
         }
