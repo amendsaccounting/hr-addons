@@ -4,11 +4,11 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
-  KeyboardAvoidingView,
   Platform,
   StatusBar,
   Image,
 } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import LinearGradient from 'react-native-linear-gradient';
 import { colors, spacing, radii } from '../../styles/theme';
 import TextField from '../../components/ui/TextField';
@@ -32,14 +32,21 @@ export default function LoginScreen({ onSignedIn, onRegister }: Props) {
   };
 
   return (
-    <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <LinearGradient
-        colors={["#141D35", "#1D2B4C", "#14223E"]}
-        start={{ x: 0.5, y: 0 }}
-        end={{ x: 0.5, y: 1 }}
-        style={styles.container}
+    <LinearGradient
+      colors={["#141D35", "#1D2B4C", "#14223E"]}
+      start={{ x: 0.5, y: 0 }}
+      end={{ x: 0.5, y: 1 }}
+      style={styles.container}
+    >
+      <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
+      {/* Content scrolls to focused fields */}
+      <KeyboardAwareScrollView
+        contentContainerStyle={styles.scrollContent}
+        enableOnAndroid
+        keyboardOpeningTime={0}
+        extraScrollHeight={Platform.select({ ios: 24, android: 32 }) as number}
+        keyboardShouldPersistTaps="handled"
       >
-        <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
         {/* Top logo (matches splash styling) */}
         <View style={styles.topLogoContainer}>
           <View style={styles.logoWrapper}>
@@ -51,6 +58,7 @@ export default function LoginScreen({ onSignedIn, onRegister }: Props) {
           <Text style={styles.companyName}>ADDON-S</Text>
           <Text style={styles.signInSubtitle}>Sign in to your account</Text>
         </View>
+
         <View style={styles.bottomPanel}>
           {/* Email */}
           <TextField
@@ -93,21 +101,22 @@ export default function LoginScreen({ onSignedIn, onRegister }: Props) {
               <Text style={styles.link}>Register</Text>
             </TouchableOpacity>
           </View>
-        </View>
-      </LinearGradient>
-    </KeyboardAvoidingView>
+          </View>
+      </KeyboardAwareScrollView>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1 },
   container: { flex: 1 },
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: 'space-between',
+    paddingBottom: Platform.select({ ios: 8, android: 0 }) as number,
+  },
   topLogoContainer: {
-    position: 'absolute',
-    top: 90,
-    left: 0,
-    right: 0,
     alignItems: 'center',
+    marginTop: 90,
   },
   logoWrapper: {
     width: 110,
@@ -159,11 +168,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
     paddingTop: spacing.xl,
     paddingBottom: spacing.xl * 1.5,
-    justifyContent: 'flex-end',
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
   },
   tfLabel: { color: 'rgba(255,255,255,0.95)' },
   tfRow: {
