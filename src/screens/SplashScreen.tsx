@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { View, Image, StyleSheet, StatusBar, Text, Platform } from 'react-native';
+import { View, Image, StyleSheet, StatusBar, Text, Platform, InteractionManager } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import { colors } from '../styles/theme';
 let AsyncStorage: any = null;
@@ -14,22 +14,30 @@ type Props = {
 
 export default function SplashScreen({ onReady }: Props) {
   useEffect(() => {
-    let mounted = true;
-    const id = setTimeout(() => {
-      (async () => {
+    let canceled = false;
+    const MIN_SPLASH_MS = 600; // keep branding visible briefly
+
+    const run = async () => {
+      // Let first frame render before doing any work
+      try { await new Promise((r) => InteractionManager.runAfterInteractions(r)); } catch {}
+
+      const waitMin = new Promise((r) => setTimeout(r, MIN_SPLASH_MS));
+      const readSid = (async () => {
         try {
-          const sid = AsyncStorage && typeof AsyncStorage.getItem === 'function'
-            ? await AsyncStorage.getItem('sid')
-            : null;
-          if (!mounted) return;
-          onReady?.(sid ? 'tabs' : 'login');
-        } catch {
-          if (!mounted) return;
-          onReady?.('login');
-        }
+          if (AsyncStorage && typeof AsyncStorage.getItem === 'function') {
+            return await AsyncStorage.getItem('sid');
+          }
+        } catch {}
+        return null;
       })();
-    }, 1000);
-    return () => { mounted = false; clearTimeout(id); };
+
+      const [sid] = await Promise.all([readSid, waitMin]) as [string | null, any];
+      if (canceled) return;
+      onReady?.(sid ? 'tabs' : 'login');
+    };
+
+    run();
+    return () => { canceled = true; };
   }, [onReady]);
   return (
     <LinearGradient

@@ -56,8 +56,8 @@ export default function TabNavigator({ initialTab = 'HomeScreen' }: Props) {
   useEffect(() => {
     (async () => {
       try {
-        const storedName = await AsyncStorage.getItem('userFullName');
-        let storedImg = await AsyncStorage.getItem('userImage');
+        const storedName = (await AsyncStorage.getItem('userFullName')) || (await AsyncStorage.getItem('full_name'));
+        let storedImg = (await AsyncStorage.getItem('userImage')) || (await AsyncStorage.getItem('user_image'));
         if (storedName) setProfileName(storedName);
         const hostSrc = (Config as any)?.ERP_URL_METHOD || (Config as any)?.ERP_METHOD_URL || (Config as any)?.ERP_URL_RESOURCE || (Config as any)?.ERP_URL || '';
         const host = String(hostSrc || '').replace(/\/$/, '').replace(/\/api\/(resource|method)$/i, '');
@@ -110,7 +110,7 @@ export default function TabNavigator({ initialTab = 'HomeScreen' }: Props) {
             title={route.name === 'HomeScreen' ? 'Addons HR' : route.name}
             rightItems={[
               { type: 'bell' },
-              { type: 'avatar', onPress: openProfile, uri: avatarUri || undefined, label: (profileName || 'U').slice(0,1) },
+              { type: 'avatar', onPress: openProfile, uri: avatarUri || undefined, label: (profileName || 'User') },
             ]}
             variant="dark"
           />

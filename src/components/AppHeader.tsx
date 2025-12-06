@@ -101,6 +101,7 @@ export default function AppHeader({
             }
             if (item.type === 'avatar') {
               const avatar = item.source || (item.uri ? { uri: item.uri } : undefined);
+              const hasNameOnly = !avatar && !!item.label;
               return (
                 <Pressable
                   key={`avatar-${idx}`}
@@ -110,14 +111,15 @@ export default function AppHeader({
                   style={[
                     styles.iconBtn,
                     { marginLeft: idx === 0 ? 0 : 16, borderColor: ringColor, backgroundColor: isDark ? 'transparent' : '#fff' },
+                    hasNameOnly && styles.namePill,
                   ]}
                 >
                   {avatar ? (
                     <Image source={avatar} style={styles.avatar} />
                   ) : (item.label ? (
-                    <Text style={[styles.avatarInitial, { color: iconColor }]}>{String(item.label).slice(0,1).toUpperCase()}</Text>
+                    <Text style={[styles.nameText, { color: iconColor }]} numberOfLines={1}>{String(item.label)}</Text>
                   ) : (
-                    <Ionicons name="person-outline" size={18} color={iconColor} />
+                    <Ionicons name="person-outline" size={22} color={iconColor} />
                   ))}
                 </Pressable>
               );
@@ -147,15 +149,21 @@ const styles = StyleSheet.create({
   subtitle: { fontSize: 12, color: '#6b7280', marginTop: 2 },
   rightRow: { flexDirection: 'row', alignItems: 'center' },
   iconBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 8,
     backgroundColor: '#fff',
     borderWidth: 1,
     borderColor: '#e5e7eb',
+  },
+  namePill: {
+    paddingHorizontal: 10,
+    width: undefined as any,
+    minWidth: 34,
+    flexDirection: 'row',
   },
   backPlain: { paddingHorizontal: 4, paddingVertical: 6, marginRight: 4 },
   backImage: { width: 20, height: 20, resizeMode: 'contain' },
@@ -164,8 +172,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatar: { width: 22, height: 22, borderRadius: 11 },
+  avatar: { width: 28, height: 28, borderRadius: 14 },
   avatarInitial: { fontSize: 12, fontWeight: '700' },
+  nameText: { fontSize: 12, fontWeight: '700' },
   badge: {
     position: 'absolute',
     top: -2,
