@@ -18,6 +18,10 @@ try {
   if (React && !('default' in React)) {
     React.default = React;
   }
+  const RN = require('react-native');
+  if (RN && !('default' in RN)) {
+    RN.default = RN;
+  }
 } catch {}
 import App from './App';
 import { name as appName } from './app.json';

@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { View, TextInput, Text, StyleSheet, TextInputProps, Pressable } from 'react-native';
+import { View, TextInput, Text, StyleSheet, TextInputProps, Pressable, ViewStyle, TextStyle } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { colors, radii, spacing } from '../../styles/theme';
 
@@ -10,14 +10,16 @@ type Props = TextInputProps & {
   onPress?: () => void; // Optional press handler to make field behave like a picker
   rightIcon?: string;
   onRightPress?: () => void;
+  rowStyle?: ViewStyle;
+  labelStyle?: TextStyle;
 };
 
-export default function TextField({ label, leftIcon, rightIcon, onRightPress, errorText, style, onPress, ...inputProps }: Props) {
+export default function TextField({ label, leftIcon, rightIcon, onRightPress, errorText, style, rowStyle, labelStyle, onPress, ...inputProps }: Props) {
   const Row: any = onPress ? Pressable : View;
   return (
     <View>
-      {label ? <Text style={styles.label}>{label}</Text> : null}
-      <Row style={styles.inputRow} onPress={onPress} accessibilityRole={onPress ? 'button' : undefined}>
+      {label ? <Text style={[styles.label, labelStyle]}>{label}</Text> : null}
+      <Row style={[styles.inputRow, rowStyle]} onPress={onPress} accessibilityRole={onPress ? 'button' : undefined}>
         {leftIcon ? (
           <Ionicons name={leftIcon as any} size={16} color={colors.textMuted} style={styles.leftIcon} />
         ) : null}

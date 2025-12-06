@@ -25,7 +25,7 @@ export default function RootNavigator() {
   // Advance from splash after 3 seconds
   useEffect(() => {
     if (stage !== 'splash') return;
-    const t = setTimeout(() => setStage('tabs'), 3000);
+    const t = setTimeout(() => setStage('login'), 3000);
     return () => clearTimeout(t);
   }, [stage]);
 

@@ -11,13 +11,12 @@ export default function App() {
   const isDarkMode = useColorScheme() === 'dark';
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <NavigationContainer>
-        <SafeAreaProvider>
+      <SafeAreaProvider>
+        <NavigationContainer>
           <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
           <RootNavigator />
-        </SafeAreaProvider>
-      </NavigationContainer>
+        </NavigationContainer>
+      </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 }
-
