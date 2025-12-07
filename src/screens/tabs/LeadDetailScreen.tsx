@@ -1,213 +1,484 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Pressable, Linking, Platform, Alert, SectionList } from 'react-native';
-import Ionicons from 'react-native-vector-icons/Ionicons';
-import LinearGradient from 'react-native-linear-gradient';
+import * as React from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, StatusBar, ActivityIndicator, Alert, Linking, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { getLead, type Lead } from '../../services/leadService';
+import Ionicons from 'react-native-vector-icons/Ionicons';
+import { getLead, updateLeadSmart, prepareLeadPayload, prepareLeadUpdatePayload, type Lead as ERPLead } from '../../services/leadService';
 
 (Ionicons as any)?.loadFont?.();
 
-export default function LeadDetailScreen({ name, onBack }: { name: string; onBack?: () => void }) {
+// Static-only screen matching the provided screenshot
+export default function LeadDetailScreen({ name, onBack, startEditing }: { name: string; onBack?: () => void; startEditing?: boolean }) {
   const insets = useSafeAreaInsets();
-  const [loading, setLoading] = React.useState(true);
-  const [lead, setLead] = React.useState<Lead | null>(null);
+  const [tab, setTab] = useState<'Details' | 'Notes' | 'Activity'>('Details');
+  const [editing, setEditing] = useState(!!startEditing);
+  const [lead, setLead] = useState<ERPLead | any | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState<any>({
+    // Core
+    lead_name: '',
+    company_name: '',
+    email_id: '',
+    mobile_no: '',
+    phone: '',
+    website: '',
+    whatsapp: '',
+    source: '',
+    status: '',
+    territory: '',
+    date: '',
+    location: '',
+    lead_owner: '',
+    lead_type: '',
+    request_type: '',
+    service_type: '',
+    // Additional display fields
+    salutation: '',
+    first_name: '',
+    company: '',
+    title: '',
+    country: '',
+    language: '',
+    qualification_status: '',
+    type: '',
+    no_of_employees: '',
+    notes: '',
+  });
 
-  React.useEffect(() => {
-    let mounted = true;
-    (async () => {
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      setError(null);
       try {
-        setLoading(true);
-        const l = await getLead(name);
-        if (mounted) setLead(l);
+        const row = await getLead(name);
+        if (!cancelled) {
+          setLead(row as any);
+          setForm({
+            lead_name: (row as any)?.lead_name || '',
+            company_name: (row as any)?.company_name || '',
+            email_id: (row as any)?.email_id || '',
+            mobile_no: (row as any)?.mobile_no || '',
+            phone: (row as any)?.phone || '',
+            website: (row as any)?.website || '',
+            whatsapp: (row as any)?.custom_whatsapp || (row as any)?.whatsapp || '',
+            source: (row as any)?.source || '',
+            status: (row as any)?.status || '',
+            territory: (row as any)?.territory || '',
+            date: (row as any)?.custom_date || '',
+            location: (row as any)?.custom_building__location || (row as any)?.country || '',
+            lead_owner: (row as any)?.lead_owner || '',
+            lead_type: (row as any)?.custom_lead_type || (row as any)?.lead_type || '',
+            request_type: (row as any)?.custom_request_type || (row as any)?.request_type || '',
+            service_type: (row as any)?.custom_service_type || (row as any)?.service_type || '',
+            salutation: (row as any)?.salutation || '',
+            first_name: (row as any)?.first_name || '',
+            company: (row as any)?.company || '',
+            title: (row as any)?.title || '',
+            country: (row as any)?.country || '',
+            language: (row as any)?.language || '',
+            qualification_status: (row as any)?.qualification_status || '',
+            type: (row as any)?.type || '',
+            no_of_employees: String((row as any)?.no_of_employees ?? '') || '',
+            notes: (row as any)?.custom_notes || (row as any)?.notes || '',
+          });
+        }
+      } catch (e: any) {
+        if (!cancelled) setError(e?.message || 'Failed to load lead');
       } finally {
-        mounted && setLoading(false);
+        if (!cancelled) setLoading(false);
       }
-    })();
-    return () => { mounted = false; };
+    }
+    load();
+    return () => { cancelled = true; };
   }, [name]);
+
+  const showVal = (formVal: any, ...fallbacks: any[]) => {
+    if (editing) return String(formVal ?? '');
+    const list = [formVal, ...fallbacks];
+    for (const v of list) {
+      if (v !== undefined && v !== null && String(v) !== '') return String(v);
+    }
+    return '-';
+  };
+
+  const safeOpen = async (url: string, label: string) => {
+    // Try to open directly first; some platforms return false for canOpenURL on tel/sms
+    try {
+      await Linking.openURL(url);
+      return;
+    } catch {}
+    try {
+      const ok = await Linking.canOpenURL(url);
+      if (!ok) return Alert.alert(label, 'No compatible app to handle this action.');
+      await Linking.openURL(url);
+    } catch {
+      Alert.alert(label, 'Unable to open.');
+    }
+  };
+
+  const getPrimaryPhone = () => {
+    const raw = (lead as any)?.mobile_no || (lead as any)?.phone || form.mobile || form.phone;
+    if (!raw) return '';
+    return String(raw).replace(/[^\d+]/g, '');
+  };
+
+  const onCall = () => {
+    const phone = getPrimaryPhone();
+    if (!phone) return Alert.alert('Call', 'No phone number');
+    const scheme = Platform.OS === 'ios' ? 'telprompt' : 'tel';
+    safeOpen(`${scheme}:${phone}`, 'Call');
+  };
+
+  const onMessage = () => {
+    const phone = getPrimaryPhone();
+    if (!phone) return Alert.alert('Message', 'No phone number');
+    safeOpen(`sms:${phone}`, 'Message');
+  };
+
+  const onWebsite = () => {
+    const url = (lead as any)?.website || form.website;
+    if (!url) return Alert.alert('Website', 'No website');
+    const u = url.startsWith('http') ? url : `https://${url}`;
+    safeOpen(u, 'Website');
+  };
+
+  async function onSaveAll() {
+    try {
+      setSaving(true);
+      // Ensure required minimal fields
+      if (!String(form.lead_name || '').trim()) {
+        Alert.alert('Lead', 'Lead Name is required');
+        return;
+      }
+      // Build update payload that preserves cleared values
+      const base: any = {
+        lead_name: form.lead_name,
+        company_name: form.company_name,
+        email_id: form.email_id,
+        mobile_no: form.mobile_no,
+        status: form.status,
+        source: form.source,
+        territory: form.territory,
+        date: form.date,
+        location: form.location,
+        lead_owner: form.lead_owner,
+        lead_type: form.lead_type,
+        request_type: form.request_type,
+        service_type: form.service_type,
+        website: form.website,
+        whatsapp: form.whatsapp,
+        notes: form.notes,
+        phone: form.phone,
+        salutation: form.salutation,
+        first_name: form.first_name,
+        company: form.company,
+        title: form.title,
+        country: form.country,
+        language: form.language,
+        qualification_status: form.qualification_status,
+        type: form.type,
+        no_of_employees: form.no_of_employees,
+      };
+      // Pass raw form-based values to smart updater so it can map to correct fieldnames
+      const updated = await updateLeadSmart(name, base);
+      if (!updated) throw new Error('Save failed');
+      setEditing(false);
+      // Refresh
+      const row = await getLead(name);
+      setLead(row as any);
+      Alert.alert('Lead', 'Updated successfully');
+    } catch (e: any) {
+      Alert.alert('Lead', e?.message || 'Failed to save');
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
     <View style={styles.screen}>
-      {loading ? (
-        <View style={{ padding: 16 }}>
-          <ActivityIndicator />
+      <StatusBar barStyle="light-content" backgroundColor="#111827" />
+      <LeadHeroHeader
+        onBack={onBack}
+        insetsTop={insets.top}
+        editing={editing}
+        saving={saving}
+        onEdit={() => setEditing(true)}
+        onCancel={() => setEditing(false)}
+        onSave={onSaveAll}
+        lead={lead as any}
+      />
+
+      {/* Fixed actions bar */}
+      <View style={styles.actionsWrap}>
+        <View style={styles.actionsRow}>
+          <ActionButton label="Call" icon="call" primary onPress={onCall} />
+          <ActionButton label="Message" icon="chatbubble" onPress={onMessage} />
+          <ActionButton label="Website" icon="globe-outline" onPress={onWebsite} />
         </View>
-      ) : (
-        <>
-          <LinearGradient colors={["#0b0b1b", "#1f243d"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.heroCard, { paddingTop: insets.top + 12 }]}> 
+      </View>
 
-            <View style={styles.heroTopRow}>
-              <Pressable accessibilityRole="button" onPress={onBack} style={styles.backBtnDark}>
-                <Ionicons name="arrow-back" size={20} color="#fff" />
-              </Pressable>
-              <Text style={styles.heroTitle}>Lead Details</Text>
-              <View style={{ width: 36 }} />
-            </View>
-            <View style={styles.heroInfoRow}>
-              <View style={styles.avatarLg}>
-                <Text style={styles.avatarLgText}>{(lead?.company_name || lead?.lead_name || 'L').slice(0,1).toUpperCase()}</Text>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.heroName} numberOfLines={1}>{lead?.company_name || lead?.lead_name || 'Lead'}</Text>
-                {!!lead?.lead_name && <Text style={styles.heroSub} numberOfLines={1}>{lead?.lead_name}</Text>}
-                <View style={styles.heroChips}>
-                  {!!lead?.status && (
-                    <View style={[styles.badge, { backgroundColor: '#e7f0ff' }]}>
-                      <Text style={[styles.badgeText, { color: '#0b6dff' }]}>{lead.status}</Text>
-                    </View>
-                  )}
-                  {!!lead?.source && (
-                    <View style={[styles.badge, { backgroundColor: '#fff' }, styles.linkBadge]}>
-                      <Text style={[styles.badgeText, { color: '#111827' }]}>{lead.source}</Text>
-                    </View>
-                  )}
-                </View>
-              </View>
-            </View>
-            <View style={styles.quickActions}>
-              <QuickAction icon="call" label="Call" onPress={() => callNumber(lead?.mobile_no || lead?.phone)} />
-              <QuickAction icon="mail" label="Email" onPress={() => emailTo(lead?.email_id)} />
-              <QuickAction icon="navigate" label="Map" onPress={() => openMap(lead?.address)} />
-            </View>
-          </LinearGradient>
-
-          <ScrollView contentContainerStyle={[styles.wrapper, { paddingBottom: insets.bottom + 24 }]} showsVerticalScrollIndicator={false}>
-          {(() => {
-            type RowDef = { label: string; value?: any; icon?: string; multiline?: boolean; onPress?: () => void };
-            type CardItem = { kind: 'rows'; rows: RowDef[] } | { kind: 'notes'; text: string };
-            type CardSection = { title: string; data: CardItem[] };
-
-            const sections: CardSection[] = [];
-            const contactRows: RowDef[] = [
-              { label: 'Email', value: lead?.email_id, icon: 'mail-outline', onPress: () => emailTo(lead?.email_id) },
-              { label: 'Mobile', value: lead?.mobile_no, icon: 'call-outline', onPress: () => callNumber(lead?.mobile_no) },
-              { label: 'Phone', value: lead?.phone, icon: 'call-outline', onPress: () => callNumber(lead?.phone) },
-            ].filter(r => r.value);
-            if (contactRows.length) sections.push({ title: 'Contact', data: [{ kind: 'rows', rows: contactRows }] });
-
-            const companyRows: RowDef[] = [
-              { label: 'Company Name', value: lead?.company_name, icon: 'business-outline' },
-              { label: 'Address', value: lead?.address, icon: 'home-outline', multiline: true, onPress: () => openMap(lead?.address) },
-            ].filter(r => r.value);
-            if (companyRows.length) sections.push({ title: 'Company', data: [{ kind: 'rows', rows: companyRows }] });
-
-            const detailRows: RowDef[] = [
-              { label: 'Status', value: lead?.status, icon: 'bookmark-outline' },
-              { label: 'Source', value: lead?.source, icon: 'link-outline' },
-              { label: 'Territory', value: lead?.territory, icon: 'location-outline' },
-              { label: 'Lead Name', value: lead?.lead_name, icon: 'person-outline' },
-              { label: 'Lead ID', value: lead?.name, icon: 'id-card-outline' },
-            ].filter(r => r.value);
-            if (detailRows.length) sections.push({ title: 'Details', data: [{ kind: 'rows', rows: detailRows }] });
-
-            if (lead?.notes) sections.push({ title: 'Notes', data: [{ kind: 'notes', text: String(lead.notes) }] });
-
-            const shown = new Set<string>(['name','lead_name','company_name','email_id','mobile_no','phone','status','source','territory','address','notes']);
-            const extrasKeys = Object.keys(lead || {})
-              .filter(k => !shown.has(k) && !/^(__|_)/.test(k) && !['doctype','owner','creation','modified','modified_by','docstatus','idx'].includes(k))
-              .filter(k => { const v: any = (lead as any)[k]; return v !== null && v !== undefined && String(v).trim().length > 0; });
-            if (extrasKeys.length) {
-              const toLabel = (s: string) => s.replace(/_/g,' ').replace(/\b\w/g, c => c.toUpperCase());
-              const rows: RowDef[] = extrasKeys.map(k => ({ label: toLabel(k), value: String((lead as any)[k]) }));
-              sections.push({ title: 'Other Details', data: [{ kind: 'rows', rows }] });
-            }
-
+      {/* Fixed tabs bar */}
+      <View style={styles.tabsWrap}>
+        <View style={styles.tabs}>
+          {(['Details', 'Notes', 'Activity'] as const).map(t => {
+            const active = tab === t;
             return (
-              <SectionList
-                sections={sections}
-                keyExtractor={(item, index) => `${(item as any).kind}-${index}`}
-                renderSectionHeader={({ section }) => (
-                  <Text style={styles.sectionTitle}>{section.title}</Text>
-                )}
-                renderItem={({ item }) => (
-                  item.kind === 'rows' ? (
-                    <View style={styles.card}>
-                      {item.rows.map((r, i) => (
-                        <InfoRow key={`${r.label}-${i}`} label={r.label} value={r.value} icon={r.icon as any} multiline={r.multiline} isLast={i === item.rows.length - 1} onPress={r.onPress} />
-                      ))}
-                    </View>
-                  ) : (
-                    <View style={styles.card}><Text style={styles.notesText}>{item.text}</Text></View>
-                  )
-                )}
-                contentContainerStyle={[styles.wrapper, { paddingBottom: insets.bottom + 24 }]}
-                initialNumToRender={3}
-                windowSize={10}
-                removeClippedSubviews
-                stickySectionHeadersEnabled={false}
-                showsVerticalScrollIndicator={false}
-              />
+              <Pressable key={t} onPress={() => setTab(t)} style={styles.tabItem}> 
+                <Text style={[styles.tabText, active && styles.tabTextActive]}>{t}</Text>
+                {active && <View style={styles.tabUnderline} />}
+              </Pressable>
             );
-          })()}
-        </ScrollView>
-        </>
+          })}
+        </View>
+      </View>
+
+      <ScrollView style={styles.scroll} contentContainerStyle={{ paddingBottom: 120 }}>
+
+        {/* Cards (Details only) */}
+        {tab === 'Details' && (
+          <>
+            {loading ? (
+              <View style={styles.loadingCard}><ActivityIndicator size="large" /></View>
+            ) : error ? (
+              <View style={styles.loadingCard}>
+                <Text style={{ color: '#b91c1c', marginBottom: 8 }}>{error}</Text>
+                <Pressable onPress={() => {
+                  setLoading(true); setError(null);
+                  getLead(name).then((row)=>{ setLead(row as any); }).catch((e)=> setError(e?.message||'Failed to load lead')).finally(()=> setLoading(false));
+                }} style={[styles.actionBtn, styles.actionBtnPrimary, { alignSelf: 'flex-start', paddingHorizontal: 14 }]}>
+                  <Text style={{ color: '#fff', fontWeight: '600' }}>Retry</Text>
+                </Pressable>
+              </View>
+            ) : null}
+
+            <Card>
+              <CardTitle>Contact Information</CardTitle>
+              <EditableField label="Mobile Number" value={showVal(form.mobile_no, (lead as any)?.mobile_no)} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, mobile_no: t }))} />
+              <Divider />
+              <EditableField label="Phone Number" value={showVal(form.phone, (lead as any)?.phone)} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, phone: t }))} />
+              <Divider />
+              <EditableField label="Email" value={showVal(form.email_id, (lead as any)?.email_id)} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, email_id: t }))} />
+              <Divider />
+              <EditableField label="Website" value={showVal(form.website, (lead as any)?.website)} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, website: t }))} />
+              <Divider />
+              <EditableField label="WhatsApp" value={showVal(form.whatsapp, (lead as any)?.custom_whatsapp, (lead as any)?.whatsapp)} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, whatsapp: t }))} />
+            </Card>
+
+            <Card>
+              <CardTitle>Lead Details</CardTitle>
+              <EditableField label="Lead Name" value={showVal(form.lead_name, (lead as any)?.lead_name)} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, lead_name: t }))} />
+              <Divider />
+              <EditableField label="Salutation" value={showVal(form.salutation, (lead as any)?.salutation)} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, salutation: t }))} />
+              <Divider />
+              <EditableField label="First Name" value={showVal(form.first_name, (lead as any)?.first_name)} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, first_name: t }))} />
+              <Divider />
+              <EditableField label="Status" value={showVal(form.status, (lead as any)?.status)} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, status: t }))} />
+              <Divider />
+              <EditableField label="Lead Source" value={showVal(form.source, (lead as any)?.source)} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, source: t }))} />
+              <Divider />
+              <EditableField label="Qualification Status" value={showVal(form.qualification_status, (lead as any)?.qualification_status)} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, qualification_status: t }))} />
+              <Divider />
+              <EditableField label="Lead Owner" value={showVal(form.lead_owner, (lead as any)?.lead_owner)} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, lead_owner: t }))} />
+              <Divider />
+              <EditableField label="Territory" value={showVal(form.territory, (lead as any)?.territory)} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, territory: t }))} />
+              <Divider />
+              <EditableField label="Company Name" value={showVal(form.company_name, (lead as any)?.company_name)} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, company_name: t }))} />
+              <Divider />
+              <EditableField label="Company" value={showVal(form.company, (lead as any)?.company)} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, company: t }))} />
+              <Divider />
+              <EditableField label="Title" value={showVal(form.title, (lead as any)?.title)} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, title: t }))} />
+              <Divider />
+              <EditableField label="Country" value={showVal(form.country, (lead as any)?.country)} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, country: t }))} />
+              <Divider />
+              <EditableField label="Location" value={showVal(form.location, (lead as any)?.custom_building__location)} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, location: t }))} />
+              <Divider />
+              <EditableField label="Language" value={showVal(form.language, (lead as any)?.language)} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, language: t }))} />
+              <Divider />
+              <EditableField label="Request Type" value={showVal(form.request_type, (lead as any)?.request_type)} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, request_type: t }))} />
+              <Divider />
+              <EditableField label="Type" value={showVal(form.type, (lead as any)?.type)} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, type: t }))} />
+              <Divider />
+              <EditableField label="No. of Employees" value={showVal(form.no_of_employees, (lead as any)?.no_of_employees)} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, no_of_employees: t }))} />
+              <Divider />
+              <EditableField label="Date" value={showVal(form.date, (lead as any)?.custom_date)} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, date: t }))} />
+            </Card>
+
+            <Card>
+              <CardTitle>System Info</CardTitle>
+              <EditableField label="Name" value={(lead as any)?.name || '-'} editing={false} />
+              <Divider />
+              <EditableField label="Naming Series" value={(lead as any)?.naming_series || '-'} editing={false} />
+              <Divider />
+              <EditableField label="Custom Date" value={(lead as any)?.custom_date || '-'} editing={false} />
+              <Divider />
+              <EditableField label="Owner" value={(lead as any)?.owner || '-'} editing={false} />
+              <Divider />
+              <EditableField label="Creation" value={(lead as any)?.creation || '-'} editing={false} />
+              <Divider />
+              <EditableField label="Modified" value={(lead as any)?.modified || '-'} editing={false} />
+              <Divider />
+              <EditableField label="Modified By" value={(lead as any)?.modified_by || '-'} editing={false} />
+              <Divider />
+              <EditableField label="DocType" value={(lead as any)?.doctype || '-'} editing={false} />
+              <Divider />
+              <EditableField label="DocStatus" value={String((lead as any)?.docstatus ?? '') || '-'} editing={false} />
+              <Divider />
+              <EditableField label="Index" value={String((lead as any)?.idx ?? '') || '-'} editing={false} />
+              <Divider />
+              <EditableField label="Disabled" value={String((lead as any)?.disabled ?? '') || '-'} editing={false} />
+              <Divider />
+              <EditableField label="Blog Subscriber" value={String((lead as any)?.blog_subscriber ?? '') || '-'} editing={false} />
+              <Divider />
+              <EditableField label="Unsubscribed" value={String((lead as any)?.unsubscribed ?? '') || '-'} editing={false} />
+              <Divider />
+              <EditableField label="Annual Revenue" value={String((lead as any)?.annual_revenue ?? '') || '-'} editing={false} />
+            </Card>
+
+            <Card>
+              <CardTitle>Notes / Follow-up</CardTitle>
+              <EditableField label="Notes" value={showVal(form.notes, (lead as any)?.custom_notes, (lead as any)?.notes)} editing={editing} onChangeText={(t) => setForm((p: any) => ({ ...p, notes: t }))} />
+            </Card>
+          </>
+        )}
+      </ScrollView>
+
+      {/* Floating Add Button */}
+      <Pressable style={[styles.fab, { bottom: 24 + insets.bottom }]}>
+        <Ionicons name="add" size={24} color="#fff" />
+      </Pressable>
+    </View>
+  );
+}
+
+function LeadHeroHeader({ onBack, insetsTop, editing, saving, onEdit, onCancel, onSave, lead }: { onBack?: () => void; insetsTop: number; editing?: boolean; saving?: boolean; onEdit?: () => void; onCancel?: () => void; onSave?: () => void; lead?: any }) {
+  return (
+    <View style={styles.heroWrap}>
+      <View style={[styles.heroTop, { paddingTop: insetsTop + 10 }]}>        
+        <Pressable onPress={onBack} hitSlop={10} style={styles.iconBtn}>
+          <Ionicons name="chevron-back" size={22} color="#ffffff" />
+        </Pressable>
+        <Text style={styles.heroTopTitle}>Lead Details</Text>
+        {editing ? (
+          <View style={{ flexDirection: 'row' }}>
+            <Pressable hitSlop={10} style={styles.iconBtn} onPress={onCancel}>
+              <Ionicons name="close" size={20} color="#ffffff" />
+            </Pressable>
+            <Pressable hitSlop={10} style={styles.iconBtn} onPress={onSave} disabled={!!saving}>
+              {saving ? (
+                <View style={{ width: 22, height: 22, alignItems: 'center', justifyContent: 'center' }}>
+                  <ActivityIndicator size="small" color="#22c55e" />
+                </View>
+              ) : (
+                <Ionicons name="checkmark" size={22} color="#22c55e" />
+              )}
+            </Pressable>
+          </View>
+        ) : (
+          <View style={{ flexDirection: 'row' }}>
+            <Pressable hitSlop={10} style={styles.iconBtn} onPress={onEdit}>
+              <Ionicons name="create-outline" size={20} color="#ffffff" />
+            </Pressable>
+            <Pressable hitSlop={10} style={styles.iconBtn}>
+              <Ionicons name="ellipsis-vertical" size={18} color="#ffffff" />
+            </Pressable>
+          </View>
+        )}
+      </View>
+      <View style={styles.heroCard}>
+        <View style={styles.avatarLg}>
+          <Ionicons name="person" color="#ffffff" size={28} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.name}>{(lead?.lead_name || lead?.first_name || lead?.name || 'Lead') as string}</Text>
+          <Text style={styles.role}>{[lead?.company_name, lead?.country].filter(Boolean).join(' • ')}</Text>
+          <View style={{ marginTop: 8 }}>
+            <View style={styles.statusChip}><Text style={styles.statusChipText}>{(lead?.status || '-') as string}</Text></View>
+          </View>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+/* UI Helpers */
+
+function ActionButton({ label, icon, primary, onPress }: { label: string; icon: string; primary?: boolean; onPress?: () => void }) {
+  return (
+    <Pressable onPress={onPress} style={[styles.actionBtn, primary ? styles.actionBtnPrimary : styles.actionBtnGhost]}>
+      <Ionicons name={icon as any} size={16} color={primary ? '#ffffff' : '#111827'} />
+      <Text style={[styles.actionBtnText, primary ? { color: '#fff' } : { color: '#111827' }]}>{label}</Text>
+    </Pressable>
+  );
+}
+
+function Card({ children }: { children: React.ReactNode }) {
+  return <View style={styles.card}>{children}</View>;
+}
+
+function CardTitle({ children }: { children: React.ReactNode }) {
+  return <Text style={styles.cardTitle}>{children}</Text>;
+}
+
+function EditableField({ label, value, editing, onChangeText }: { label: string; value: string; editing?: boolean; onChangeText?: (t: string) => void }) {
+  return (
+    <View style={{ paddingVertical: 10 }}>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      {editing ? (
+        <TextInput
+          value={value}
+          onChangeText={onChangeText}
+          placeholder={label}
+          style={styles.input}
+        />
+      ) : (
+        <Text style={styles.fieldValue}>{value}</Text>
       )}
     </View>
   );
 }
 
-function InfoRow({ label, value, icon, multiline, isLast, onPress }: { label: string; value?: string | number | null; icon?: string; multiline?: boolean; isLast?: boolean; onPress?: () => void }) {
-  if (!value && value !== 0) return null;
-  const Inner = (
-    <View style={[styles.infoRow, !isLast && styles.infoRowBorder]}>
-      <View style={styles.infoLeft}>
-        {!!icon && <Ionicons name={icon as any} size={14} color="#6b7280" style={{ width: 18, marginRight: 6 }} />}
-        <Text style={styles.infoLabel}>{label}</Text>
-      </View>
-      <Text style={[styles.infoValue, multiline && { flex: 1 }]} numberOfLines={multiline ? 0 : 1}>{String(value)}</Text>
-    </View>
-  );
-  if (onPress) return <Pressable onPress={onPress}>{Inner}</Pressable>;
-  return Inner;
+function Divider() {
+  return <View style={styles.divider} />;
 }
 
-function callNumber(num?: string | null) {
-  if (!num) return Alert.alert('Call', 'No phone number available');
-  Linking.openURL(`tel:${String(num).trim()}`).catch(() => Alert.alert('Call', 'Unable to open dialer'));
-}
-function emailTo(addr?: string | null) {
-  if (!addr) return Alert.alert('Email', 'No email address available');
-  Linking.openURL(`mailto:${String(addr).trim()}`).catch(() => Alert.alert('Email', 'Unable to open mail app'));
-}
-function openMap(address?: string | null) {
-  if (!address) return Alert.alert('Map', 'No address available');
-  const q = encodeURIComponent(address);
-  const url = Platform.OS === 'ios' ? `http://maps.apple.com/?q=${q}` : `geo:0,0?q=${q}`;
-  Linking.openURL(url).catch(() => Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${q}`));
-}
-
-function QuickAction({ icon, label, onPress }: { icon: string; label: string; onPress?: () => void }) {
-  return (
-    <Pressable onPress={onPress} style={styles.quickBtn}>
-      <Ionicons name={`${icon}-outline` as any} size={16} color="#fff" />
-      <Text style={styles.quickLabel}>{label}</Text>
-    </Pressable>
-  );
-}
-
+/* Styles */
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#fff' },
-  wrapper: { paddingHorizontal: 12, paddingBottom: 12, paddingTop: 0 },
-  heroCard: { borderRadius: 0, paddingHorizontal: 12, paddingVertical: 12 },
-  heroTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  backBtnDark: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.15)' },
-  heroTitle: { fontSize: 16, fontWeight: '700', color: '#fff' },
-  heroInfoRow: { flexDirection: 'row', alignItems: 'center', marginTop: 12 },
-  avatarLg: { width: 56, height: 56, borderRadius: 28, backgroundColor: '#111827', alignItems: 'center', justifyContent: 'center', marginRight: 12, borderWidth: 2, borderColor: 'rgba(255,255,255,0.2)' },
-  avatarLgText: { color: '#fff', fontWeight: '800', fontSize: 18 },
-  heroName: { color: '#fff', fontSize: 18, fontWeight: '800' },
-  heroSub: { color: '#cbd5e1', fontSize: 12, marginTop: 2 },
-  heroChips: { flexDirection: 'row', gap: 8, marginTop: 8 },
-  quickActions: { flexDirection: 'row', gap: 10, marginTop: 12 },
-  quickBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 0, backgroundColor: 'rgba(255,255,255,0.18)' },
-  quickLabel: { color: '#fff', fontWeight: '700', fontSize: 12 },
+  screen: { flex: 1, backgroundColor: '#ffffff' },
+  iconBtn: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
+  heroWrap: { backgroundColor: '#ffffff' },
+  heroTop: { backgroundColor: '#111827', paddingHorizontal: 12, paddingBottom: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  heroTopTitle: { color: '#ffffff', fontWeight: '700' },
+  heroCard: { marginHorizontal: 12, marginTop: -28, backgroundColor: '#ffffff', borderRadius: 14, padding: 14, borderWidth: 1, borderColor: '#E5E7EB', flexDirection: 'row', alignItems: 'center', elevation: 3, shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 6, shadowOffset: { width: 0, height: 4 } },
+  avatarLg: { width: 56, height: 56, borderRadius: 28, backgroundColor: '#9CA3AF', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  name: { fontSize: 18, fontWeight: '700', color: '#111827' },
+  role: { marginTop: 4, color: '#6B7280', lineHeight: 18 },
+  statusChip: { alignSelf: 'flex-start', backgroundColor: '#E0F2FE', paddingVertical: 4, paddingHorizontal: 8, borderRadius: 999 },
+  statusChipText: { color: '#0369A1', fontSize: 12, fontWeight: '600' },
 
-  card: { backgroundColor: '#fff', borderRadius: 12, borderWidth: 1, borderColor: '#e5e7eb', padding: 12 },
-  sectionTitle: { marginTop: 12, marginBottom: 6, marginLeft: 2, fontSize: 12, fontWeight: '700', color: '#111827' },
-  infoRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10 },
-  infoRowBorder: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#eef0f3' },
-  infoLeft: { flexDirection: 'row', alignItems: 'center' },
-  infoLabel: { color: '#6b7280', fontSize: 12 },
-  infoValue: { color: '#111827', fontSize: 13, marginLeft: 10, maxWidth: '60%', textAlign: 'right' },
-  notesText: { fontSize: 12, color: '#4b5563' },
+  scroll: { flex: 1, backgroundColor: '#ffffff' },
+  actionsWrap: { backgroundColor: '#ffffff', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#E5E7EB' },
+  actionsRow: { flexDirection: 'row', gap: 12 },
+  actionBtn: { flex: 1, flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'center', paddingVertical: 10, borderRadius: 10, borderWidth: 1, borderColor: '#E5E7EB' },
+  actionBtnPrimary: { backgroundColor: '#2563EB', borderColor: '#2563EB' },
+  actionBtnGhost: { backgroundColor: '#ffffff' },
+  actionBtnText: { fontWeight: '600' },
+
+  tabsWrap: { backgroundColor: '#ffffff', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#E5E7EB' },
+  tabs: { flexDirection: 'row', paddingHorizontal: 12, paddingTop: 12, paddingBottom: 8 },
+  tabItem: { flex: 1, alignItems: 'center' },
+  tabText: { color: '#6B7280', fontWeight: '600' },
+  tabTextActive: { color: '#111827' },
+  tabUnderline: { marginTop: 6, height: 2, width: 56, backgroundColor: '#2563EB', borderRadius: 2 },
+
+  card: { backgroundColor: '#ffffff', marginHorizontal: 12, marginTop: 12, borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#E5E7EB' },
+  cardTitle: { fontWeight: '700', color: '#111827', marginBottom: 8 },
+  fieldLabel: { fontSize: 12, color: '#6B7280', marginBottom: 4 },
+  fieldValue: { color: '#111827' },
+  input: { borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 8, paddingVertical: 8, paddingHorizontal: 10, color: '#111827', backgroundColor: '#FFFFFF' },
+  divider: { height: 1, backgroundColor: '#EFF2F5', marginVertical: 4 },
+
+  fab: { position: 'absolute', right: 20, width: 48, height: 48, borderRadius: 24, backgroundColor: '#2563EB', alignItems: 'center', justifyContent: 'center', elevation: 3 },
 });

@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import * as React from 'react';
+import { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -31,9 +32,9 @@ type Props = {
 };
 
 export default function RegisterScreen({ onLogin, onRegistered }: Props) {
-  const scrollRef = React.useRef<KeyboardAwareScrollView | null>(null);
-  const emailRef = React.useRef<TextInput | null>(null);
-  const phoneRef = React.useRef<TextInput | null>(null);
+  const scrollRef = useRef<KeyboardAwareScrollView | null>(null);
+  const emailRef = useRef<TextInput | null>(null);
+  const phoneRef = useRef<TextInput | null>(null);
   const [form, setForm] = useState({
     firstName: '',
     lastName: '',

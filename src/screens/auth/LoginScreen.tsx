@@ -1,10 +1,21 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Platform, TextInput, Pressable, StyleProp, ViewStyle, KeyboardAvoidingView, Alert, StatusBar } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { validateEmail } from '../../utils/validators';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getUserByEmail, getEmployeeByEmail } from '../../services/erpApi'
-
+import React, { useState } from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  Platform,
+  StatusBar,
+  Image,
+} from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
+import LinearGradient from 'react-native-linear-gradient';
+import { colors, spacing, radii } from '../../styles/theme';
+import TextField from '../../components/ui/TextField';
+import { loginWithPassword } from '../../services/authentication';
+let AsyncStorage: any = null;
+try { AsyncStorage = require('@react-native-async-storage/async-storage').default; } catch {}
+const logo = require('../../assets/images/logo/logo.png');
 
 type Props = {
   onSignedIn?: () => void;
@@ -12,132 +23,244 @@ type Props = {
 };
 
 export default function LoginScreen({ onSignedIn, onRegister }: Props) {
-  const insets = useSafeAreaInsets();
-  let LinearGradientComp: any = null;
-  try { LinearGradientComp = require('react-native-linear-gradient').default; } catch {}
-  let IoniconsComp: any = null;
-  try { IoniconsComp = require('react-native-vector-icons/Ionicons').default; } catch {}
   const [email, setEmail] = useState('');
-  const [emailError, setEmailError] = useState<string | null>(null);
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  // KeyboardAvoidingView will handle shifting content to avoid the keyboard
+  const [serverError, setServerError] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
 
-  const onContinue = async () => {
-  if (loading) return;
-  const err = validateEmail(email);
-  if (err) { 
-    setEmailError(err); 
-    return; 
-  }
-  setLoading(true);
-  try {
-    const user = await getUserByEmail(email.trim());
-    console.log("user===>",user);
-    
-    if (!user) {
-      Alert.alert('Not Found', 'Email does not exist.');
-      return;
+  const handleLogin = async () => {
+    setServerError(null);
+    const usr = String(email || '').trim();
+    const pwd = String(password || '');
+    if (!usr || !pwd) { setServerError('Email and password are required'); return; }
+    const isEmailLike = /.+@.+\..+/.test(usr);
+    if (!isEmailLike) { setServerError('Enter a valid email'); return; }
+    setLoading(true);
+    try {
+      const result = await loginWithPassword(usr, pwd);
+      console.log("result===>",result); 
+      if (result.ok) {
+        try {
+          const pairs: [string, string][] = [];
+          const rawCookie = result.cookie || '';
+          if (rawCookie) {
+            const m = /^sid=([^;]+)/i.exec(rawCookie);
+            const sidVal = m && m[1] ? m[1] : rawCookie.replace(/^sid=/i, '');
+            pairs.push(['sid', sidVal]);
+          }
+          if (result.userImage) pairs.push(['user_image', String(result.userImage)]);
+          if (result.userId) pairs.push(['user_id', String(result.userId)]);
+          pairs.push(['userEmail', usr]);
+          if (result.employeeId) pairs.push(['employeeId', String(result.employeeId)]);
+          if (result.fullName) pairs.push(['full_name', String(result.fullName)]);
+          if (pairs.length) {
+            if (AsyncStorage && typeof AsyncStorage.multiSet === 'function') {
+              await AsyncStorage.multiSet(pairs);
+            } else {
+              try { console.log('[login] AsyncStorage unavailable; skipping persist'); } catch {}
+            }
+          }
+          // Store employee object if returned by login
+          try {
+            if (result.employee && typeof AsyncStorage.setItem === 'function') {
+              await AsyncStorage.setItem('employeeData', JSON.stringify(result.employee));
+            }
+          } catch {}
+        } catch (storeErr) {
+          try { console.log('[login] failed to persist session data', storeErr); } catch {}
+        }
+        onSignedIn?.();
+      } else {
+        setServerError(result.error || result.message || 'Login failed');
+      }
+    } catch (e: any) {
+      setServerError(e?.message || 'Login failed');
+    } finally {
+      setLoading(false);
     }
-    await AsyncStorage.setItem('userEmail', user.email);
-    const employee = await getEmployeeByEmail(user.email);
-    console.log("employee===>",employee);
-    if (employee) {
-      await AsyncStorage.setItem('employeeId', employee.name);
-    }
-    onSignedIn && onSignedIn();
-  } catch (error) {
-    console.log('Login error:', error);
-    Alert.alert('Error', 'Something went wrong. Please try again.');
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#0c0f1e" />
-      {LinearGradientComp ? (
-        <LinearGradientComp colors={["#0c0f1e", "#0e1429", "#0c0f1e"]} start={{x:0,y:0}} end={{x:1,y:1}} style={StyleSheet.absoluteFillObject} />
-      ) : (
-        <View style={[StyleSheet.absoluteFillObject, { backgroundColor: '#0c0f1e' }]} />
-      )}
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <View style={[styles.header, { paddingTop: insets.top + 28 }]}>
-          <View style={styles.logoBox}>
-            {IoniconsComp ? (<IoniconsComp name="business-outline" size={24} color="#030213" />) : (<Text style={{ fontSize: 24 }}>🏢</Text>)}
+    <LinearGradient
+      colors={["#141D35", "#1D2B4C", "#14223E"]}
+      start={{ x: 0.5, y: 0 }}
+      end={{ x: 0.5, y: 1 }}
+      style={styles.container}
+    >
+      <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
+      <KeyboardAwareScrollView
+        contentContainerStyle={styles.scrollContent}
+        enableOnAndroid
+        keyboardOpeningTime={0}
+        extraScrollHeight={Platform.select({ ios: 24, android: 32 }) as number}
+        keyboardShouldPersistTaps="handled"
+      >
+        {/* Top logo (matches splash styling) */}
+        <View style={styles.topLogoContainer}>
+          <View style={styles.logoWrapper}>
+            <View style={styles.logoGlow} />
+            <View style={styles.logoCircle}>
+              <Image source={logo} style={styles.logo} resizeMode="cover" />
+            </View>
           </View>
-          <Text style={styles.appName}>ADDON-S</Text>
-          <Text style={styles.tagline}>Sign in to your account</Text>
+          <Text style={styles.companyName}>ADDON-S</Text>
+          <Text style={styles.signInSubtitle}>Sign in to your account</Text>
         </View>
 
-        <View style={[
-          styles.whiteSection,
-          { paddingBottom: 16 + insets.bottom } as StyleProp<ViewStyle>,
-        ]}>
-          <Text style={styles.label}>Email</Text>
-          <View style={styles.inputRow}>
-            {IoniconsComp ? (
-              <IoniconsComp name="mail-outline" size={16} color="#6b7280" style={styles.leftIcon} />
-            ) : (
-              <Text style={styles.leftIcon}>📧</Text>
-            )}
-            <TextInput
-              value={email}
-              onChangeText={(t) => { setEmail(t); if (emailError) setEmailError(null); }}
-              onBlur={() => setEmailError(validateEmail(email))}
-              placeholder="Enter your email"
-              placeholderTextColor="#9ca3af"
-              autoCapitalize="none"
-              keyboardType={Platform.OS === 'ios' ? 'email-address' : 'email-address'}
-              autoComplete="email"
-              style={styles.input}
-              returnKeyType="done"
-            />
+        <View style={styles.bottomPanel}>
+          {/* Email */}
+          <TextField
+            label="Email"
+            value={email}
+            onChangeText={(t) => { setEmail(t); if (serverError) setServerError(null); }}
+            placeholder="Enter your email"
+            placeholderTextColor="rgba(255,255,255,0.6)"
+            keyboardType="email-address"
+            autoCapitalize="none"
+            autoCorrect={false}
+            rowStyle={styles.tfRow}
+            labelStyle={styles.tfLabel}
+            style={styles.tfInput}
+          />
+
+          {/* Password */}
+          <View style={{ height: spacing.lg }} />
+          <TextField
+            label="Password"
+            value={password}
+            onChangeText={(t) => { setPassword(t); if (serverError) setServerError(null); }}
+            placeholder="Enter your password"
+            placeholderTextColor="rgba(255,255,255,0.6)"
+            secureTextEntry={!showPassword}
+            rowStyle={styles.tfRow}
+            labelStyle={styles.tfLabel}
+            style={styles.tfInput}
+            rightIcon={showPassword ? 'eye-off' : 'eye'}
+            onRightPress={() => setShowPassword((v) => !v)}
+          />
+
+          {/* Login button */}
+          {serverError ? (
+            <Text style={{ color: '#ff6b6b', marginTop: spacing.sm }}>{serverError}</Text>
+          ) : null}
+
+          <TouchableOpacity onPress={handleLogin} disabled={loading} activeOpacity={0.8} style={[styles.button, loading && styles.buttonDisabled]}>
+            <Text style={styles.buttonText}>{loading ? 'Logging in...' : 'Login'}</Text>
+          </TouchableOpacity>
+
+          {/* Register link */}
+          <View style={styles.registerRow}>
+            <Text style={styles.muted}>Don't have an account? </Text>
+            <TouchableOpacity onPress={onRegister}>
+              <Text style={styles.link}>Register</Text>
+            </TouchableOpacity>
           </View>
-          {emailError ? <Text style={styles.errorText}>{emailError}</Text> : null}
-
-          <Pressable onPress={onContinue} style={({ pressed }) => [styles.primaryBtn, pressed && { opacity: 0.9 }]}>
-            <Text style={styles.primaryBtnText}>{loading ? 'Please wait…' : 'Continue'}</Text>
-          </Pressable>
-
-          <View style={styles.dividerRow}>
-            <View style={styles.line} />
-            <Text style={styles.or}>OR</Text>
-            <View style={styles.line} />
           </View>
-
-          <Pressable style={({ pressed }) => [styles.secondaryBtn, pressed && { opacity: 0.95 }]}>
-            <Text style={{ marginRight: 8 }}>📷</Text>
-            <Text style={styles.secondaryText}>Mark Attendance with Face</Text>
-          </Pressable>
-
-          <View style={{ alignItems: 'center', marginTop: 16 }}>
-            <Text style={{ color: '#6b7280' }}>Don't have an account? <Text onPress={onRegister} style={styles.link}>Register</Text></Text>
-          </View>
-        </View>
-      </KeyboardAvoidingView>
-    </View>
+      </KeyboardAwareScrollView>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  logoBox: { width: 56, height: 56, borderRadius: 12, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
-  appName: { color: '#E5E7EB', fontWeight: '700', marginTop: 10 },
-  tagline: { color: '#cbd5e1', marginTop: 4 },
-  header: { alignItems: 'center', position: 'relative', zIndex: 2, elevation: 6 },
-  whiteSection: { position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: '#fff', paddingHorizontal: 16, paddingTop: 16, borderTopLeftRadius: 16, borderTopRightRadius: 16, zIndex: 1, elevation: 0, justifyContent: 'flex-end', minHeight: 140 },
-  label: { color: '#111827', fontWeight: '600', marginBottom: 6 },
-  inputRow: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, backgroundColor: '#f9fafb', height: 44 },
-  leftIcon: { marginLeft: 12, marginRight: 6, color: '#6b7280' },
-  input: { flex: 1, paddingHorizontal: 8, color: '#111827' },
-  errorText: { color: '#ef4444', marginTop: 6 },
-  primaryBtn: { marginTop: 12, backgroundColor: '#0b0b1b', borderRadius: 10, height: 48, alignItems: 'center', justifyContent: 'center' },
-  primaryBtnText: { color: '#fff', fontWeight: '700' },
-  dividerRow: { flexDirection: 'row', alignItems: 'center', marginVertical: 14 },
-  line: { flex: 1, height: 1, backgroundColor: '#e5e7eb' },
-  or: { color: '#6b7280', marginHorizontal: 10 },
-  secondaryBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, height: 44, backgroundColor: '#f9fafb' },
-  secondaryText: { color: '#111827', fontWeight: '600' },
-  link: { color: '#0b6dff', fontWeight: '700' },
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: 'space-between',
+    paddingBottom: Platform.select({ ios: 8, android: 0 }) as number,
+  },
+  topLogoContainer: {
+    alignItems: 'center',
+    marginTop: 90,
+  },
+  logoWrapper: {
+    width: 110,
+    height: 110,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logoGlow: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 55,
+    backgroundColor: 'rgba(110,198,255,0.10)',
+    shadowColor: '#6EC6FF',
+    shadowOpacity: 0.35,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 0 },
+    ...Platform.select({ android: { elevation: 6 } }),
+  },
+  logoCircle: {
+    width: 110,
+    height: 110,
+    borderRadius: 55,
+    backgroundColor: '#0C2C67',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.15)',
+    overflow: 'hidden',
+  },
+  logo: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 55,
+  },
+  companyName: {
+    marginTop: spacing.sm,
+    color: '#FFFFFF',
+    fontSize: 24,
+    fontWeight: '800',
+    letterSpacing: 1,
+    textAlign: 'center',
+  },
+  signInSubtitle: {
+    marginTop: 6,
+    color: 'rgba(255,255,255,0.85)',
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  bottomPanel: {
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.xl,
+    paddingBottom: spacing.xl * 1.5,
+  },
+  tfLabel: { color: 'rgba(255,255,255,0.95)' },
+  tfRow: {
+    height: 48,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.25)',
+    borderRadius: radii.md,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  tfInput: { color: '#fff' },
+  button: {
+    height: 48,
+    borderRadius: radii.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: spacing.xl,
+    backgroundColor: '#6EC6FF',
+  },
+  buttonDisabled: {
+    opacity: 0.6,
+  },
+  buttonText: {
+    color: '#0B1224',
+    fontWeight: '600',
+    fontSize: 16,
+  },
+  registerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
+    marginTop: spacing.lg,
+  },
+  muted: {
+    color: 'rgba(255,255,255,0.75)',
+  },
+  link: {
+    color: '#6EC6FF',
+    fontWeight: '600',
+  },
 });

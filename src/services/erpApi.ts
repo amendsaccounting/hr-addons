@@ -9,6 +9,7 @@ function pickEnv(...keys: string[]): string {
 }
 
 const BASE_URL = (pickEnv('ERP_URL_RESOURCE', 'ERP_URL') || '').replace(/\/$/, '');
+const METHOD_URL = (pickEnv('ERP_URL_METHOD', 'ERP_METHOD_URL') || '').replace(/\/$/, '');
 const API_KEY = pickEnv('ERP_APIKEY', 'ERP_API_KEY');
 const API_SECRET = pickEnv('ERP_SECRET', 'ERP_API_SECRET');
 
@@ -138,7 +139,8 @@ export async function getEmployeeByEmail(email: string): Promise<any | null> {
 
   const queryOnce = async (field: string) => {
     const filters = encodeURIComponent(JSON.stringify([[field, '=', e]]));
-    const url = `${base}/Employee?filters=${filters}&limit_page_length=1`;
+    const fields = encodeURIComponent(JSON.stringify(['name','employee_name','user_id','company_email','personal_email']));
+    const url = `${base}/Employee?filters=${filters}&fields=${fields}&limit_page_length=1`;
     const r = await fetch(url, { headers });
     const j = await r.json().catch(() => ({} as any));
     const list = j?.data;
@@ -149,5 +151,42 @@ export async function getEmployeeByEmail(email: string): Promise<any | null> {
   try { const byPersonal = await queryOnce('personal_email'); if (byPersonal) return byPersonal; } catch (err) { console.warn('ERP getEmployeeByEmail personal_email error', err); }
   try { const byCompany = await queryOnce('company_email'); if (byCompany) return byCompany; } catch (err) { console.warn('ERP getEmployeeByEmail company_email error', err); }
 
+  return null;
+}
+
+// Returns canonical Employee ID (e.g., HR-EMP-00020) by email if found
+export async function getEmployeeIdByEmail(email: string): Promise<string | null> {
+  const doc = await getEmployeeByEmail(email).catch(() => null);
+  if (doc?.name) return String(doc.name);
+  // Try method API as a fallback
+  const methodBase = METHOD_URL || BASE_URL.replace(/\/api\/resource$/i, '/api/method');
+  if (!methodBase) return null;
+  try {
+    const url = `${methodBase}/frappe.client.get_list`;
+    const body = new URLSearchParams();
+    body.append('doctype', 'Employee');
+    body.append('fields', JSON.stringify(['name']));
+    body.append('filters', JSON.stringify([
+      ['user_id', '=', email],
+    ]));
+    body.append('limit_page_length', '1');
+    const res = await fetch(url, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString() });
+    const json = await res.json().catch(() => ({} as any));
+    const msg = (json as any)?.message;
+    const row = Array.isArray(msg) && msg[0] ? msg[0] : null;
+    if (row?.name) return String(row.name);
+  } catch {}
+  try {
+    const url = `${methodBase}/frappe.client.get_value`;
+    const body = new URLSearchParams();
+    body.append('doctype', 'Employee');
+    body.append('fieldname', 'name');
+    body.append('filters', JSON.stringify({ company_email: email }));
+    const res = await fetch(url, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString() });
+    const json = await res.json().catch(() => ({} as any));
+    const msg = (json as any)?.message;
+    const val = msg?.name;
+    if (val) return String(val);
+  } catch {}
   return null;
 }

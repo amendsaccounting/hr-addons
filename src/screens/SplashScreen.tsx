@@ -1,110 +1,163 @@
-import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, StatusBar, Animated, Dimensions } from 'react-native';
+import React, { useEffect } from 'react';
+import { View, Image, StyleSheet, StatusBar, Text, Platform, InteractionManager } from 'react-native';
+import LinearGradient from 'react-native-linear-gradient';
+import { colors } from '../styles/theme';
+let AsyncStorage: any = null;
+try { AsyncStorage = require('@react-native-async-storage/async-storage').default; } catch {}
 
-const { height } = Dimensions.get('window');
+// Existing app logo
+const logo = require('../assets/images/logo/logo.png');
 
-export default function SplashScreen({ onFinish }: { onFinish?: (nextTab: 'Dashboard' | 'Login') => void }) {
-  let LinearGradientComp: any = null;
-  let IoniconsComp: any = null;
-  let AsyncStorageMod: any = null;
-  try { LinearGradientComp = require('react-native-linear-gradient').default; } catch {}
-  try { IoniconsComp = require('react-native-vector-icons/Ionicons').default; } catch {}
-  try { AsyncStorageMod = require('@react-native-async-storage/async-storage').default; } catch {}
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const scaleAnim = useRef(new Animated.Value(0.5)).current;
-  const progressAnim = useRef(new Animated.Value(0)).current;
+type Props = {
+  onReady?: (next: 'login' | 'tabs') => void;
+};
 
+export default function SplashScreen({ onReady }: Props) {
+  useEffect(() => {
+    let canceled = false;
+    const MIN_SPLASH_MS = 600; // keep branding visible briefly
 
-useEffect(() => {
-  Animated.parallel([
-    Animated.timing(fadeAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
-    Animated.spring(scaleAnim, { toValue: 1, tension: 20, friction: 7, useNativeDriver: true }),
-  ]).start();
+    const run = async () => {
+      // Let first frame render before doing any work
+      try { await new Promise((r) => InteractionManager.runAfterInteractions(r)); } catch {}
 
-  Animated.timing(progressAnim, { toValue: 1, duration: 2000, useNativeDriver: false }).start(async () => {
-    let next: 'Dashboard' | 'Login' = 'Login';
-    try {
-      if (AsyncStorageMod) {
-        const userEmail = await AsyncStorageMod.getItem('userEmail');
-        const employeeId = await AsyncStorageMod.getItem('employeeId');
-        if (userEmail) {
-          next = 'Dashboard';
-        }
-      }
-    } catch (err) {
-      console.log('AsyncStorage read error:', err);
-    }
-    onFinish && onFinish(next);
-  });
-}, [fadeAnim, scaleAnim, progressAnim, onFinish]);
+      const waitMin = new Promise((r) => setTimeout(r, MIN_SPLASH_MS));
+      const readSid = (async () => {
+        try {
+          if (AsyncStorage && typeof AsyncStorage.getItem === 'function') {
+            return await AsyncStorage.getItem('sid');
+          }
+        } catch {}
+        return null;
+      })();
 
-  const progressWidth = progressAnim.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] });
+      const [sid] = await Promise.all([readSid, waitMin]) as [string | null, any];
+      if (canceled) return;
+      onReady?.(sid ? 'tabs' : 'login');
+    };
 
+    run();
+    return () => { canceled = true; };
+  }, [onReady]);
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#1a1f36" />
-      {LinearGradientComp ? (
-        <LinearGradientComp colors={["#1a1f36", "#2d3561", "#1a1f36"]} style={StyleSheet.absoluteFillObject} />
-      ) : (
-        <View style={[StyleSheet.absoluteFillObject, { backgroundColor: '#1a1f36' }]} />
-      )}
+    <LinearGradient
+      colors={["#141D35", "#1D2B4C", "#14223E"]}
+      start={{ x: 0.5, y: 0 }}
+      end={{ x: 0.5, y: 1 }}
+      style={styles.container}
+    >
+      <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
 
-      <View style={styles.topSection}>
-        <Animated.View style={[styles.logoContainer, { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }]}>
+      {/* Top logo with soft glow */}
+      <View style={styles.topLogoContainer}>
+        <View style={styles.logoWrapper}>
+          <View style={styles.logoGlow} />
           <View style={styles.logoCircle}>
-            {IoniconsComp ? (
-              <IoniconsComp name="people" size={64} color="#fff" />
-            ) : (
-              <Text style={{ fontSize: 56, color: '#fff' }}>👥</Text>
-            )}
+            <Image source={logo} style={styles.logo} resizeMode="cover" />
           </View>
-        </Animated.View>
+        </View>
       </View>
 
-      <View style={styles.middleSection}>
-        <Animated.View style={[styles.textContainer, { opacity: fadeAnim }]}>
-          <Text style={styles.appName}>ADDON-S HR</Text>
-          <View style={styles.divider} />
-          <Text style={styles.tagline}>Employee Management System</Text>
-        </Animated.View>
+      {/* Centered title + accent */}
+      <View style={styles.centerContent}>
+        <Text style={styles.appName}>ADDON-S HR</Text>
+        <View style={styles.accent} />
+        <Text style={styles.subtitle}>Employee Management System</Text>
       </View>
 
-      <View style={styles.bottomSection}>
-        <Animated.View style={[styles.loadingContainer, { opacity: fadeAnim }]}>
-          <View style={styles.progressBarContainer}>
-            <Animated.View style={[styles.progressBar, { width: progressWidth }]} />
-          </View>
-          <Text style={styles.loadingText}>Loading...</Text>
-        </Animated.View>
-        <Animated.View style={[styles.footer, { opacity: fadeAnim }]}>
-          <Text style={styles.poweredBy}>Powered by ERPNext</Text>
-          <Text style={styles.version}>Version 1.0.0</Text>
-        </Animated.View>
+      {/* Bottom credits */}
+      <View style={styles.bottomNoteContainer}>
+        <Text style={styles.bottomNote}>Powered by ERPNext</Text>
+        <Text style={styles.version}>Version 1.0.0</Text>
       </View>
-    </View>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#1a1f36' },
-  topSection: { flex: 4, justifyContent: 'center', alignItems: 'center', paddingTop: height * 0.1 },
-  logoContainer: { justifyContent: 'center', alignItems: 'center' },
-  logoCircle: {
-    width: 140, height: 140, borderRadius: 70,
-    backgroundColor: 'rgba(255,255,255,0.1)', justifyContent: 'center', alignItems: 'center',
-    borderWidth: 3, borderColor: 'rgba(255,255,255,0.2)', shadowColor: '#fff', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.3, shadowRadius: 20, elevation: 10,
+  container: {
+    flex: 1,
+    backgroundColor: colors.background,
   },
-  middleSection: { flex: 4, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40 },
-  textContainer: { alignItems: 'center' },
-  appName: { fontSize: 34, fontWeight: 'bold', color: '#ffffff', letterSpacing: 1, marginBottom: 16 },
-  divider: { width: 60, height: 3, backgroundColor: '#64b5f6', borderRadius: 2, marginBottom: 16 },
-  tagline: { fontSize: 16, color: '#b0bec5', letterSpacing: 0.5, fontWeight: '400' },
-  bottomSection: { flex: 2, justifyContent: 'space-between', alignItems: 'center', paddingBottom: 40 },
-  loadingContainer: { width: '100%', alignItems: 'center', paddingHorizontal: 60 },
-  progressBarContainer: { width: '100%', height: 4, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 2, overflow: 'hidden', marginBottom: 16 },
-  progressBar: { height: '100%', backgroundColor: '#64b5f6', borderRadius: 2 },
-  loadingText: { fontSize: 14, color: '#90a4ae', fontWeight: '500', letterSpacing: 1 },
-  footer: { alignItems: 'center' },
-  poweredBy: { fontSize: 12, color: '#78909c', fontWeight: '400' },
-  version: { fontSize: 11, color: '#546e7a', fontWeight: '300' },
+  centerContent: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logoCircle: {
+    width: 110,
+    height: 110,
+    borderRadius: 55,
+    backgroundColor: '#0C2C67',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.15)',
+    overflow: 'hidden',
+  },
+  logoGlow: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 55,
+    backgroundColor: 'rgba(110,198,255,0.10)',
+    shadowColor: '#6EC6FF',
+    shadowOpacity: 0.35,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 0 },
+    ...Platform.select({ android: { elevation: 6 } }),
+  },
+  logoWrapper: {
+    width: 110,
+    height: 110,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logo: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 55,
+  },
+  appName: {
+    color: '#FFFFFF',
+    fontSize: 28,
+    fontWeight: '800',
+    letterSpacing: 1,
+    textAlign: 'center',
+  },
+  accent: {
+    width: 56,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#6EC6FF',
+    marginTop: 10,
+    marginBottom: 16,
+  },
+  subtitle: {
+    color: 'rgba(255,255,255,0.85)',
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  topLogoContainer: {
+    position: 'absolute',
+    top: 90,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+  },
+  bottomNoteContainer: {
+    position: 'absolute',
+    bottom: 26,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+  },
+  bottomNote: {
+    color: 'rgba(255,255,255,0.9)',
+    fontSize: 12,
+    letterSpacing: 0.2,
+  },
+  version: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 11,
+    marginTop: 4,
+  }
 });

@@ -80,13 +80,18 @@ android {
     compileSdk rootProject.ext.compileSdkVersion
 
     namespace "com.hr_addons"
-    defaultConfig {
-        applicationId "com.hr_addons"
-        minSdkVersion rootProject.ext.minSdkVersion
-        targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
-    }
+defaultConfig {
+    applicationId "com.hr_addons"
+    minSdkVersion rootProject.ext.minSdkVersion
+    targetSdkVersion rootProject.ext.targetSdkVersion
+    versionCode 1
+    versionName "1.0"
+    // Correct syntax here:
+    manifestPlaceholders = [
+        appAuthRedirectScheme: "com.hr_addons"
+    ]
+}
+
     signingConfigs {
         debug {
             storeFile file('debug.keystore')

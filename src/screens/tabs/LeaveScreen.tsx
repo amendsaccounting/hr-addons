@@ -1,4 +1,5 @@
-import React from 'react';
+import * as React from 'react';
+import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -11,7 +12,6 @@ import {
   TextInput,
   Alert,
   Platform,
-  Linking,
   KeyboardAvoidingView,
   ScrollView,
 } from 'react-native';
@@ -20,7 +20,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 (Ionicons as any)?.loadFont?.();
 import { computeLeaveBalances, fetchLeaveHistory, applyLeave } from '../../services/leave';
-// import DateTimePicker from '@react-native-community/datetimepicker';?
+// import DateTimePicker from '@react-native-community/datetimepicker';
 
 // Types and sample data kept outside to avoid redeclaration on re-renders
 type ReqItem = {
@@ -44,19 +44,19 @@ const REQUESTS_SAMPLE: ReqItem[] = [];
 
 export default function LeaveScreen() {
   const insets = useSafeAreaInsets();
-  const [requests, setRequests] = React.useState<ReqItem[]>(REQUESTS_SAMPLE);
-  const [employeeId, setEmployeeId] = React.useState<string | null>(null);
-  const [balances, setBalances] = React.useState<LeaveBalanceItem[]>([]);
-  const [loadingBalances, setLoadingBalances] = React.useState(false);
-  const [loadingRequests, setLoadingRequests] = React.useState(false);
-  const [applyVisible, setApplyVisible] = React.useState(false);
-  const [refreshKey, setRefreshKey] = React.useState(0);
+  const [requests, setRequests] = useState<ReqItem[]>(REQUESTS_SAMPLE);
+  const [employeeId, setEmployeeId] = useState<string | null>(null);
+  const [balances, setBalances] = useState<LeaveBalanceItem[]>([]);
+  const [loadingBalances, setLoadingBalances] = useState(false);
+  const [loadingRequests, setLoadingRequests] = useState(false);
+  const [applyVisible, setApplyVisible] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
-  const openApply = React.useCallback(() => setApplyVisible(true), []);
-  const closeApply = React.useCallback(() => setApplyVisible(false), []);
+  const openApply = useCallback(() => setApplyVisible(true), []);
+  const closeApply = useCallback(() => setApplyVisible(false), []);
 
-  const keyExtractor = React.useCallback((item: ReqItem) => item.id, []);
-  const renderItem = React.useCallback(({ item }: { item: ReqItem }) => {
+  const keyExtractor = useCallback((item: ReqItem) => item.id, []);
+  const renderItem = useCallback(({ item }: { item: ReqItem }) => {
     if (loadingRequests) return <SkeletonRequestCard />;
     return (
       <RequestCard
@@ -69,7 +69,7 @@ export default function LeaveScreen() {
   }, [loadingRequests]);
 
   // Load logged-in employee ID (fast local lookup similar to Attendance screen)
-  React.useEffect(() => {
+  useEffect(() => {
     (async () => {
       try {
         const [id, raw] = await AsyncStorage
@@ -98,7 +98,7 @@ export default function LeaveScreen() {
   }, []);
 
   // Fetch leave balances from ERP using Leave Allocation and usage
-  React.useEffect(() => {
+  useEffect(() => {
     if (!employeeId) return;
     let mounted = true;
     (async () => {
@@ -123,7 +123,7 @@ export default function LeaveScreen() {
   }, [employeeId, refreshKey]);
 
   // Fetch leave applications for requests list (latest first)
-  React.useEffect(() => {
+  useEffect(() => {
     if (!employeeId) return;
     let mounted = true;
     (async () => {
@@ -153,20 +153,24 @@ export default function LeaveScreen() {
 
   return (
     <View style={styles.screen}>
-      <StatusBar barStyle="light-content" backgroundColor="#090a1a" animated />
-      <View style={[styles.headerCard, { paddingTop: insets.top + 12 }]}> 
-        <Text style={styles.headerTitle}>Leave Management</Text>
-        <Text style={styles.headerSub}>Apply and track your leave</Text>
-      </View>
+      {false && (
+        <>
+          <StatusBar barStyle="light-content" backgroundColor="#090a1a" animated />
+          <View style={[styles.headerCard, { paddingTop: insets.top + 12 }]}> 
+            <Text style={styles.headerTitle}>Leave Management</Text>
+            <Text style={styles.headerSub}>Apply and track your leave</Text>
+          </View>
+        </>
+      )}
 
       <FlatList
         style={styles.content}
         contentContainerStyle={styles.contentContainer}
         data={loadingRequests ? Array.from({ length: 6 }, (_, i) => ({ id: `s-${i}`, title: '', subtitle: '', status: '', start: '', end: '' })) as any : requests}
         keyExtractor={keyExtractor}
-        ListHeaderComponent={<ContentHeader balances={balances} onApply={openApply} loading={loadingBalances} />}
+        ListHeaderComponent={<ContentHeader balances={balances} onApply={openApply} loading={loadingBalances} isEmptyRequests={!loadingRequests && (requests?.length || 0) === 0} />}
         renderItem={renderItem}
-        ListEmptyComponent={loadingRequests ? null : <EmptyRequests />}
+        ListEmptyComponent={null}
         ListFooterComponent={ListFooter}
         showsVerticalScrollIndicator={false}
         removeClippedSubviews={false}
@@ -179,7 +183,7 @@ export default function LeaveScreen() {
         onClose={closeApply}
         employeeId={employeeId}
         onApplied={() => setRefreshKey((k) => k + 1)}
-        types={React.useMemo(() => Array.from(new Set(balances.map(b => b.label))).filter(Boolean), [balances])}
+        types={useMemo(() => Array.from(new Set(balances.map(b => b.label))).filter(Boolean), [balances])}
       />
     </View>
   );
@@ -187,8 +191,8 @@ export default function LeaveScreen() {
 
 const BalanceCard = React.memo(function BalanceCard({ label, valueText, progress }: { label: string; valueText: string; progress: number }) {
   const clamped = Math.max(0, Math.min(1, progress || 0));
-  const width = React.useRef(new Animated.Value(0)).current;
-  React.useEffect(() => {
+  const width = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
     Animated.timing(width, { toValue: clamped, duration: 450, useNativeDriver: false }).start();
   }, [clamped, width]);
 
@@ -207,39 +211,50 @@ const BalanceCard = React.memo(function BalanceCard({ label, valueText, progress
   );
 });
 
-function ContentHeader({ balances, onApply, loading }: { balances: LeaveBalanceItem[]; onApply?: () => void; loading?: boolean }) {
+function ContentHeader({ balances, onApply, loading, isEmptyRequests }: { balances: LeaveBalanceItem[]; onApply?: () => void; loading?: boolean; isEmptyRequests?: boolean }) {
+  const cards = (balances || []).slice(0, 4);
   return (
     <View>
-      <Text style={styles.sectionTitle}>Leave Balance</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginHorizontal: 12, marginTop: 8 }}>
+        <Text style={styles.sectionTitle}>Leave Balance</Text>
+        <Pressable accessibilityRole="button" onPress={() => { try { Alert.alert('Leave History', 'Coming soon'); } catch {} }}>
+          <Text style={{ color: '#111827', textDecorationLine: 'underline', fontWeight: '600' }}>View Leave History</Text>
+        </Pressable>
+      </View>
+
       {loading ? (
-        <>
-          {Array.from({ length: 3 }).map((_, idx) => (
-            <View key={`sk-balance-${idx}`} style={[styles.card, styles.skeletonCard]}>
-              <View style={styles.cardRow}>
-                <View style={[styles.skeletonBar, { width: 120, height: 12 }]} />
-                <View style={[styles.skeletonBar, { width: 48, height: 12 }]} />
-              </View>
-              <View style={[styles.progressTrack, { marginTop: 12 }]}>
-                <View style={[styles.skeletonBar, { height: 6, borderRadius: 6 }]} />
-              </View>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 12 }}>
+          {Array.from({ length: 2 }).map((_, idx) => (
+            <View key={`sk-${idx}`} style={[styles.balanceCard, styles.skeletonCard]}> 
+              <View style={{ height: 56, alignSelf: 'stretch', backgroundColor: '#eef2ff', borderRadius: 12 }} />
+              <View style={{ height: 8 }} />
+              <View style={[styles.skeletonBar, { width: 60, height: 12 }]} />
+              <View style={{ height: 4 }} />
+              <View style={[styles.skeletonBar, { width: 100, height: 10 }]} />
             </View>
           ))}
-        </>
-      ) : balances && balances.length > 0 ? (
-        <>
-          {balances.map((b, idx) => {
-            const remaining = Math.max(0, (b.total || 0) - (b.used || 0));
-            const progress = b.total ? remaining / b.total : 0;
+        </View>
+      ) : cards.length > 0 ? (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 12 }}>
+          {cards.map((b, idx) => {
+            const used = Math.max(0, b.used || 0);
+            const total = Math.max(0, b.total || 0);
+            const remaining = Math.max(0, total - used);
+            // Show remaining portion (decreasing as you use)
+            const progress = total ? remaining / total : 0;
+            const palette = ['#f472b6', '#60a5fa', '#34d399', '#f59e0b', '#a78bfa'];
+            const color = palette[idx % palette.length];
             return (
-              <BalanceCard
-                key={idx}
-                label={b.label}
-                valueText={`${remaining}/${b.total}`}
+              <DonutCard
+                key={`donut-${idx}`}
+                valueText={`${remaining}/${total}`}
+                label={`${b.label} balance`}
                 progress={progress}
+                color={color}
               />
             );
           })}
-        </>
+        </View>
       ) : (
         <View style={[styles.card, styles.emptyCard]}>
           <View style={styles.emptyRow}>
@@ -250,26 +265,41 @@ function ContentHeader({ balances, onApply, loading }: { balances: LeaveBalanceI
         </View>
       )}
 
-      <View style={styles.applyWrapper}>
-        <Pressable style={{ flex: 1 }} onPress={onApply} accessibilityLabel="Open apply form">
-          <Text style={styles.applyTitle}>Apply for Leave</Text>
-          <Text style={styles.applySubtitle}>Submit a new leave request</Text>
-        </Pressable>
-        <Pressable
-          style={styles.applyNowButton}
-          accessibilityRole="button"
-          accessibilityLabel="Apply now"
-          onPress={onApply}
-        >
-          <Ionicons name="add" size={16} color="#111827" />
-          <Text style={styles.applyNowText}>Apply now</Text>
-        </Pressable>
-      </View>
+      <Pressable style={styles.requestBtn} onPress={onApply} accessibilityRole="button">
+        <Text style={styles.requestBtnText}>Request a Leave</Text>
+      </Pressable>
 
-      <Text style={[styles.sectionTitle, { marginTop: 8 }]}>Leave Requests</Text>
+      <Text style={[styles.sectionTitle, { marginTop: 8, marginHorizontal: 12 }]}>Recent Leaves</Text>
+      {isEmptyRequests ? (
+        <View style={styles.emptyCenter}>
+          <View style={styles.emptyImageBox}>
+            <Ionicons name="calendar-outline" size={42} color="#9ca3af" />
+          </View>
+          <Text style={styles.emptyTitleCenter}>No leave requests yet</Text>
+          <Text style={styles.emptySubtitleCenter}>Tap "Request a Leave" to submit your first request.</Text>
+        </View>
+      ) : null}
     </View>
   );
 }
+
+const DonutCard = React.memo(function DonutCard({ valueText, label, progress, color = '#f472b6' }: { valueText: string; label: string; progress: number; color?: string }) {
+  const p = Math.max(0, Math.min(1, progress || 0));
+  return (
+    <View style={styles.balanceCard}>
+      <View style={styles.halfContainer}>
+        {/* Grey track (always visible) */}
+        <View style={styles.halfTrack} />
+        {/* Colored overlay clipped to progress width from the left so it decreases on the right */}
+        <View style={[styles.halfClip, { width: `${p * 100}%` }]}>
+          <View style={[styles.halfFill, { borderColor: color }]} />
+        </View>
+      </View>
+      <Text style={styles.valueBig}>{valueText}</Text>
+      <Text style={styles.subtleLabel}>{label}</Text>
+    </View>
+  );
+});
 
 const RequestCard = React.memo(function RequestCard({
   title,
@@ -343,6 +373,15 @@ const styles = StyleSheet.create({
   skeletonCircle: { width: 16, height: 16, borderRadius: 8, backgroundColor: '#e5e7eb' },
   skeletonPill: { borderRadius: 999, backgroundColor: '#e5e7eb' },
   skeletonCard: { backgroundColor: '#ffffff' },
+  balanceCard: { width: '46%', margin: '2%', backgroundColor: '#fff', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, padding: 12, alignItems: 'center' },
+  halfContainer: { width: 84, height: 42, overflow: 'hidden', alignItems: 'center', justifyContent: 'flex-start' },
+  halfTrack: { position: 'absolute', width: 84, height: 84, borderRadius: 42, borderWidth: 10, borderColor: '#e5e7eb' },
+  halfClip: { position: 'absolute', left: 0, top: 0, bottom: 0, overflow: 'hidden' },
+  halfFill: { position: 'absolute', width: 84, height: 84, borderRadius: 42, borderWidth: 10 },
+  valueBig: { color: '#111827', fontWeight: '700', marginTop: 8 },
+  subtleLabel: { color: '#6b7280', fontSize: 12, textAlign: 'center' },
+  requestBtn: { backgroundColor: '#111827', borderRadius: 8, height: 44, marginHorizontal: 12, alignItems: 'center', justifyContent: 'center', marginTop: 12 },
+  requestBtnText: { color: '#fff', fontWeight: '700' },
 
   headerCard: {
     backgroundColor: '#090a1a',
@@ -382,7 +421,7 @@ const styles = StyleSheet.create({
   badgeText: { fontSize: 11, fontWeight: '700', color: '#111827' },
 
   reqDateRow: { flexDirection: 'row', alignItems: 'center', marginTop: 12 },
-  reqDateText: { color: '#6b7280', fontSize: 12 },
+  reqDateText: { color: '#6b7280', fontSize: 12,marginHorizontal:5 },
   arrowIcon: { marginHorizontal: 6 },
   applyWrapper: {
     marginHorizontal: 12,
@@ -417,6 +456,11 @@ const styles = StyleSheet.create({
   emptyRow: { flexDirection: 'row', alignItems: 'center' },
   emptyTitle: { marginLeft: 8, color: '#111827', fontWeight: '700' },
   emptySubtitle: { color: '#6b7280', fontSize: 12, marginTop: 8 },
+  emptyMedia: { alignItems: 'center', marginBottom: 10 },
+  emptyImageBox: { width: 120, height: 90, borderRadius: 12, backgroundColor: '#f3f4f6', alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
+  emptyCenter: { alignItems: 'center', justifyContent: 'center', paddingVertical: 24 },
+  emptyTitleCenter: { color: '#111827', fontWeight: '700', marginTop: 6, textAlign: 'center' },
+  emptySubtitleCenter: { color: '#6b7280', fontSize: 12, marginTop: 6, textAlign: 'center' },
   // Modal / sheet styles
   modalRoot: { ...StyleSheet.absoluteFillObject, justifyContent: 'flex-end' },
   modalBackdrop: { backgroundColor: 'transparent' },
@@ -487,45 +531,45 @@ const styles = StyleSheet.create({
 const ListFooter = React.memo(() => <View style={styles.listFooter} />);
 
 const EmptyRequests = React.memo(() => (
-  <View style={[styles.card, styles.emptyCard]}> 
-    <View style={styles.emptyRow}>
-      <Ionicons name="mail-open-outline" size={18} color="#6b7280" />
-      <Text style={styles.emptyTitle}>No leave requests yet</Text>
+  <View style={styles.emptyCenter}> 
+    <View style={styles.emptyImageBox}>
+      <Ionicons name="calendar-outline" size={42} color="#9ca3af" />
     </View>
-    <Text style={styles.emptySubtitle}>Tap "Apply now" to submit your first request.</Text>
+    <Text style={styles.emptyTitleCenter}>No leave requests yet</Text>
+    <Text style={styles.emptySubtitleCenter}>Tap "Apply now" to submit your first request.</Text>
   </View>
 ));
 
 // Bottom sheet-style modal for applying leave
 const BottomApplyModal = React.memo(function BottomApplyModal({ visible, onClose, types, employeeId, onApplied }: { visible: boolean; onClose: () => void; types?: string[]; employeeId?: string | null; onApplied?: () => void }) {
   const insets = useSafeAreaInsets();
-  const slide = React.useRef(new Animated.Value(0)).current;
-  React.useEffect(() => {
+  const slide = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
     Animated.timing(slide, { toValue: visible ? 1 : 0, duration: 250, useNativeDriver: true }).start();
   }, [visible, slide]);
   const translateY = slide.interpolate({ inputRange: [0, 1], outputRange: [400, 0] });
   const backdropOpacity = slide.interpolate({ inputRange: [0, 1], outputRange: [0, 0.35] });
 
-  const [leaveType, setLeaveType] = React.useState('');
-  const [fromDate, setFromDate] = React.useState('');
-  const [toDate, setToDate] = React.useState('');
-  const [reason, setReason] = React.useState('');
-  const [showFromPicker, setShowFromPicker] = React.useState(false);
-  const [showToPicker, setShowToPicker] = React.useState(false);
-  const [showTypeMenu, setShowTypeMenu] = React.useState(false);
-  const [submitting, setSubmitting] = React.useState(false);
+  const [leaveType, setLeaveType] = useState('');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+  const [reason, setReason] = useState('');
+  const [showFromPicker, setShowFromPicker] = useState(false);
+  const [showToPicker, setShowToPicker] = useState(false);
+  const [showTypeMenu, setShowTypeMenu] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   const fmt = (d: Date) => {
     const pad = (n: number) => (n < 10 ? `0${n}` : String(n));
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
   };
-  const todayStart = React.useMemo(() => {
+  const todayStart = useMemo(() => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
     return d;
   }, []);
 
-  const onCancel = React.useCallback(() => {
+  const onCancel = useCallback(() => {
     setLeaveType('');
     setFromDate('');
     setToDate('');
@@ -536,7 +580,7 @@ const BottomApplyModal = React.memo(function BottomApplyModal({ visible, onClose
     onClose();
   }, [onClose]);
 
-  const onSubmit = React.useCallback(async () => {
+  const onSubmit = useCallback(async () => {
     if (submitting) return;
     if (!employeeId) { Alert.alert('Not ready', 'Employee ID not found. Try again.'); return; }
     if (!leaveType || !fromDate || !toDate || !reason) {
