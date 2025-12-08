@@ -18,7 +18,7 @@ export default function App() {
             barStyle={isDarkMode ? 'light-content' : 'dark-content'}
             backgroundColor={isDarkMode ? '#000' : '#fff'}
           />
-          <SafeAreaView style={{ flex: 1 }}>
+          <SafeAreaView style={{ flex: 1}}>
             <RootNavigator />
           </SafeAreaView>
         </NavigationContainer>
