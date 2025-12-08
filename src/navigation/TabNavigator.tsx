@@ -1,187 +1,141 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, Pressable, Animated, Dimensions, Easing } from 'react-native';
+import * as React from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
+import { Platform, View, Animated, Easing, Dimensions, Pressable, StyleSheet } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 (Ionicons as any)?.loadFont?.();
-import DashboardScreen from '../screens/tabs/DashboardScreen';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import AttendanceScreen from '../screens/tabs/AttendanceScreen';
 import LeaveScreen from '../screens/tabs/LeaveScreen';
-import LeadScreen from '../screens/tabs/LeadScreen';
-import LeadDetailScreen from '../screens/tabs/LeadDetailScreen';
 import ExpenseScreen from '../screens/tabs/ExpenseScreen';
-import ProfileScreen from '../screens/tabs/ProfileScreen';
-export type TabName = 'Dashboard' | 'Attendance' | 'Leave' | 'Leads' | 'Expense';
+import LeadScreen from '../screens/tabs/LeadScreen';
+import AppHeader from '../components/AppHeader';
+import ProfileScreen from '../screens/tabs/ProfileScreen'
+import HomeScreen from '../screens/tabs/HomeScreen';
+import CustomTabBar from '../components/CustomTabBar';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { fetchEmployeeProfile } from '../services/profile';
+// Load react-native-config defensively to avoid native-module crash on startup
+let Config: any = {};
+try {
+  // Some setups export default, others export named values
+  const mod = require('react-native-config');
+  Config = mod?.default ?? mod ?? {};
+} catch {}
+// Timesheet screens are used as overlays from Home; not part of tabs
 
-export default function TabNavigator({ initialTab = 'Dashboard' as TabName }: { initialTab?: TabName }) {
-  const [activeTab, setActiveTab] = useState<TabName>(initialTab);
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const drawerAnim = React.useRef(new Animated.Value(0)).current;
-  const [leadDetailName, setLeadDetailName] = useState<string | null>(null);
+export type TabName = 'HomeScreen' | 'Attendance' | 'Leaves' | 'Expense' | 'Leads';
 
-  const openDrawer = () => {
-    setDrawerOpen(true);
-    Animated.timing(drawerAnim, { toValue: 1, duration: 220, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
-  };
-  const closeDrawer = () => {
-    Animated.timing(drawerAnim, { toValue: 0, duration: 200, easing: Easing.in(Easing.cubic), useNativeDriver: true }).start(({ finished }) => {
-      if (finished) setDrawerOpen(false);
+type Props = {
+  initialTab?: TabName;
+};
+
+const Tab = createBottomTabNavigator();
+
+const iconForRoute = (routeName: TabName, focused: boolean) => {
+  switch (routeName) {
+    case 'HomeScreen':
+      return focused ? 'home-sharp' : 'home-outline';
+    case 'Attendance':
+      return focused ? 'stopwatch' : 'stopwatch-outline';
+    case 'Leaves':
+      return focused ? 'calendar' : 'calendar-outline';
+    case 'Expense':
+      return focused ? 'wallet' : 'wallet-outline';
+    case 'Leads':
+      return focused ? 'people' : 'people-outline';
+    default:
+      return focused ? 'ellipse' : 'ellipse-outline';
+  }
+};
+
+export default function TabNavigator({ initialTab = 'HomeScreen' }: Props) {
+  const initialRouteName = initialTab;
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [avatarUri, setAvatarUri] = useState<string | null>(null);
+  const [profileName, setProfileName] = useState<string | null>(null);
+  useEffect(() => {
+    (async () => {
+      try {
+        const storedName = (await AsyncStorage.getItem('userFullName')) || (await AsyncStorage.getItem('full_name'));
+        let storedImg = (await AsyncStorage.getItem('userImage')) || (await AsyncStorage.getItem('user_image'));
+        if (storedName) setProfileName(storedName);
+        const hostSrc = (Config as any)?.ERP_URL_METHOD || (Config as any)?.ERP_METHOD_URL || (Config as any)?.ERP_URL_RESOURCE || (Config as any)?.ERP_URL || '';
+        const host = String(hostSrc || '').replace(/\/$/, '').replace(/\/api\/(resource|method)$/i, '');
+        if (storedImg && storedImg.startsWith('/')) storedImg = host + storedImg;
+        if (storedImg) setAvatarUri(storedImg);
+        if (!storedName || !storedImg) {
+          const id = await AsyncStorage.getItem('employeeId');
+          if (id) {
+            const view = await fetchEmployeeProfile(id);
+            if (view) {
+              if (!storedImg && view.image) setAvatarUri(view.image);
+              if (!storedName && view.name) setProfileName(view.name);
+            }
+          }
+        }
+      } catch {}
+    })();
+  }, []);
+  const profileAnim = useRef(new Animated.Value(0)).current;
+  const openProfile = useCallback(() => {
+    setProfileOpen(true);
+    requestAnimationFrame(() => {
+      try { profileAnim.stopAnimation(); } catch {}
+      Animated.timing(profileAnim, {
+        toValue: 1,
+        duration: 260,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start();
     });
-  };
+  }, [profileAnim]);
+  const closeProfile = useCallback(() => {
+    try { profileAnim.stopAnimation(); } catch {}
+    Animated.timing(profileAnim, { toValue: 0, duration: 220, easing: Easing.in(Easing.cubic), useNativeDriver: true }).start(({ finished }) => {
+      if (finished) setProfileOpen(false);
+    });
+  }, [profileAnim]);
+  const screenWidth = Dimensions.get('window').width;
+  const slideX = profileAnim.interpolate({ inputRange: [0, 1], outputRange: [screenWidth, 0] });
+  const backdropOpacity = profileAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 0.25] });
 
   return (
-    <View style={styles.container}>
-      <View style={styles.content}>
-        {activeTab === 'Dashboard' && <DashboardScreen onOpenMenu={openDrawer} />}
-        {activeTab === 'Attendance' && <AttendanceScreen />}
-        {activeTab === 'Leave' && <LeaveScreen />}
-        {activeTab === 'Leads' && (
-          leadDetailName
-            ? <LeadDetailScreen name={leadDetailName} onBack={() => setLeadDetailName(null)} />
-            : <LeadScreen onOpenLead={(name) => setLeadDetailName(name)} />
-        )}
-        {activeTab === 'Expense' && <ExpenseScreen />}
-      </View>
-      <BottomTabBar activeTab={activeTab} onChange={setActiveTab} />
-
-      <ProfileDrawer visible={drawerOpen} anim={drawerAnim} onClose={closeDrawer} />
-    </View>
-  );
-}
-
-function BottomTabBar({
-  activeTab,
-  onChange,
-}: {
-  activeTab: TabName;
-  onChange: (t: TabName) => void;
-}) {
-  return (
-    <View style={styles.tabBar}>
-      <TabButton iconActive="home-sharp" iconInactive="home-outline" label="Home" active={activeTab === 'Dashboard'} onPress={() => onChange('Dashboard')} />
-      <TabButton iconActive="stopwatch" iconInactive="stopwatch-outline" label="Attendance" active={activeTab === 'Attendance'} onPress={() => onChange('Attendance')} />
-      <TabButton iconActive="calendar" iconInactive="calendar-outline" label="Leave" active={activeTab === 'Leave'} onPress={() => onChange('Leave')} />
-      <TabButton iconActive="people" iconInactive="people-outline" label="Leads" active={activeTab === 'Leads'} onPress={() => onChange('Leads')} />
-      <TabButton iconActive="wallet" iconInactive="wallet-outline" label="Expense" active={activeTab === 'Expense'} onPress={() => onChange('Expense')} />
-    </View>
-  );
-}
-
-function TabButton({
-  iconActive,
-  iconInactive,
-  label,
-  active,
-  onPress,
-}: {
-  iconActive: string;
-  iconInactive: string;
-  label: string;
-  active: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      onPress={onPress}
-      style={({ pressed }) => [styles.tabButton, /* no focused background */ pressed && styles.tabButtonPressed]}
+    <>
+    <Tab.Navigator
+      initialRouteName={initialRouteName}
+      screenOptions={({ route }) => ({
+        headerShown: true,
+        header: () => (
+          <AppHeader
+            title={route.name === 'HomeScreen' ? 'Addons HR' : route.name}
+            rightItems={[
+              { type: 'bell' },
+              { type: 'avatar', onPress: openProfile, uri: avatarUri || undefined, label: (profileName || 'User') },
+            ]}
+            variant="dark"
+          />
+        ),
+      })}
+      tabBar={(props) => <CustomTabBar {...props} />}
     >
-      <Ionicons
-        name={active ? iconActive : iconInactive}
-        size={active ? 24 : 22}
-        color={active ? '#000' : '#666'}
-        style={styles.iconSpacing}
-      />
-      <Text style={[styles.tabLabel, active ? styles.tabLabelActive : styles.tabLabelInactive]}>{label}</Text>
-    </Pressable>
+      <Tab.Screen name="HomeScreen" component={HomeScreen} options={{ title: 'Home' }} />
+      <Tab.Screen name="Attendance" component={AttendanceScreen} />
+      <Tab.Screen name="Leaves" component={LeaveScreen} />
+      <Tab.Screen name="Expense" component={ExpenseScreen} />
+      <Tab.Screen name="Leads" component={LeadScreen} />
+    </Tab.Navigator>
+    {profileOpen && (
+      <View pointerEvents="auto" style={[StyleSheet.absoluteFill, { zIndex: 100 }]}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={closeProfile}>
+          <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: '#000', opacity: backdropOpacity }]} />
+        </Pressable>
+        <Animated.View style={{ position: 'absolute', top: 0, bottom: 0, right: 0, width: '100%', transform: [{ translateX: slideX }] }}>
+          <View style={{ flex: 1, backgroundColor: '#fff' }}>
+            <ProfileScreen onBack={closeProfile} name={profileName || undefined} avatarSource={avatarUri ? { uri: avatarUri } : null} />
+          </View>
+        </Animated.View>
+      </View>
+    )}
+    </>
   );
 }
-
-function ProfileDrawer({ visible, anim, onClose }: { visible: boolean; anim: Animated.Value; onClose: () => void }) {
-  const { width, height } = Dimensions.get('window');
-  const panelWidth = Math.min(360, Math.round(width * 0.88));
-  const translateX = anim.interpolate({ inputRange: [0, 1], outputRange: [-panelWidth, 0] });
-  const backdropOpacity = anim.interpolate({ inputRange: [0, 1], outputRange: [0, 0.35] });
-
-  return (
-    <View pointerEvents={visible ? 'auto' : 'none'} style={[StyleSheet.absoluteFill, { zIndex: 50 }]}>
-      <Pressable style={[StyleSheet.absoluteFill, styles.backdrop]} onPress={onClose}>
-        <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: '#000', opacity: backdropOpacity }]} />
-      </Pressable>
-      <Animated.View style={[styles.drawerPanel, styles.drawerLeft, { width: panelWidth, transform: [{ translateX }] }] }>
-        <View style={{ flex: 1 }}>
-          <ProfileScreen />
-        </View>
-      </Animated.View>
-    </View>
-  );
-}
-
-const styles = StyleSheet.create({
-  container: { flex: 1 },
-  content: { flex: 1 },
-  tabBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#ddd',
-    backgroundColor: '#fff',
-    paddingTop: 6,
-    paddingHorizontal: 4,
-    paddingBottom: 8,
-  },
-  tabButton: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 6,
-    marginHorizontal: 2,
-    borderRadius: 10,
-  },
-  tabButtonActive: {},
-  tabButtonPressed: { opacity: 0.7 },
-  iconSpacing: { marginTop: 2 },
-  tabLabel: { fontSize: 11, marginTop: 2 },
-  tabLabelInactive: { color: '#666' },
-  tabLabelActive: { color: '#000', fontWeight: '600' },
-  backdrop: { backgroundColor: 'transparent' },
-  drawerPanel: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    backgroundColor: '#fff',
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-  },
-  drawerLeft: {
-    left: 0,
-    borderRightWidth: StyleSheet.hairlineWidth,
-    borderRightColor: '#ddd',
-    shadowOffset: { width: 2, height: 0 },
-  },
-  hamburger: {
-    position: 'absolute',
-    top: 12,
-    left: 12,
-    zIndex: 10,
-    backgroundColor: '#fff',
-    borderRadius: 18,
-    padding: 8,
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
-  },
-  drawerHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#eee',
-  },
-  drawerTitle: { fontSize: 16, fontWeight: '600', color: '#333' },
-});

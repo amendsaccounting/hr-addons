@@ -1,61 +1,48 @@
-import React, { useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Animated, Easing, LayoutChangeEvent, TextInput, Alert, Dimensions } from 'react-native';
+import * as React from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, Pressable, Animated, Easing, LayoutChangeEvent, TextInput, Alert, Dimensions, Image, ActivityIndicator } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { submitExpenseClaim, fetchExpenseCategories, fetchExpenseHistory } from '../../services/expenseClaim';
+import { onboardingService } from '../../services/onboardingService';
 
 export default function ExpenseScreen() {
   (Ionicons as any)?.loadFont?.();
   const insets = useSafeAreaInsets();
   const [activeTab, setActiveTab] = useState<'Submit' | 'History'>('Submit');
-  const segAnim = useRef(new Animated.Value(0)).current; // 0 -> Submit, 1 -> History
+  const segAnim = useRef(new Animated.Value(0)).current;
   const [segWidth, setSegWidth] = useState(0);
   const [showModal, setShowModal] = useState(false);
-  const [headerHeight, setHeaderHeight] = useState(0);
-  // Modal form state
+  const headerGap = insets.top + 56 + 8; 
   const [categoryOpen, setCategoryOpen] = useState(false);
   const [category, setCategory] = useState<string>('');
+  const [categories, setCategories] = useState<string[]>([]);
   const [amount, setAmount] = useState<string>('');
   const [expDate, setExpDate] = useState<string>('');
   const [desc, setDesc] = useState<string>('');
   const [receiptName, setReceiptName] = useState<string>('');
   const [receiptUri, setReceiptUri] = useState<string>('');
+  const [loadingCategories, setLoadingCategories] = useState<boolean>(false);
+  const [submitting, setSubmitting] = useState<boolean>(false);
+  const [history, setHistory] = useState<Array<{ name: string; status: string; total: number; currency?: string | null; date?: string | null; created?: string | null; category?: string | null; description?: string | null }>>([]);
+  const [loadingHistory, setLoadingHistory] = useState<boolean>(false);
+  const didLoadHistory = useRef(false);
 
-  const pickReceipt = async () => {
-    try {
-      // Try DocumentPicker first
-      try {
-        const DPmod: any = (require('react-native-document-picker') as any);
-        const DocumentPicker = DPmod?.default || DPmod;
-        if (DocumentPicker?.pickSingle) {
-          const res = await DocumentPicker.pickSingle({ type: [DocumentPicker.types.images, DocumentPicker.types.pdf] });
-          const uri = res?.uri || '';
-          const name = res?.name || (uri ? uri.split('/').pop() : 'file');
-          if (uri) { setReceiptUri(uri); setReceiptName(String(name || 'file')); return; }
-        }
-      } catch (e: any) {
-        // ignore and fall back
-      }
+  // No category fetching in UI-only mode
 
-      // Fallback to ImagePicker (photo library)
-      try {
-        const IP: any = require('react-native-image-picker');
-        const launchImageLibrary = IP?.launchImageLibrary;
-        if (launchImageLibrary) {
-          const resp = await launchImageLibrary({ mediaType: 'photo', selectionLimit: 1 });
-          const asset = resp?.assets?.[0];
-          if (asset?.uri) { setReceiptUri(asset.uri); setReceiptName(asset.fileName || 'photo'); return; }
-        }
-      } catch (e) {
-        // ignore
-      }
+  const pickReceipt = useCallback(() => {
+    setReceiptUri('placeholder://receipt');
+    setReceiptName('receipt.jpg');
+  }, []);
 
-      Alert.alert('Setup Needed', 'Please install react-native-document-picker or react-native-image-picker to pick a receipt file.');
-    } catch (err) {
-      Alert.alert('Error', 'Could not open file picker.');
-    }
-  };
+  // Ensure amount input contains only digits and decimal point (no currency symbol)
+  const onAmountChange = useCallback((t: string) => {
+    const cleaned = String(t || '').replace(/[^0-9.]/g, '');
+    setAmount(cleaned);
+  }, []);
 
-  const onTabChange = (tab: 'Submit' | 'History') => {
+  const onTabChange = useCallback((tab: 'Submit' | 'History') => {
     if (tab === activeTab) return;
     setActiveTab(tab);
     Animated.timing(segAnim, {
@@ -64,28 +51,278 @@ export default function ExpenseScreen() {
       easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
     }).start();
-  };
+  }, [activeTab, segAnim]);
 
-  const onSegLayout = (e: LayoutChangeEvent) => {
+  const onSegLayout = useCallback((e: LayoutChangeEvent) => {
     setSegWidth(e.nativeEvent.layout.width);
-  };
+  }, []);
+
+  const loadCategories = useCallback(async () => {
+    if (loadingCategories) return;
+    try {
+      setLoadingCategories(true);
+      try { console.log('[expense] loadCategories start'); } catch {}
+      const list = await fetchExpenseCategories().catch((e) => { try { console.warn('[expense] loadCategories error', e?.response?.data || e?.message || e); } catch {}; return [] as string[]; });
+      setCategories(Array.isArray(list) ? list : []);
+      try { console.log('[expense] loadCategories success', { count: Array.isArray(list) ? list.length : 0 }); } catch {}
+    } catch (err) {
+      try { console.warn('Expense categories load failed', err); } catch {}
+      setCategories([]);
+    } finally {
+      setLoadingCategories(false);
+    }
+  }, [loadingCategories]);
+
+  useEffect(() => {
+    if (showModal && categories.length === 0) {
+      loadCategories();
+    }
+  }, [showModal, categories.length, loadCategories]);
+
+  // Helpers for history view
+  const formatAmount = useCallback((n: number, currency?: string | null): string => {
+    const v = Number(n || 0);
+    const symbol = currency && typeof currency === 'string' && currency.length <= 4 ? `${currency} ` : '$ ';
+    try { return symbol + v.toFixed(2); } catch { return symbol + String(v); }
+  }, []);
+
+  const toMmDdYyyy = useCallback((s?: string | null): string => {
+    if (!s) return '';
+    try {
+      const d = new Date(String(s).replace(' ', 'T'));
+      if (isNaN(d.getTime())) return String(s);
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      const yyyy = String(d.getFullYear());
+      return `${mm}/${dd}/${yyyy}`;
+    } catch { return String(s); }
+  }, []);
+
+  const resolveEmployeeId = useCallback(async (): Promise<string | null> => {
+    try { console.log('[expense] resolveEmployeeId start'); } catch {}
+    let employeeId = await AsyncStorage.getItem('employeeId');
+    if (!employeeId) {
+      try {
+        const raw = await AsyncStorage.getItem('employeeData');
+        if (raw) {
+          const obj = JSON.parse(raw);
+          employeeId = [
+            obj?.name,
+            obj?.employee,
+            obj?.employee_id,
+            obj?.employeeId,
+            obj?.data?.name,
+            obj?.data?.employee,
+            obj?.data?.employee_id,
+            obj?.data?.employeeId,
+          ].find((v: any) => typeof v === 'string' && v.trim().length > 0) || null;
+        }
+      } catch {}
+    }
+    if (!employeeId) {
+      const email = (await AsyncStorage.getItem('user_id')) || (await AsyncStorage.getItem('userEmail'));
+      if (email) {
+        try {
+          const { getEmployeeIdByEmail, getEmployeeByEmail } = require('../../services/erpApi');
+          let empId = await getEmployeeIdByEmail(email);
+          if (!empId) {
+            const emp = await getEmployeeByEmail(email);
+            empId = emp?.name ? String(emp.name) : '';
+          }
+          if (empId) {
+            employeeId = empId;
+            try { await AsyncStorage.setItem('employeeId', employeeId); } catch {}
+          }
+        } catch {}
+      }
+    }
+    try { console.log('[expense] resolveEmployeeId done', employeeId); } catch {}
+    return employeeId || null;
+  }, []);
+
+  const loadHistory = useCallback(async () => {
+    if (loadingHistory) return;
+    setLoadingHistory(true);
+    try {
+      const employeeId = await resolveEmployeeId();
+      if (!employeeId) { setHistory([]); return; }
+      try { console.log('[expense] loadHistory start', { employeeId }); } catch {}
+      const rows = await fetchExpenseHistory(employeeId, 50).catch((e) => { try { console.warn('[expense] loadHistory error', e?.response?.data || e?.message || e); } catch {}; return [] as any[]; });
+      try { console.log('[expense] loadHistory rows', rows); } catch {}
+      const mapped = (rows || []).map((r: any) => ({
+        name: r.name,
+        status: String(r.status || 'Pending'),
+        total: Number(r.total || 0) || 0,
+        currency: r.currency || null,
+        date: r.posting_date || r.modified || r.creation || null,
+        created: r.creation || null,
+        category: r.expense_type || null,
+        description: r.description || null,
+      }));
+      try { console.log('[expense] loadHistory mapped', mapped); } catch {}
+      setHistory(mapped);
+      try { console.log('[expense] loadHistory success', { count: mapped.length }); } catch {}
+    } finally { setLoadingHistory(false); }
+  }, [resolveEmployeeId, loadingHistory]);
+
+  useEffect(() => {
+    if (activeTab === 'History' && !didLoadHistory.current) {
+      didLoadHistory.current = true;
+      loadHistory();
+    }
+  }, [activeTab, loadHistory]);
+
+  
+
+  const handleSubmit = useCallback(async () => {
+    if (submitting) return;
+    const cat = String(category || '').trim();
+    const amt = Number(String(amount || '').replace(/[^0-9.\-]/g, '')) || 0;
+    const rawDate = String(expDate || '').trim();
+    const description = String(desc || '').trim();
+    try { console.log('[expense] submit click', { cat, amt, rawDate, hasReceipt: !!receiptUri }); } catch {}
+
+    if (!cat) { Alert.alert('Missing field', 'Please choose a category.'); return; }
+    if (!amt || !(amt > 0)) { Alert.alert('Invalid amount', 'Please enter a valid amount greater than 0.'); return; }
+    if (!rawDate) { Alert.alert('Missing field', 'Please enter the expense date.'); return; }
+
+    // Accept dd/mm/yyyy or yyyy-mm-dd; normalize to YYYY-MM-DD
+    const toIsoDate = (s: string) => {
+      const t = s.trim();
+      const m1 = t.match(/^([0-3]?\d)[/.-]([0-1]?\d)[/.-](\d{4})$/); // dd/mm/yyyy
+      if (m1) {
+        const dd = m1[1].padStart(2, '0');
+        const mm = m1[2].padStart(2, '0');
+        const yyyy = m1[3];
+        return `${yyyy}-${mm}-${dd}`;
+      }
+      const m2 = t.match(/^(\d{4})[-/.]([0-1]?\d)[-/.]([0-3]?\d)$/); // yyyy-mm-dd
+      if (m2) {
+        const yyyy = m2[1];
+        const mm = m2[2].padStart(2, '0');
+        const dd = m2[3].padStart(2, '0');
+        return `${yyyy}-${mm}-${dd}`;
+      }
+      return t; // as-is; backend may validate
+    };
+    const expense_date = toIsoDate(rawDate);
+
+    try {
+      setSubmitting(true);
+      try { console.log('[expense] resolving employeeId'); } catch {}
+      // Resolve employeeId from storage
+      let employeeId = await AsyncStorage.getItem('employeeId');
+      if (!employeeId) {
+        try {
+          const raw = await AsyncStorage.getItem('employeeData');
+          if (raw) {
+            const obj = JSON.parse(raw);
+            employeeId = [
+              obj?.name,
+              obj?.employee,
+              obj?.employee_id,
+              obj?.employeeId,
+              obj?.data?.name,
+              obj?.data?.employee,
+              obj?.data?.employee_id,
+              obj?.data?.employeeId,
+            ].find((v: any) => typeof v === 'string' && v.trim().length > 0) || null;
+          }
+        } catch {}
+      }
+      // Try resolving via user email if still missing (same pattern as HomeScreen)
+      if (!employeeId) {
+        const email = (await AsyncStorage.getItem('user_id')) || (await AsyncStorage.getItem('userEmail'));
+        if (email) {
+          try {
+            const { getEmployeeIdByEmail, getEmployeeByEmail } = require('../../services/erpApi');
+            let empId = await getEmployeeIdByEmail(email);
+            if (!empId) {
+              const emp = await getEmployeeByEmail(email);
+              empId = emp?.name ? String(emp.name) : '';
+            }
+            if (empId) {
+              employeeId = empId;
+              try { await AsyncStorage.setItem('employeeId', employeeId); } catch {}
+            }
+          } catch {}
+        }
+      }
+      try { console.log('[expense] employeeId resolved', employeeId); } catch {}
+      if (!employeeId) { Alert.alert('Not ready', 'Employee ID not found.'); return; }
+
+      // Resolve company for employee (used by ERP to infer default accounts)
+      let company: string | undefined = undefined;
+      try {
+        const c = await onboardingService.getEmployeeCompany(String(employeeId));
+        if (c) company = String(c);
+      } catch {}
+      try { console.log('[expense] employee company', company || null); } catch {}
+
+      const payload = {
+        employee: String(employeeId),
+        expense_type: cat,
+        amount: amt,
+        expense_date,
+        description,
+        company,
+        // receipt info is currently UI-only; uploading can be added later
+      } as const;
+      try { console.log('[expense] submit payload', payload); } catch {}
+      const result = await submitExpenseClaim(payload as any);
+      try { console.log('[expense] submit result', result); } catch {}
+
+      Alert.alert('Submitted', 'Your expense claim has been submitted.');
+      setShowModal(false);
+      setCategory('');
+      setAmount('');
+      setExpDate('');
+      setDesc('');
+      setReceiptUri('');
+      setReceiptName('');
+      // Refresh history tab after successful submit
+      try {
+        didLoadHistory.current = false;
+        setActiveTab('History');
+        // Kick off load explicitly for immediate refresh
+        loadHistory();
+      } catch {}
+    } catch (err: any) {
+      try { console.error('[expense] submit error', err?.response?.data || err?.message || err); } catch {}
+      const raw = err?.response?.data || err;
+      const msg = raw?.message || err?.message || 'Submission failed';
+      const text = typeof msg === 'string' ? msg : JSON.stringify(msg);
+      if (/set the default account for the\s*expense claim type/i.test(text)) {
+        Alert.alert(
+          'Setup Required',
+          'Please set a Default Account for this Expense Claim Type in ERPNext (Expense Claim Type > Accounts), then try again.'
+        );
+      } else {
+        Alert.alert('Failed', String(text));
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  }, [submitting, category, amount, expDate, desc]);
+
 
   return (
     <View style={styles.screen}>
-      {/* Fixed header */}
-      <View style={[styles.headerCard, { paddingTop: insets.top + 12 }]} onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}>
-        <View style={styles.headerRow}>
-          <Ionicons name="card-outline" size={18} color="#fff" style={{ marginRight: 8 }} />
-          <Text style={styles.headerTitle}>Expense Reimbursement</Text>
-        </View>
-        <Text style={styles.headerSubtitle}>Submit and track your expense claims</Text>
+      {false && (
+        <View style={[styles.headerCard, { paddingTop: insets.top + 12 }]}>
+          <View style={styles.headerRow}>
+            <Ionicons name="card-outline" size={18} color="#fff" style={{ marginRight: 8 }} />
+            <Text style={styles.headerTitle}>Expense Reimbursement</Text>
+          </View>
+          <Text style={styles.headerSubtitle}>Submit and track your expense claims</Text>
 
-        <View style={styles.metricRow}>
-          <Metric label="Total" value="$385.49" />
-          <Metric label="Pending" value="$45.50" accent="#f59e0b" />
-          <Metric label="Approved" value="$250.00" accent="#059669" />
+          <View style={styles.metricRow}>
+            <Metric label="Total" value="$385.49" />
+            <Metric label="Pending" value="$45.50" accent="#f59e0b" />
+            <Metric label="Approved" value="$250.00" accent="#059669" />
+          </View>
         </View>
-      </View>
+      )}
 
       {/* Scrollable content filling remaining space */}
       <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
@@ -128,7 +365,7 @@ export default function ExpenseScreen() {
               </View>
               <Text style={styles.cardTitle}>Submit New Expense</Text>
               <Text style={styles.cardSubtitle}>Create a reimbursement request for your business expenses</Text>
-              <Pressable style={styles.primaryBtn} onPress={() => setShowModal(true)}>
+              <Pressable style={styles.primaryBtn} onPress={() => { setCategory(''); setAmount(''); setExpDate(''); setDesc(''); setReceiptUri(''); setReceiptName(''); setShowModal(true); }}>
                 <Ionicons name="add" size={16} color="#fff" />
                 <Text style={styles.primaryBtnText}>New Expense Claim</Text>
               </Pressable>
@@ -152,19 +389,44 @@ export default function ExpenseScreen() {
           </>
         ) : (
           <>
-            {/* History list */}
-            <ExpenseItem status="Approved" title="Travel" amount="$250.00" desc="Client meeting - Taxi fare" date="10/15/2025" submitted="10/16/2025" />
-            <ExpenseItem status="Pending" title="Meals" amount="$45.50" desc="Team lunch during project meeting" date="10/18/2025" submitted="10/18/2025" />
-            <ExpenseItem status="Rejected" title="Office Supplies" amount="$89.99" desc="Stationery and printer supplies" date="10/10/2025" submitted="10/11/2025" />
+            {loadingHistory ? (
+              <View style={styles.emptyWrap}>
+                <ActivityIndicator size="small" color="#6b7280" />
+                <Text style={[styles.cardSubtitle, { marginTop: 8 }]}>Loading history...</Text>
+              </View>
+            ) : history.length === 0 ? (
+              <View style={styles.emptyWrap}>
+                <View style={[styles.card, { alignItems: 'center', paddingVertical: 28, alignSelf: 'stretch', marginHorizontal: 16, borderWidth: 0, borderColor: 'transparent', backgroundColor: 'transparent' }] }>
+                  <Image
+                    source={require('../../assets/images/expense/expense.png')}
+                    style={{ width: 120, height: 120, opacity: 0.18 }}
+                    resizeMode="contain"
+                  />
+                  <Text style={[styles.cardTitle, { marginTop: 12 }]}>No expense history</Text>
+                  <Text style={[styles.cardSubtitle, { textAlign: 'center' }]}>Your expense claims will appear here.</Text>
+                </View>
+              </View>
+            ) : (
+              history.map((h) => (
+                <ExpenseItem
+                  key={h.name}
+                  status={/approved/i.test(h.status) ? 'Approved' : /reject/i.test(h.status) ? 'Rejected' : 'Pending'}
+                  title={h.category || 'Expense Claim'}
+                  amount={`${formatAmount(h.total, h.currency)}`}
+                  desc={h.description ? String(h.description) : ''}
+                  date={toMmDdYyyy(h.date || h.modified || h.creation || null)}
+                  submitted={toMmDdYyyy(h.created || h.modified || h.date || null)}
+                />
+              ))
+            )}
           </>
         )}
       </ScrollView>
-      {/* Modal */}
       {showModal && (
-        <View style={[styles.modalOverlay, { top: headerHeight }]}>
+        <View style={[styles.modalOverlay, { top: headerGap }]}>
           <View style={[
             styles.modalCard,
-            { paddingBottom: insets.bottom + 12, maxHeight: Math.max(320, Math.round(Dimensions.get('window').height - headerHeight - insets.bottom - 8)) }
+            { paddingBottom: insets.bottom + 12, maxHeight: Math.max(320, Math.round(Dimensions.get('window').height - headerGap - insets.bottom - 8)) }
           ]}>
             <ScrollView contentContainerStyle={styles.modalContent} showsVerticalScrollIndicator={false}>
             <View style={styles.modalHeader}>
@@ -174,8 +436,6 @@ export default function ExpenseScreen() {
               </Pressable>
             </View>
             <Text style={styles.modalSubtitle}>Submit a new expense reimbursement request</Text>
-
-            {/* Category */}
             <Text style={styles.fieldLabel}>Category <Text style={{ color: '#ef4444' }}>*</Text></Text>
             <Pressable style={styles.inputRow} onPress={() => setCategoryOpen((v) => !v)}>
               <Ionicons name="list-outline" size={16} color="#6b7280" style={{ marginRight: 6 }} />
@@ -184,22 +444,37 @@ export default function ExpenseScreen() {
             </Pressable>
             {categoryOpen && (
               <View style={styles.dropdown}>
-                {['Travel','Meals','Office Supplies','Software','Other'].map((opt) => (
-                  <Pressable key={opt} style={styles.dropdownItem} onPress={() => { setCategory(opt); setCategoryOpen(false); }}>
-                    <Text style={styles.dropdownText}>{opt}</Text>
-                  </Pressable>
-                ))}
+                {loadingCategories ? (
+                  <View style={styles.dropdownItem}>
+                    <Text style={styles.dropdownText}>Loading categories...</Text>
+                  </View>
+                ) : categories.length > 0 ? (
+                  categories.map((opt) => (
+                    <Pressable 
+                      key={opt} 
+                      style={styles.dropdownItem} 
+                      onPress={() => { 
+                        setCategory(opt); 
+                        setCategoryOpen(false); 
+                      }}
+                    >
+                      <Text style={styles.dropdownText}>{opt}</Text>
+                    </Pressable>
+                  ))
+                ) : (
+                  <View style={styles.dropdownItem}>
+                    <Text style={styles.dropdownText}>No categories found</Text>
+                  </View>
+                )}
               </View>
             )}
-
-            {/* Amount */}
             <Text style={styles.fieldLabel}>Amount <Text style={{ color: '#ef4444' }}>*</Text></Text>
             <View style={styles.inputRow}>
               <Ionicons name="cash-outline" size={16} color="#6b7280" style={{ marginRight: 6 }} />
               <TextInput
                 value={amount}
-                onChangeText={setAmount}
-                placeholder="$ 0.00"
+                onChangeText={onAmountChange}
+                placeholder="0.00"
                 placeholderTextColor="#9ca3af"
                 keyboardType="decimal-pad"
                 style={styles.textInput}
@@ -264,19 +539,14 @@ export default function ExpenseScreen() {
             </View>
 
             <Pressable
-              style={[styles.primaryBtn, { alignSelf: 'stretch', marginTop: 12 }]}
-              onPress={() => {
-                if (!category) return Alert.alert('Missing', 'Please select a category.');
-                if (!amount || isNaN(Number(amount))) return Alert.alert('Invalid Amount', 'Enter a valid amount.');
-                if (!expDate) return Alert.alert('Missing', 'Please enter expense date.');
-                if (!desc) return Alert.alert('Missing', 'Please enter a brief description.');
-                Alert.alert('Submitted', 'Your expense claim has been created.');
-                setShowModal(false);
-                setCategory(''); setAmount(''); setExpDate(''); setDesc('');
-                setReceiptName(''); setReceiptUri('');
-              }}
+              style={[
+                styles.primaryBtn,
+                { alignSelf: 'stretch', marginTop: 12, opacity: submitting ? 0.6 : 1 },
+              ]}
+              onPress={handleSubmit}
+              disabled={submitting}
             >
-              <Text style={styles.primaryBtnText}>Submit Claim</Text>
+              <Text style={styles.primaryBtnText}>{submitting ? 'Submitting...' : 'Submit Claim'}</Text>
             </Pressable>
             </ScrollView>
           </View>
@@ -306,10 +576,12 @@ function ExpenseItem({ status, title, amount, desc, date, submitted }: { status:
     <View style={styles.historyCard}>
       <View style={styles.historyTop}>
         <View style={{ flex: 1 }}>
-          <Text style={styles.historyTitle}>{title}</Text>
-          <View style={[styles.statusPill, { backgroundColor: s.bg }] }>
-            <Ionicons name={s.icon} size={14} color={s.color} />
-            <Text style={[styles.statusText, { color: s.color }]}>{status}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Text style={styles.historyTitle}>{title}</Text>
+            <View style={[styles.statusPill, { backgroundColor: s.bg, marginLeft: 8, marginTop: 0 }]}>
+              <Ionicons name={s.icon} size={14} color={s.color} />
+              <Text style={[styles.statusText, { color: s.color }]}>{status}</Text>
+            </View>
           </View>
         </View>
         <Text style={styles.amount}>{amount}</Text>
@@ -413,4 +685,5 @@ const styles = StyleSheet.create({
   dropdown: { borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 8, backgroundColor: '#fff', marginTop: 6, overflow: 'hidden' },
   dropdownItem: { paddingHorizontal: 12, paddingVertical: 10 },
   dropdownText: { color: '#111827' },
+  emptyWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16 },
 });

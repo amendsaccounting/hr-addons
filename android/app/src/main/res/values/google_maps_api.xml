@@ -1,0 +1,4 @@
+<resources>
+    <!-- TODO: Replace with your actual Google Maps Android SDK API key -->
+    <string name="google_maps_api_key">REPLACE_WITH_YOUR_ANDROID_MAPS_API_KEY</string>
+</resources>
