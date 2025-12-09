@@ -1,5 +1,5 @@
-import 'react-native-gesture-handler';
-import 'react-native-reanimated';
+// import 'react-native-gesture-handler';
+// import 'react-native-reanimated';r
 import React from 'react';
 import { StatusBar, useColorScheme } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
